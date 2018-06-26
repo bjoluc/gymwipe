@@ -5,9 +5,13 @@ name = "pypi"
 
 [packages]
 gym = "*"
+pytest = "*"
 
 [dev-packages]
 pylint = "*"
+sphinx = "*"
+sphinx-autobuild = "*"
+sphinx-rtd-theme = "*"
 
 [requires]
 python_version = "3.6"
