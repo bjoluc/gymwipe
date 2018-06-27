@@ -1,4 +1,4 @@
-Welcome to Gym Wireless Control Environment's documentation!
+Welcome to Gym-WiPE's documentation!
 ============================================================
 
 .. toctree::
