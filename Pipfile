@@ -12,6 +12,8 @@ pylint = "*"
 sphinx = "*"
 sphinx-autobuild = "*"
 sphinx-rtd-theme = "*"
+mypy-lang = "*"
+sphinx-autodoc-typehints = "*"
 
 [requires]
 python_version = "3.6"
