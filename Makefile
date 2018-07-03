@@ -8,7 +8,7 @@ dev:
 	pipenv install --dev
 
 test:
-	pipenv run py.test gymwipe
+	pipenv run py.test -vv gymwipe
 
 docs:
 	pipenv run sphinx-apidoc -f -o docs/ gymwipe
