@@ -1,6 +1,6 @@
 import pytest
 
-from gymwipe.networking.packets import Packet
+from gymwipe.networking.messages import Packet
 
 def test_packets():
     p1 = Packet("HEADER1 CONTENT", "test")
