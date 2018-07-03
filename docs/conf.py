@@ -161,6 +161,9 @@ texinfo_documents = [
 
 # -- Extension configuration -------------------------------------------------
 
+# __init__ docstring behaviour
+autoclass_content = 'both' # "Both the class’ and the init method’s docstring are concatenated and inserted."
+
 # -- Options for todo extension ----------------------------------------------
 
 # If true, `todo` and `todoList` produce output, else they produce nothing.
