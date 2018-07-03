@@ -6,6 +6,7 @@ name = "pypi"
 [packages]
 gym = "*"
 pytest = "*"
+simpy = "*"
 
 [dev-packages]
 pylint = "*"
