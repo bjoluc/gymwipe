@@ -1,58 +1,28 @@
-from abc import ABC, abstractmethod
+"""
+The packets module provides classes for network packet representation.
+"""
+from typing import Any
 
-class Payload(ABC):
-    """
-    Payload represents data that can be sent in a package.
-    """
-
-    @abstractmethod
-    def __str__(self):
-        """
-        Returns the Payload as a string.
-        """
-        pass
-    
-
-class PayloadString(Payload):
-    """
-    PayloadString is a wrapper for strings to be used as the Payload of a package.
-    """
-
-    def __init__(self, content):
-        """
-        Constructor.
-        Args:
-            content (string): The string to be used
-        """
-        self.content = content
-    
-    def __str__(self):
-        """Returns the """
-        return self.content
-
-class Packet(Payload):
+class Packet():
     """
     The Packet class represents packets.
-    A Packet consists of both a header and a payload, which are passed to the constructor.
+    A Packet consists of a header and a payload.
     Packets can be nested by providing them as payloads to the packet constructor.
+    The packet's __str__ method concatenates the results of the __str__ methods of header and payload, devided by a newline character.
     """
 
-    def __init__(self, header, payload):
+    def __init__(self, header: Any, payload: Any):
         """
-        Constructs a new Packet object.
         Args:
-            header (str): The String to be used as the Packet's header
-            payload (Payload): The Payload object to be used as the Packet's payload
+            header: The object to be used as the Packet's header. Might be a String.
+            payload: The object to be used as the Packet's payload. Might be a String or another Packet.
         """
-        if not isinstance(payload, Payload):
-            raise TypeError("Expected Payload, got %s" % type(payload))
         self.header = header
         self.payload = payload
 
     def __str__(self):
         """
-        Returns the string content of the packet.
-        This includes both the header and the string content of the packet's payload, divided by a newline character.
+        Returns the concatenatenation of the results of the __str__ methods of header and payload, divided by a newline character.
         """
         return str(self.header) + '\n' + str(self.payload)
 
