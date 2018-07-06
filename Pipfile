@@ -6,6 +6,7 @@ name = "pypi"
 [packages]
 gym = "*"
 pytest = "*"
+pytest-mock = "*"
 simpy = "*"
 
 [dev-packages]
@@ -15,7 +16,6 @@ sphinx-autobuild = "*"
 sphinx-rtd-theme = "*"
 mypy-lang = "*"
 sphinx-autodoc-typehints = "*"
-pytest-mock = "*"
 
 [requires]
 python_version = "3.6"
