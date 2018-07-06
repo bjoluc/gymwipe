@@ -2,6 +2,7 @@
 The packets module provides classes for network packet representation.
 """
 from typing import Any
+from enum import Enum
 
 class Packet():
     """
@@ -26,3 +27,12 @@ class Packet():
         """
         return str(self.header) + '\n' + str(self.payload)
 
+class Signal(Enum):
+    """
+    A base enumeration class used for the exchange of arbitrary signals between components
+    """
+
+class CtrlSignal(Signal):
+    """
+    An enumeration of control signals to be exchanged between components
+    """
