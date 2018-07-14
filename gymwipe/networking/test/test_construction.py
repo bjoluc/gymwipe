@@ -1,4 +1,4 @@
-import pytest
+import pytest, logging
 from pytest_mock import mocker
 from gymwipe.networking.construction import Gate, Module
 from gymwipe.simtools import SimMan
@@ -52,14 +52,17 @@ def test_module_functions():
     assert m.subModules['sub module 2'] == m2
     assert m.subModules == {'sub module 1': m1, 'sub module 2': m2}
 
-def test_module_simulation():
-    # Connect two modules in a cycle and let them pass around a message object in both directions
+def test_module_simulation(caplog):
+    # Connect two modules in a bidirectional cycle and let them pass around a message object in both directions
     #
     #      <----------------->
     # |----a-----|      |----a-----|
     # | module 1 |      | module 2 |
     # |----b-----|      |----b-----|
     #      <----------------->
+
+    caplog.set_level(logging.DEBUG, logger='gymwipe.networking.construction')
+    SimMan.initEnvironment()
 
     class TestModule(Module):
         def __init__(self, name):
@@ -75,6 +78,9 @@ def test_module_simulation():
             while(True):
                 # Listen on gate fromGate and proxy messages
                 print("TestModule " + self.name + " port " + fromGate + " waiting for message")
+
+                assert self.gates[fromGate].receivesMessage is not None
+
                 msg = yield self.gates[fromGate].receivesMessage
 
                 print("TestModule " + self.name + " port " + fromGate + " received message " + str(msg))
@@ -101,10 +107,10 @@ def test_module_simulation():
         m1.gates["a"].input.send(1)
 
         # wait 50 timesteps
-        yield SimMan.env.timeout(20)
+        yield SimMan.timeout(20)
         assert m1.msgVal == 19
         assert m2.msgVal == 20
-        yield SimMan.env.timeout(20)
+        yield SimMan.timeout(20)
 
         # assertions
         assert m1.msgReceivedCount["a"] == 10
@@ -114,4 +120,3 @@ def test_module_simulation():
     
     SimMan.registerProcess(simulation())
     SimMan.runSimulation(50)
-    
