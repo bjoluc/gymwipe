@@ -1,9 +1,12 @@
 """
 Contains classes for building network stack representations.
 """
+import logging
 from typing import Callable, Any
 from simpy.events import Event
-from gymwipe.simtools import SimMan
+from gymwipe.simtools import SimMan, SimTimePrepender
+
+logger = SimTimePrepender(logging.getLogger(__name__))
 
 class Gate:
     """   
@@ -17,9 +20,13 @@ class Gate:
 
         """
 
-        def __init__(self):
+        def __init__(self, name: str = None):
+            self._name = name
             self._onSendCallables = set()
             self._sendEvent = None
+        
+        def __str__(self):
+            return "Port('{}')".format(self._name)
 
         def _addDest(self, dest: Callable[[Any], None]) -> None:
             """
@@ -45,6 +52,7 @@ class Gate:
             """
             Sends the object provided as `message` to all connected ports and registered callback functions (if any).
             """
+            logger.debug("%s received message %s", self, message)
             self._triggerSendEvent(message)
             for send in self._onSendCallables:
                 send(message)
@@ -62,6 +70,7 @@ class Gate:
             if self._sendEvent is not None:
                 self._sendEvent.succeed(message)
                 self._sendEvent = None
+                logger.debug("sendEvent of %s was triggered (value: %s)", self, message)
     
 
     def __init__(self, name: str, inputCallback: Callable[[Any], None] = None):
@@ -70,10 +79,14 @@ class Gate:
             inputCallback: A callback function that will be used when a message is sent to the input Port.
         """
         
-        self.input = self.Port()
+        self._name = name
+        self.input = self.Port(name + ".input")
         if callable(inputCallback):
             self.input._addDest(inputCallback)
-        self.output = self.Port()
+        self.output = self.Port(name + ".output")
+    
+    def __str__(self):
+        return "Gate('{}')".format(self._name)
 
     # Connecting Gates
 
@@ -84,6 +97,8 @@ class Gate:
         Args:
             port: The port to connect this Gate's output to
         """
+        if not isinstance(port, Gate.Port):
+            raise TypeError("Expected Port, got {}. Use .input or .output to access a Gate's ports.".format(type(port)))
         self.output.connectTo(port)
     
     def connectInputTo(self, port: Port) -> None:
@@ -124,6 +139,9 @@ class Module:
         self.gates = {}
         self.subModules = {}
     
+    def __str__(self):
+        return "{} '{}'".format(self.__class__.__name__, self._name)
+    
     def _addGate(self, name: str, gate: Gate = None) -> None:
         """
         Adds a new `Gate` to the *gates* dictionary, indexed by the name passed.
@@ -131,12 +149,12 @@ class Module:
         Args:
             name: The name for the gate to be accessed by
             gate: The `Gate` object to be added. If not provided, a new `Gate` will be
-                instantiated using a concatenation of the Module's name property and *name* as its name.
+                instantiated using a concatenation of the Module's name property and `name` as its name.
         """
         if name in self.gates:
-            raise ValueError("A gate named '%s' already exists." % str)
+            raise ValueError("A gate indexed by '{}' already exists.".format(name))
         if gate is None:
-            gate = Gate(self.name + '.' + name)
+            gate = Gate("({}).{}".format(self, name))
         self.gates[name] = gate
     
     def _addSubModule(self, name: str, module: 'Module') -> None:
