@@ -1,7 +1,7 @@
 """
-The packets module provides classes for network packet representation.
+The messages module provides classes for network packet representation.
 """
-from typing import Any
+from typing import Any, Dict
 from enum import Enum
 
 class Packet():
@@ -27,12 +27,29 @@ class Packet():
         """
         return str(self.header) + '\n' + str(self.payload)
 
-class Signal(Enum):
+class Signal:
     """
-    A base enumeration class used for the exchange of arbitrary signals between components
+    A class used for the exchange of arbitrary signals between components.
+
+    Attributes:
+        type(Enum): An enumeration object that defines the signal type
+        properties(Dict[str, Any]): A dictionary containing additional signal properties
     """
 
-class CtrlSignal(Signal):
+    def __init__(self, type: Enum, properties: Dict[str, Any] = None):
+        self.type = type
+        self.properties = properties
+
+class PhySignals(Enum):
     """
-    An enumeration of control signals to be exchanged between components
+    An enumeration of control signal types to be used for `Signal` objects sent to a Phy layer.
+    """
+    RECEIVE = 0
+    """
+    Sense the channel for transmissions and output any successfully received message via the `mac` gate.
+    """
+
+    SEND = 1
+    """
+    Send a specified message via the channel.
     """
