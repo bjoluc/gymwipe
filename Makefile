@@ -8,12 +8,12 @@ dev:
 	pipenv install --dev
 
 test:
-	pipenv run py.test -vv gymwipe
+	pipenv run py.test -v gymwipe
 
 docs:
 	pipenv run sphinx-apidoc -f -o docs/ gymwipe
 	$(MAKE) -C docs clean
 	$(MAKE) -C docs html
-	if [ $(UNAME) = Linux ]; then xdg-open docs/_build/html/index.html; fi
+	# if [ $(UNAME) = Linux ]; then xdg-open docs/_build/html/index.html; fi
 
 .PHONY: init dev test docs
