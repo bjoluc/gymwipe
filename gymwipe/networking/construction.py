@@ -226,9 +226,9 @@ class GateListener():
     def __init__(self, gateName: str, validTypes: Union[type, Set[type]]=None):
         """
         Args:
-            gateName: The index of the module's :class:`~gymwipe.networking.construction.Gate` to listen on
+            gateName: The index of the module's :class:`Gate` to listen on
             validTypes: If not ``None``, a :class:`TypeError` will be raised when an object
-                received via the specified :class:`~gymwipe.networking.construction.Gate`
+                received via the specified :class:`Gate`
                 is not of the :class:`type` / one of the types specified.
         """
         self.gateName = gateName
@@ -236,6 +236,12 @@ class GateListener():
     
     def __call__(self, generator):
         def wrapper(instance):
+            """
+            A generator function which is decorated with the
+            :class:`~gymwipe.networking.construction.GateListener`
+            decorator, running it as a SimPy process when a specified
+            :class:`~gymwipe.networking.construction.Gate` receives an object.
+            """
             while True:
                 obj = yield instance.gates[self.gateName].receivesMessage
                 if self.validTypes is not None:
