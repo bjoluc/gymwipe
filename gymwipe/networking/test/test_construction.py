@@ -71,8 +71,8 @@ def test_module_simulation(caplog):
             self._addGate("b")
             self.msgReceivedCount = {"a": 0, "b": 0}
             self.msgVal = None
-            SimMan.registerProcess(self.process("a", "b"))
-            SimMan.registerProcess(self.process("b", "a"))
+            SimMan.process(self.process("a", "b"))
+            SimMan.process(self.process("b", "a"))
         
         def process(self, fromGate: str, toGate: str):
             while(True):
@@ -118,5 +118,5 @@ def test_module_simulation(caplog):
         assert m2.msgReceivedCount["a"] == 10
         assert m2.msgReceivedCount["b"] == 10
     
-    SimMan.registerProcess(simulation())
+    SimMan.process(simulation())
     SimMan.runSimulation(50)

@@ -68,7 +68,7 @@ def test_simple_phy(caplog, mocker):
         yield SimMan.timeout(150)
 
         receiverCallbackMock.assert_called_with(packet)
-
-    SimMan.registerProcess(sending())
-    SimMan.registerProcess(receiving())
+    
+    SimMan.process(sending())
+    SimMan.process(receiving())
     SimMan.runSimulation(200)

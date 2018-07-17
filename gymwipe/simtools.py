@@ -4,18 +4,23 @@ Module for simulation tools
 import logging
 from typing import Generator, Any
 from simpy import Environment
-from simpy.events import Event
+from simpy.events import Event, Process
 
 logger = logging.getLogger(__name__)
 
 class SimulationManager:
     """
-    The Simulation Manager offers methods and properties for managing and accessing a SimPy simulation.
-    Note: Do not create instances on your own. Use the existing simtools.SimMan instance instead.
+    The :class:`SimulationManager` offers methods and properties for managing and accessing a SimPy simulation.
+
+    Note:
+        Do not create instances on your own. Reference the existing instance by :`simtools.SimMan` instead.
     """
     
-    _env = None
-
+    def __init__(self):
+        self._env = None
+        self.stepsPerSecond = 1000
+        """int: The number of SimPy time steps per second (defaults to 1000)"""
+        
     @property
     def now(self):
         """int: The current simulation time step"""
@@ -23,19 +28,20 @@ class SimulationManager:
     
     @property
     def env(self):
-        """simpy.Environment: The SimPy environment object belonging to the current simulation"""
+        """simpy.Environment: The SimPy :class:`~simpy.Environment` object belonging to the current simulation"""
         if self._env is None:
             self.initEnvironment()
         return self._env
 
-    def registerProcess(self, process: Generator[Event, None, None]) -> None:
+    def process(self, process: Generator[Event, None, None]) -> Process:
         """
-        Registers a SimPy process (generator function yielding events) at the SimPy environment.
+        Registers a SimPy process (generator function yielding SimPy events) at the SimPy environment
+        and returns it.
 
         Args:
             process: The generator function to be registered as a process
         """
-        self.env.process(process)
+        return self.env.process(process)
 
     def runSimulation(self, timesteps: int) -> None:
         self.env.run(until=timesteps)
@@ -43,8 +49,8 @@ class SimulationManager:
     
     def initEnvironment(self) -> None:
         """
-        Destroys the existing SimPy environment (if there is one) and creates a new one.
-        The next `runSimulation` call will start a new simulation.
+        Destroys the existing SimPy :class:`~simpy.Environment` (if there is one) and creates a new one.
+        The next :meth:`runSimulation` call will start a new simulation.
         """
         self._env = Environment()
         logger.debug("SimulationManager: Initialized environment")
@@ -57,10 +63,10 @@ class SimulationManager:
     
     def timeoutUntil(self, triggerTime: int, value: Any = None) -> Event:
         """
-        Returns a SimPy event that is triggerd at the time step specified by `triggerTime`.
+        Returns a SimPy :class:`~simpy.Event` that is triggered at the time step specified by `triggerTime`.
 
         Args:
-            triggerTime: When to trigger the event
+            triggerTime: When to trigger the :class:`~simpy.Event`
         """
         now = self.now
         if triggerTime > now:
@@ -69,19 +75,27 @@ class SimulationManager:
             return self.timeout(0, value)
 
 SimMan = SimulationManager()
-"""A globally accessible SimulationManager instance to be used whenever a SimPy simulation is envolved"""
+"""A globally accessible SimulationManager instance to be used whenever a SimPy simulation is involved"""
 
 class SimTimePrepender(logging.LoggerAdapter):
     """
-    A LoggerAdapter that prepends the current simulation time step
-    (fetched by requesting SimMan.now) to any log message sent via `logger`.
+    A :class:`~logging.LoggerAdapter` that prepends the current simulation time step
+    (fetched by requesting :attr:`SimMan.now`) to any log message sent.
+
+    Examples:
+        The following command sets up a :class:`~logging.Logger` that prepends simulation time:
+        ::
+
+            logger = SimTimePrepender(logging.getLogger(__name__))
+        
     """
     def __init__(self, logger: logging.Logger):
         """
         Args:
-            logger: The `Logger` to be wrapped by the SimTimePrepender LoggerAdapter
+            logger: The :class:`~logging.Logger` to be wrapped by the SimTimePrepender LoggerAdapter
         """
         super(SimTimePrepender, self).__init__(logger, {})
 
     def process(self, msg, kwargs):
+        """Prepends "[Time step: x]"to `message`, with x being the current time step."""
         return "[Time step: {}] {}".format(SimMan.now, msg), kwargs
