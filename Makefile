@@ -16,4 +16,7 @@ docs:
 	$(MAKE) -C docs html
 	# if [ $(UNAME) = Linux ]; then xdg-open docs/_build/html/index.html; fi
 
-.PHONY: init dev test docs
+requirements:
+	pipenv run pipenv_to_requirements
+
+.PHONY: init dev test docs requirements
