@@ -30,10 +30,10 @@ class Position:
     
     def distanceTo(self, p: 'Position') -> float:
         """
-        Returns the euclidic distance of this `Position` to `p`, measured in meters.
+        Returns the euclidean distance of this :class:`Position` to `p`, measured in meters.
 
         Args:
-            p: The position to calculate the distance to
+            p: The :class:`Position` to calculate the distance to
         """
         return sqrt((self.x - p.x)**2 + (self.y - p.y)**2)
     
@@ -46,11 +46,6 @@ class NetworkDevice:
     """
 
     def __init__(self, name: str, position: Position):
-        """
-        Args:
-            name
-            position
-        """
         self._name = name
         self._position = position
     
@@ -68,13 +63,15 @@ class NetworkDevice:
     
     @property
     def name(self) -> str:
-        """str: The device name (only for debugging and plotting)"""
+        """str: The device name (for debugging and plotting)"""
         return self._name
 
 class Transmission:
     """
-    A Transmission models the process of a device sending a specific packet via a communication channel.
-    Note: The proper way to instanciate transmission objects is via the `transmit` method of a `Channel`.
+    A :class:`Transmission` models the process of a device sending a specific packet via a communication channel.
+
+    Note:
+        The proper way to instantiate :class:`Transmission` objects is via :meth:`Channel.transmit`.
     """
 
     def __init__(self, sender: NetworkDevice, power: float, bitrateHeader: int, bitratePayload: int, packet: Packet, startTime: int):
@@ -136,7 +133,7 @@ class Transmission:
 
     @property
     def completes(self):
-        """Event: A SimPy event that is triggered as soon as the transmission's stop time is over"""
+        """Event: A SimPy :class:`~simpy.events.Event` that is triggered as soon as the transmission's stop time is over"""
         return self._completesEvent
 
 class AttenuationProvider(ABC):
@@ -147,7 +144,7 @@ class AttenuationProvider(ABC):
     @abstractmethod
     def getAttenuation(self, a: Position, b: Position, time: int) -> float:
         """
-        Returns the attenuation of any signal sent from position `a` to position `b` at the time step specified by `time`.
+        Returns the attenuation of any signal sent from :class:`Position` `a` to :class:`Position` `b` at the time step specified by `time`.
 
         Args:
             a: Position a
@@ -190,17 +187,17 @@ class Channel:
 
     def transmit(self, sender: NetworkDevice, power: float, brHeader: int, brPayload: int, packet: Packet) -> Transmission:
         """
-        Creates a `Transmission` object with the values passed and stores it. Also triggers the `transmissionStarted` event of the `Channel`.
+        Creates a :class:`Transmission` object with the values passed and stores it. Also triggers the :attr:`~Channel.transmissionStarted` event of the :class:`Channel`.
 
         Args:
             sender: The NetworkDevice that transmits
             power: Transmission power [dBm]
             brHeader: Header bitrate
             brPayload: Payload bitrate
-            packet: `Packet` object representing the packet being transmitted
+            packet: :class:`~gymwipe.networking.messages.Packet` object representing the packet being transmitted
         
         Returns:
-            The `Transmission` object representing the transmission
+            The :class:`Transmission` object representing the transmission
         """
         t = Transmission(sender, power, brHeader, brPayload, packet, SimMan.now)
         self._transmissions.append((t, t.startTime, t.stopTime))
@@ -218,7 +215,7 @@ class Channel:
             toTime: The number of the last time step of the interval to return transmissions for
         
         Returns:
-            A list of tuples, one for each transmission, each consisting of the transmission's start time, stop time and the transmission object.
+            A list of tuples, one for each :class:`Transmission`, each consisting of the transmission's start time, stop time and the :class:`Transmission` object.
         """
         return [(t, a, b) for (t, a, b) in self._transmissions
                     if a <= fromTime <= toTime <= b
@@ -238,8 +235,8 @@ class Channel:
     @property
     def transmissionStarted(self):
         """
-        Event: A SimPy event that is triggered when the transmit method of the channel is executed.
-        Its value is the transmission object representing the transmission.
+        Event: A SimPy :class:`Event` that is triggered when :meth:`Channel.transmit` is executed.
+        Its value is the :class:`Transmission` object representing the transmission.
         """
         return self._transmissionStartedEvent
         
