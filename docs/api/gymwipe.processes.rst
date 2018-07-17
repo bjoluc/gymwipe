@@ -6,7 +6,7 @@ Submodules
 
 .. toctree::
 
-   gymwipe.processes.processes
+   gymwipe.processes.core
 
 Module contents
 ---------------
