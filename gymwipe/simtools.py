@@ -18,9 +18,29 @@ class SimulationManager:
     
     def __init__(self):
         self._env = None
-        self.stepsPerSecond = 1000
-        """int: The number of SimPy time steps per second (defaults to 1000)"""
-        
+    
+    stepsPerSecond = 1000
+    """int: The number of SimPy time steps per simulated second"""
+
+    clockFreq = 1000
+    """int: The frequency of a network card's clock [1/time step]"""
+
+    timeSlotSize = 1
+    """int: The number of time steps for one time slot (slotted time)"""
+    
+    def clockTick(self):
+        """
+        Returns a SimPy timeout event with a duration of ``1/clockFreq``.
+        """
+        return self.timeout(1/self.clockFreq)
+    
+    def nextTimeSlot(self):
+        """
+        Returns a SimPy timeout event that is scheduled for the beginning of the next time slot.
+        A time slot starts whenever ``now % timeSlotSize`` is ``0``.
+        """
+        return self.timeout(self.timeSlotSize - (self.now % self.timeSlotSize))
+
     @property
     def now(self):
         """int: The current simulation time step"""
@@ -35,7 +55,7 @@ class SimulationManager:
 
     def process(self, process: Generator[Event, None, None]) -> Process:
         """
-        Registers a SimPy process (generator function yielding SimPy events) at the SimPy environment
+        Registers a SimPy process (generator yielding SimPy events) at the SimPy environment
         and returns it.
 
         Args:
@@ -73,13 +93,24 @@ class SimulationManager:
             return self.timeout(triggerTime-now, value)
         else:
             return self.timeout(0, value)
+    
+    def triggerAfterTimeout(self, event: Event, timeout: float, value: Any = None) -> None:
+        """
+        Calls ``succeed(value)`` on the `event` after the simulated time specified in `timeout` has passed.
+        If the event has already been triggered by then, no action is taken.
+        """
+        def callback(caller):
+            if not event.triggered:
+                event.succeed(value)
+        timeoutEvent = self.timeout(timeout)
+        timeoutEvent.callbacks.append(callback)
 
 SimMan = SimulationManager()
 """A globally accessible SimulationManager instance to be used whenever a SimPy simulation is involved"""
 
 class SimTimePrepender(logging.LoggerAdapter):
     """
-    A :class:`~logging.LoggerAdapter` that prepends the current simulation time step
+    A :class:`~logging.LoggerAdapter` that prepends the current simulation time
     (fetched by requesting :attr:`SimMan.now`) to any log message sent.
 
     Examples:
@@ -97,5 +128,5 @@ class SimTimePrepender(logging.LoggerAdapter):
         super(SimTimePrepender, self).__init__(logger, {})
 
     def process(self, msg, kwargs):
-        """Prepends "[Time step: x]"to `message`, with x being the current time step."""
-        return "[Time step: {}] {}".format(SimMan.now, msg), kwargs
+        """Prepends "[Time: x]"to `message`, with x being the current simulation time."""
+        return "[Time: {}] {}".format(SimMan.now, msg), kwargs
