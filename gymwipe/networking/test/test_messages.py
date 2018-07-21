@@ -7,7 +7,7 @@ def test_packets():
     assert str(p1.payload) == "test"
     assert str(p1.header) == "HEADER1 CONTENT"
 
-    assert str(p1) == "HEADER1 CONTENT\ntest"
+    assert str(p1) == "HEADER1 CONTENT,test"
     
     p2 = Packet(Transmittable("HEADER2 CONTENT"), p1)
-    assert str(p2) == "HEADER2 CONTENT\nHEADER1 CONTENT\ntest"
+    assert str(p2) == "HEADER2 CONTENT,HEADER1 CONTENT,test"
