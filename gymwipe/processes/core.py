@@ -14,8 +14,8 @@ class PlantObserver(ABC):
         Is called by changes of any PlantObservable object this PlantObserver is registered at.
 
         Args:
-            caller: The PlantObservable calling this method
-            key: The key of the PlantObservable's value that changed
+            caller: The :class:`PlantObservable` calling this method
+            key: The key of the :class:`PlantObservable`'s value that changed
             value: The key's new value
         """
         pass
@@ -52,7 +52,7 @@ class PlantObservable:
 
 class Plant(PlantObservable):
     """
-    A simple key value store for physical plant state implementing PlantObservable.
+    A simple key value store for physical plant state
     """
 
     def __init__(self, name: str):
