@@ -2,7 +2,9 @@
 Contains classes for building network stack representations.
 """
 import logging
-from typing import Callable, Any, Union, Set
+import inspect
+from collections import deque
+from typing import Callable, Any, Union, Tuple
 from simpy.events import Event
 from gymwipe.simtools import SimMan, SimTimePrepender
 
@@ -24,6 +26,9 @@ class Gate:
             self._name = name
             self._onSendCallables = set()
             self._sendEvent = None
+            self._queue = deque()
+            # a queue that catches objects sent at the same simulated time
+            # and makes them accessible by repeatedly yielding the sendEvent
         
         def __str__(self):
             return "Port('{}')".format(self._name)
@@ -62,15 +67,22 @@ class Gate:
         @property
         def sendEvent(self) -> Event:
             """simpy.Event: A SimPy :class:`~simpy.Event` that is triggered when :meth:`send` is called on this :class:`~Gate.Port`."""
-            if self._sendEvent is None:
+            if self._sendEvent is None or self._sendEvent.triggered:
+                # the current _sendEvent has been processed by SimPy and is outdated now
+                # creating a new one
                 self._sendEvent = Event(SimMan.env)
+                if len(self._queue) > 0:
+                    # there is a queued message, immediately triggering the event again
+                    self._triggerSendEvent(self._queue.popleft())
             return self._sendEvent
 
         def _triggerSendEvent(self, message) -> None:
             if self._sendEvent is not None:
-                self._sendEvent.succeed(message)
-                self._sendEvent = None
-                logger.debug("sendEvent of %s was triggered (value: %s)", self, message)
+                if self._sendEvent.triggered:
+                    self._queue.append(message)
+                else:
+                    self._sendEvent.succeed(message)
+                    logger.debug("sendEvent of %s was triggered (value: %s)", self, message)
     
 
     def __init__(self, name: str, inputCallback: Callable[[Any], None] = None):
@@ -115,13 +127,32 @@ class Gate:
         Shorthand for
         ::
         
-            self.connectOutputTo(gate.input); gate.connectOutputTo(self._output)
+            self.connectOutputTo(gate.input)
+            gate.connectOutputTo(self.input)
 
         Args:
             gate: The `Gate` for the bidirectional connection to be established to
         """
         self.connectOutputTo(gate.input)
         gate.connectOutputTo(self.input)
+    
+    def biConnectProxy(self, gate: 'Gate') -> None:
+        """
+        Shorthand for
+        ::
+        
+            self.connectOutputTo(gate.output)
+            gate.connectInputTo(self.input)
+        
+        Note:
+            The term `Proxy` is used for a gate that redirects its input
+            to another gate's input.
+
+        Args:
+            gate: The `Gate` to be connected as a proxy
+        """
+        self.connectOutputTo(gate.output)
+        gate.connectInputTo(self.input)
     
     # SimPy events vor message handling
     
@@ -147,7 +178,6 @@ class Module:
         for listener in [getattr(self, a) for a in dir(self) if not a.startswith("__")
                             and getattr(getattr(self, a), "isGateListener", False)]:
             SimMan.process(listener())
-            print("added listener")
     
     def __str__(self):
         return "{} '{}'".format(self.__class__.__name__, self._name)
@@ -177,30 +207,30 @@ class Module:
         """str: The Module's name"""
         return self._name
 
-def ensureType(input: Any, validTypes: Union[type, Set[type]], caller: Any) -> None:
+def ensureType(input: Any, validTypes: Union[type, Tuple[type]], caller: Any) -> None:
     """
     Checks whether `input` is an instance of the type / one of the types provided as `validTypes`.
     If not, raises a :class:`TypeError` with a message containing the string representation of `caller`.
 
     Args:
         input: The object for which to check the type
-        validTypes: The type / set of types to be allowed
+        validTypes: The type / tuple of types to be allowed
         caller: The object that (on type mismatch) will be mentioned in the error message.
     
     Raises:
         TypeError: If the type of `input` mismatches the type(s) specified in `validClasses`
     """
-    if (isinstance(validTypes, Set) and not any([isinstance(t) for t in validTypes])) or not isinstance(input, validTypes):
+    if not isinstance(input, validTypes):
         raise TypeError("{}: Got object of invalid type {}. Expected type(s): {}".format(caller, type(input), validTypes) )
 
 class GateListener():
     """
-    A decorator for generators. The resulting generator
-    is registered as a SimPy process that (during simulation) executes the
-    decorated generator as a SimPy process whenever the input
-    :class:`~Gate.Port` of the provided
-    :class:`Gate` receives an object.
-    The received object is provided to the decorated generator as a parameter.
+    A decorator for both generator and non-generator methods.
+    The resulting generator will be registered as a SimPy process
+    that (during simulation) executes the decorated method whenever the input
+    :class:`~Gate.Port` of the provided :class:`Gate` receives an object.
+    The received object is provided to the decorated method as a parameter.
+    If the decorated method is a generator, it will be executed as a SimPy process.
 
     Note:
         SimPy process registration is done in the :class:`Module` constructor.
@@ -223,7 +253,7 @@ class GateListener():
         * Write a unit test for this
     """
 
-    def __init__(self, gateName: str, validTypes: Union[type, Set[type]]=None):
+    def __init__(self, gateName: str, validTypes: Union[type, Tuple[type]]=None):
         """
         Args:
             gateName: The index of the module's :class:`Gate` to listen on
@@ -234,19 +264,24 @@ class GateListener():
         self.gateName = gateName
         self.validTypes = validTypes
     
-    def __call__(self, generator):
+    def __call__(self, method):
+        isGenerator = inspect.isgeneratorfunction(method)
+
         def wrapper(instance):
             """
-            A generator function which is decorated with the
-            :class:`~gymwipe.networking.construction.GateListener`
-            decorator, running it as a SimPy process when a specified
-            :class:`~gymwipe.networking.construction.Gate` receives an object.
+            A method which is decorated with the :class:`~gymwipe.networking.construction.GateListener`
+            decorator, calling it when a specified :class:`~gymwipe.networking.construction.Gate`
+            receives an object.
+            If the decorated method is a generator function, it will be run as a SimPy process.
             """
             while True:
                 obj = yield instance.gates[self.gateName].receivesMessage
                 if self.validTypes is not None:
                     ensureType(obj, self.validTypes, instance)
-                yield SimMan.process(generator(instance, obj))
+                if isGenerator:
+                    yield SimMan.process(method(instance, obj))
+                else:
+                    method(instance, obj)
 
         # set the isGateListener flag
         # this will make the Module constructor add it as a SimPy process
