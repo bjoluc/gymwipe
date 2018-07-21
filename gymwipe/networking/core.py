@@ -83,10 +83,10 @@ class Transmission:
         self._startTime = startTime
 
         # calculate duration
-        self._duration = len(str(packet.header)) * 16 / bitrateHeader + len(str(packet.payload)) * 16 / bitratePayload
+        self._duration = packet.header.byteSize() * 8 / bitrateHeader + packet.payload.byteSize() * 8 / bitratePayload
         self._stopTime = startTime + self._duration
         # create the completesEvent
-        self._completesEvent = SimMan.timeoutUntil(self._stopTime + 1)
+        self._completesEvent = SimMan.timeoutUntil(self._stopTime)
     
     def __str__(self):
         return "Transmission from {} with power {} and duration {}".format(self.sender, self.power, self.duration)
@@ -166,6 +166,9 @@ class FSPLAttenuationProvider(AttenuationProvider):
 
     def getAttenuation(self, a: Position, b: Position, time: int) -> float:
         # https://en.wikipedia.org/wiki/Free-space_path_loss#Free-space_path_loss_in_decibels
+        if a == b:
+            logger.warn("FSPLAttenuationProvider: Source and destination position are equivalent!")
+            return 0
         return 20*log10(a.distanceTo(b)) + 20*log10(self.f) - 147.55
 
 
