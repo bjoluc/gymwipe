@@ -18,5 +18,6 @@ docs:
 
 requirements:
 	pipenv run pipenv_to_requirements
+	cat requirements.txt | grep -v "#" >> requirements-dev.txt
 
 .PHONY: init dev test docs requirements
