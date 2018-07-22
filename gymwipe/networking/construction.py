@@ -235,8 +235,8 @@ class GateListener():
     Note:
         SimPy process registration is done in the :class:`Module` constructor.
         Thus, when using :class:`GateListener` for methods that do not belong to
-        a subclass of :class:`Module`, you have to call :code:`SimMan.process(decoratedMethod())`
-        on your own.
+        a subclass of :class:`Module`, one has to call :code:`SimMan.process(decoratedMethod())`
+        at construction.
 
     Examples:
         A method using this decorator could look like this:

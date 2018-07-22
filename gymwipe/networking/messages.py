@@ -33,8 +33,8 @@ class Transmittable:
         :class:`Transmittable` with the byte length of its UTF-8 string representation.
 
         Note:
-            Subclasses should not invoke the constructor, unless they also wrap an object.
-            In this case, none of the :class:`Transmittable` methods have to be overridden.
+            Subclasses should not invoke the constructor, unless they also wrap a single object
+            and use it's string representation for :meth:`byteSize` calculation.
         
         Args:
             obj: The object of which the string representation will be used
@@ -123,7 +123,7 @@ class SimpleMacHeader(Transmittable):
 
 class SimpleTransportHeader(Transmittable):
     """
-    Since IP is not yet implemented in gymwipe, there is a need for some
+    Since IP is not implemented in gymwipe, there is a need for some
     interim way to specify source and destination addresses in packets that
     are passed to the :class:`SimpleMAC` layer.
     Therefore, a :class:`SimpleTransportHeader` holds a source and a destination MAC address.

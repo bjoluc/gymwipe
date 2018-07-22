@@ -46,7 +46,7 @@ class SimplePhy(StackLayer):
     
     Todo:
         * Interrupt receiver while sending?
-        * Sample attenuation while receiving
+        * Sample attenuation while receiving (find something more performant than brute-force sampling)
     """
 
     def __init__(self, name: str, device: NetworkDevice, channel: Channel):
@@ -104,7 +104,7 @@ class SimpleMac(StackLayer):
     """
     A MAC layer implementation of the contention-free protocol described as follows:
     
-        *   Every SimpleMac has a unique 8-byte-long MAC address.
+        *   Every SimpleMac has a unique 6-byte-long MAC address.
         *   The MAC layer with address ``0`` is considered to belong to the RRM.
         *   Time slots are grouped into frames.
         *   Every second frame is reserved for the RRM and has a fixed length
@@ -125,38 +125,14 @@ class SimpleMac(StackLayer):
             
             The packet's :attr:`~gymwipe.networking.messages.Packet.payload` is the number **n**
             mentioned above (wrapped inside a :class:`~gymwipe.networking.messages.Transmittable`)
-
-        *   Every **x** frames (where **x** is even), an *announcement* with the RRM
-            MAC address as the destination MAC address is sent by the RRM,
-            marking the next frame as a *register* frame.
-            Its :class:`~gymwipe.networking.messages.SimpleMacHeader` has the following attributes:
-
-                :attr:`~gymwipe.networking.messages.SimpleMacHeader.sourceMAC`, 
-                :attr:`~gymwipe.networking.messages.SimpleMacHeader.destMAC`: The RRM MAC address
-
-                :attr:`~gymwipe.networking.messages.SimpleMacHeader.flag`: ``2`` (flag for marking *register* frames)
-            
-        *   Register frames allow new SimpleMac layers to send a *register* message (containing their
-            MAC address) to the RRM.
-        *   If a sender of a *register* message detects a collision, it will
-            resend the *register* message with a propability of ``0.5`` in the next register frame.
-        *   Every sent packet not mentioned above has a :class:`~gymwipe.networking.messages.SimpleMacHeader`
+        *   Every other packet sent has a :class:`~gymwipe.networking.messages.SimpleMacHeader`
             with :attr:`~gymwipe.networking.messages.SimpleMacHeader.flag` ``0``.
-
-
-    Note:
-        Registration is not yet implemented.
-
-    Todo:
-        * Allow for unregistering (in register frames -> rename them?)
-        * Define rules for registering again, if not allowed to send for a specific number of slots
-          (register message might be lost)
     
     The `transport` gate accepts objects of the following types:
 
         * :class:`~gymwipe.networking.messages.Signal`
 
-            :class:`~gymwipe.networking.messages.Signal` types:
+            Types:
 
             * :attr:`~gymwipe.networking.messages.StackSignals.RECEIVE`
 
@@ -320,7 +296,7 @@ class SimpleRrmMac(StackLayer):
 
         * :class:`~gymwipe.networking.messages.Signal`
 
-        :class:`~gymwipe.networking.messages.Signal` types:
+        Types:
 
             * :attr:`~gymwipe.networking.messages.StackSignals.ASSIGN`
 

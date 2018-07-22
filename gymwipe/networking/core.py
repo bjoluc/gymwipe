@@ -93,7 +93,7 @@ class Transmission:
     
     @property
     def startTime(self):
-        """int: The number of the time step in which the transmission started"""
+        """int: The time at which the transmission started"""
         return self._startTime
     
     @property
@@ -138,7 +138,9 @@ class Transmission:
 
 class AttenuationProvider(ABC):
     """
-
+    Todo:
+        * Documentation
+        * Ways to retrieve values for time intervals
     """
 
     @abstractmethod
@@ -158,7 +160,7 @@ class AttenuationProvider(ABC):
 
 class FSPLAttenuationProvider(AttenuationProvider):
     """
-    Free-space path loss (FSPL) attenuation provider.
+    Free-space path loss (FSPL) attenuation provider. No fading model is used.
     To be used for demonstration purposes only.
     """
 
