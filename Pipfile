@@ -17,6 +17,7 @@ sphinx-rtd-theme = "*"
 mypy-lang = "*"
 sphinx-autodoc-typehints = "*"
 pipenv-to-requirements = "*"
+rope = "*"
 
 [requires]
 python_version = "3.6"

@@ -5,7 +5,7 @@ import logging
 from typing import Any
 from collections import deque
 from simpy.events import Event
-from gymwipe.networking.construction import Module, Gate, GateListener, ensureType
+from gymwipe.networking.construction import Module, Gate, GateListener
 from gymwipe.networking.core import Channel, Transmission, NetworkDevice
 from gymwipe.networking.messages import Signal, StackSignals, Transmittable, Packet, SimpleMacHeader
 from gymwipe.simtools import SimMan, SimTimePrepender

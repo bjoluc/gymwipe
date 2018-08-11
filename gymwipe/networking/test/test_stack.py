@@ -29,7 +29,7 @@ class CollectorGate(Gate):
         self.outputHistory.append(obj)
 
 @pytest.fixture
-def simple_phy_setup():
+def simple_phy():
     # initialize SimPy environment
     SimMan.initEnvironment()
 
@@ -52,12 +52,12 @@ def simple_phy_setup():
     setup.device2Phy = device2Phy
     return setup
 
-def test_simple_phy(caplog, mocker, simple_phy_setup):
+def test_simple_phy(caplog, mocker, simple_phy):
     caplog.set_level(logging.DEBUG, logger='gymwipe.networking.construction')
     caplog.set_level(logging.DEBUG, logger='gymwipe.networking.core')
     caplog.set_level(logging.DEBUG, logger='gymwipe.networking.stack')
 
-    setup = simple_phy_setup
+    setup = simple_phy
     channel = setup.channel
     senderPhy = setup.device1Phy
     receiverPhy = setup.device2Phy
@@ -106,8 +106,8 @@ def test_simple_phy(caplog, mocker, simple_phy_setup):
     SimMan.runSimulation(200)
 
 @pytest.fixture
-def simple_mac_setup():
-    s = simple_phy_setup()
+def simple_mac(simple_phy):
+    s = simple_phy
     s.rrm = NetworkDevice("RRM", Position(2,2))
     s.rrmPhy = SimplePhy("RrmPhy", s.rrm, s.channel)
     s.rrmMac = SimpleRrmMac("RrmMac", s.rrm)
@@ -131,12 +131,12 @@ def simple_mac_setup():
 
     return s
 
-def test_simple_mac(caplog, simple_mac_setup):
+def test_simple_mac(caplog, simple_mac):
     #caplog.set_level(logging.DEBUG, logger='gymwipe.networking.construction')
     caplog.set_level(logging.DEBUG, logger='gymwipe.networking.core')
     caplog.set_level(logging.DEBUG, logger='gymwipe.networking.stack')
 
-    s = simple_mac_setup
+    s = simple_mac
 
     dev1Addr = s.device1Mac.addr
     dev2Addr = s.device2Mac.addr

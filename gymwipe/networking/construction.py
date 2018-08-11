@@ -1,8 +1,7 @@
 """
 Contains classes for building network stack representations.
 """
-import logging
-import inspect
+import logging, inspect
 from collections import deque
 from typing import Callable, Any, Union, Tuple
 from simpy.events import Event
@@ -10,25 +9,22 @@ from gymwipe.simtools import SimMan, SimTimePrepender
 
 logger = SimTimePrepender(logging.getLogger(__name__))
 
-class Gate:
-    """   
-    Todo:
-        * finish documentation
-
-    """
-
-    class Port:
+class Port:
         """
+        Todo:
+            * documentation
 
         """
 
-        def __init__(self, name: str = None):
+        def __init__(self, name: str = None, buffered: bool = True):
             self._name = name
             self._onSendCallables = set()
             self._sendEvent = None
-            self._queue = deque()
-            # a queue that catches objects sent at the same simulated time
-            # and makes them accessible by repeatedly yielding the sendEvent
+            self._buffer = None
+            if buffered:
+                self._buffer = deque()
+                # a queue that catches objects sent at the same simulated time
+                # and makes them accessible by repeatedly yielding the sendEvent
         
         def __str__(self):
             return "Port('{}')".format(self._name)
@@ -42,12 +38,12 @@ class Gate:
         
         # connecting Ports with each other
 
-        def connectTo(self, port: 'Gate.Port') -> None:
+        def connectTo(self, port: 'Port') -> None:
             """
-            Connects this :class:`~Gate.Port` to the provided :class:`~Gate.Port`. Thus, if :meth:`send` is called on this :class:`~Gate.Port`, it will also be called on the provided :class:`~Gate.Port`.
+            Connects this :class:`Port` to the provided :class:`Port`. Thus, if :meth:`send` is called on this :class:`Port`, it will also be called on the provided :class:`Port`.
 
             Args:
-                port: The :class:`~Gate.Port` for the connection to be established to
+                port: The :class:`Port` for the connection to be established to
             """
             self._addDest(port.send)
 
@@ -66,24 +62,30 @@ class Gate:
 
         @property
         def sendEvent(self) -> Event:
-            """simpy.Event: A SimPy :class:`~simpy.Event` that is triggered when :meth:`send` is called on this :class:`~Gate.Port`."""
+            """simpy.Event: A SimPy :class:`~simpy.Event` that is triggered when :meth:`send` is called on this :class:`Port`."""
             if self._sendEvent is None or self._sendEvent.triggered:
                 # the current _sendEvent has been processed by SimPy and is outdated now
                 # creating a new one
                 self._sendEvent = Event(SimMan.env)
-                if len(self._queue) > 0:
+                if len(self._buffer) > 0:
                     # there is a queued message, immediately triggering the event again
-                    self._triggerSendEvent(self._queue.popleft())
+                    self._triggerSendEvent(self._buffer.popleft())
             return self._sendEvent
 
         def _triggerSendEvent(self, message) -> None:
             if self._sendEvent is not None:
                 if self._sendEvent.triggered:
-                    self._queue.append(message)
+                    self._buffer.append(message)
                 else:
                     self._sendEvent.succeed(message)
                     logger.debug("sendEvent of %s was triggered (value: %s)", self, message)
-    
+
+class Gate:
+    """   
+    Todo:
+        * documentation
+
+    """
 
     def __init__(self, name: str, inputCallback: Callable[[Any], None] = None):
         """
@@ -92,10 +94,10 @@ class Gate:
         """
         
         self._name = name
-        self.input = self.Port(name + ".input")
+        self.input = Port(name + ".input")
         if callable(inputCallback):
             self.input._addDest(inputCallback)
-        self.output = self.Port(name + ".output")
+        self.output = Port(name + ".output")
     
     def __str__(self):
         return "Gate('{}')".format(self._name)
@@ -109,7 +111,7 @@ class Gate:
         Args:
             port: The port to connect this Gate's output to
         """
-        if not isinstance(port, Gate.Port):
+        if not isinstance(port, Port):
             raise TypeError("Expected Port, got {}. Use .input or .output to access a Gate's ports.".format(type(port)))
         self.output.connectTo(port)
     
@@ -158,7 +160,7 @@ class Gate:
     
     @property
     def receivesMessage(self):
-        """Event: A SimPy :class:`~simpy.Event` that is triggered when the input :class:`~Gate.Port` receives a message"""
+        """Event: A SimPy :class:`~simpy.Event` that is triggered when the input :class:`Port` receives a message"""
         return self.input.sendEvent
     
 class Module:
@@ -228,7 +230,7 @@ class GateListener():
     A decorator for both generator and non-generator methods.
     The resulting generator will be registered as a SimPy process
     that (during simulation) executes the decorated method whenever the input
-    :class:`~Gate.Port` of the provided :class:`Gate` receives an object.
+    :class:`Port` of the provided :class:`Gate` receives an object.
     The received object is provided to the decorated method as a parameter.
     If the decorated method is a generator, it will be executed as a SimPy process.
 

@@ -1,6 +1,6 @@
 import pytest, logging
 from pytest_mock import mocker
-from gymwipe.networking.construction import Gate, Module
+from gymwipe.networking.construction import Port, Gate, Module
 from gymwipe.simtools import SimMan
 
 # Note: When mocking member functions of a class:
@@ -106,17 +106,16 @@ def test_module_simulation(caplog):
         print("sending message")
         m1.gates["a"].input.send(1)
 
-        # wait 50 timesteps
+        # wait 40 time units
         yield SimMan.timeout(20)
         assert m1.msgVal == 19
         assert m2.msgVal == 20
         yield SimMan.timeout(20)
 
         # assertions
-        assert m1.msgReceivedCount["a"] == 10
-        assert m1.msgReceivedCount["b"] == 10
-        assert m2.msgReceivedCount["a"] == 10
-        assert m2.msgReceivedCount["b"] == 10
+        for m in [m1, m2]:
+            for portName in ["a", "b"]:
+                assert m.msgReceivedCount[portName] == 10
     
     SimMan.process(simulation())
     SimMan.runSimulation(50)
