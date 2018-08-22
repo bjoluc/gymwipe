@@ -8,7 +8,7 @@ dev:
 	pipenv install --dev
 
 test:
-	pipenv run py.test -v gymwipe
+	pipenv run py.test -v --exitfirst gymwipe
 
 docs:
 	pipenv run sphinx-apidoc --force --separate --separate -o docs/api gymwipe gymwipe/*/test
