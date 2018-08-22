@@ -19,8 +19,8 @@ class CollectorGate(Gate):
         super(CollectorGate, self).__init__(name)
         self.inputHistory = []
         self.outputHistory = []
-        self.input._addDest(self.inputSaver)
-        self.output._addDest(self.outputSaver)
+        self.input.addCallback(self.inputSaver)
+        self.output.addCallback(self.outputSaver)
     
     def inputSaver(self, obj):
         self.inputHistory.append(obj)
@@ -184,7 +184,7 @@ def test_simple_mac(caplog, simple_mac):
 
     # assertions
     # both devices should have received 10 packets
-    assert len(receivedPackets2) == 10
+    assert len(receivedPackets1) == 10
     assert len(receivedPackets2) == 10
 
     # TODO add detailed assertions throughout the test
