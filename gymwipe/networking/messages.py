@@ -34,7 +34,7 @@ class Transmittable:
 
         Note:
             Subclasses should not invoke the constructor, unless they also wrap a single object
-            and use it's string representation for :meth:`byteSize` calculation.
+            and use its string representation for :meth:`byteSize` calculation.
         
         Args:
             obj: The object of which the string representation will be used
@@ -190,6 +190,9 @@ class Signal:
     def processedTriggered(self):
         """boolean: Whether or not the :attr:`processed` event was triggered"""
         return self.processed.triggered
+    
+    def __str__(self):
+        return "Signal('{}', properties: {})".format(self.type.name, self.properties)
 
 class StackSignals(Enum):
     """
