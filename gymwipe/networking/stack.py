@@ -49,6 +49,7 @@ class SimplePhy(StackLayer):
         * Sample attenuation while receiving (find something more performant than brute-force sampling)
     """
 
+    @GateListener.setup
     def __init__(self, name: str, device: NetworkDevice, channel: Channel):
         super(SimplePhy, self).__init__(name, device)
         self._channel = channel
@@ -59,7 +60,7 @@ class SimplePhy(StackLayer):
     
     RECV_THRESHOLD = -80 # dBm (https://www.metageek.com/training/resources/wifi-signal-strength-basics.html)
     
-    @GateListener("mac", Signal)
+    @GateListener("mac", Signal, buffered=True)
     def macGateListener(self, cmd):
         p = cmd.properties
 
@@ -159,6 +160,7 @@ class SimpleMac(StackLayer):
             A packet received by the physical layer
     """
 
+    @GateListener.setup
     def __init__(self, name: str, device: NetworkDevice, addr: bytes):
         """
         Args:
@@ -251,6 +253,8 @@ class SimpleMac(StackLayer):
                     # return the packet's payload to the transport layer
                     self._receiveCmd.triggerProcessed(packet.payload)
                     self._stopReceiving()
+                else:
+                    logger.debug("%s: Received Packet from Phy, but not in receiving mode. Packet ignored.", self)
 
         elif header.destMAC == self.rrmAddr:
             # packet from RRM to all devices
@@ -261,7 +265,7 @@ class SimpleMac(StackLayer):
 
         if isinstance(cmd, Signal):
             if cmd.type is StackSignals.RECEIVE:
-                logger.debug("%s: Starting to receive.", self)
+                logger.debug("%s: Entering receive mode.", self)
                 # start receiving
                 self._receiveCmd = cmd
                 # set _receiving and a timeout event
@@ -310,6 +314,7 @@ class SimpleRrmMac(StackLayer):
                 :duration: The number of time steps to assign the channel for the specified device
     """
 
+    @GateListener.setup
     def __init__(self, name: str, device: NetworkDevice):
         super(SimpleRrmMac, self).__init__(name, device)
         self._addGate("phy")
