@@ -136,7 +136,7 @@ class Transmission:
         """Event: A SimPy :class:`~simpy.events.Event` that is triggered as soon as the transmission's stop time is over"""
         return self._completesEvent
 
-class AttenuationProvider(ABC):
+class AttenuationModel(ABC):
     """
     Todo:
         * Documentation
@@ -144,51 +144,92 @@ class AttenuationProvider(ABC):
     """
 
     @abstractmethod
-    def getAttenuation(self, a: Position, b: Position, time: int) -> float:
+    def getSample(self, a: Position, b: Position, time: int) -> float:
         """
-        Returns the attenuation of any signal sent from :class:`Position` `a` to :class:`Position` `b` at the time step specified by `time`.
+        Returns the attenuation of any signal sent from :class:`Position` `a`
+        to :class:`Position` `b` at the simulated time specified by `time`.
 
         Args:
             a: Position a
             b: Position b
-            time: The time step to be considered
+            time: The moment in simulated time to be considered
         
         Returns:
             The attenuation between a and b, measured in db
         """
+    
+    @abstractmethod
+    def getIntervalsAboveThreshold(self, a: Position, b: Position, fromTime: float, toTime: float, threshold: float) -> List[Tuple[float, float]]:
+        """
+        Returns a chronologically sorted list of (from, to) tuples, where [from, to] is a
+        maximum-length time interval in which the model's attenuation values constantly outrun `threshold`.
+
+        Args:
+            a: Position a
+            b: Position b
+            fromTime: The first moment in simulated time to be considered
+            toTime: The last moment in simulated time to be considered
+            threshold: The attenuation threshold (measured in db)
+        """
+
+class JoinedAttenuation(AttenuationModel):
+    """
+    An :class:`AttenuationModel` that combines the attenuation values of two or more
+    given :class:`AttenuationModel` instances.
+    """
+
+    def __init__(self, *args):
+        """
+        Args:
+            Two or more :class:`AttenuationModel` instances
+        """
+        self._models = args
+    
+    def getSample(self, a: Position, b: Position, time: int) -> float:
+        return sum([model.getSample(a, b, time) for model in self._models])
+    
+    def getIntervalsAboveThreshold(self, a: Position, b: Position, fromTime: float, toTime: float, threshold: float) -> List[Tuple[float, float]]:
+        #TODO
         pass
 
-class FSPLAttenuationProvider(AttenuationProvider):
+
+class FSPLAttenuation(AttenuationModel):
     """
-    Free-space path loss (FSPL) attenuation provider. No fading model is used.
-    To be used for demonstration purposes only.
+    Free-space path loss (FSPL) attenuation model.
     """
 
     f = 2.4e9 # 2.4 GHz
 
-    def getAttenuation(self, a: Position, b: Position, time: int) -> float:
+    def getSample(self, a: Position, b: Position, time: int) -> float:
         # https://en.wikipedia.org/wiki/Free-space_path_loss#Free-space_path_loss_in_decibels
         if a == b:
-            logger.warn("FSPLAttenuationProvider: Source and destination position are equivalent!")
+            logger.info("FSPLAttenuation: Source and destination position are equivalent.")
             return 0
         return 20*log10(a.distanceTo(b)) + 20*log10(self.f) - 147.55
+    
+    def getIntervalsAboveThreshold(self, a: Position, b: Position, fromTime: float, toTime: float, threshold: float) -> List[Tuple[float, float]]:
+        # path loss is constant in time
+        if self.getSample(a, b, fromTime) > threshold:
+            return [(fromTime, toTime)]
+        else:
+            return []
 
 
 class Channel:
     """
     The Channel class serves as a manager for transmission objects and represents a physical channel.
-    It also holds the corresponding AttenuationProvider instance.
+    It also holds the corresponding AttenuationModel instance.
     """
 
-    def __init__(self, attenuationProvider: AttenuationProvider):
-        self._attenuationProvider = attenuationProvider
+    def __init__(self, attenuationModel: AttenuationModel):
+        self._attenuationModel = attenuationModel
         self._transmissions = []
         self._transmissionStartedEvent = Event(SimMan.env)
     
     @property
-    def attenuationProvider(self):
-        """AttenuationProvider: The AttenuationProvider instance belonging to the Channel"""
-        return self._attenuationProvider
+    def attenuationModel(self):
+        """AttenuationModel: The AttenuationModel instance belonging to the Channel"""
+        return self._attenuationModel
 
     def transmit(self, sender: NetworkDevice, power: float, brHeader: int, brPayload: int, packet: Packet) -> Transmission:
         """

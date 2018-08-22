@@ -2,7 +2,7 @@ import pytest, logging
 from pytest_mock import mocker
 from typing import List, Iterable
 from gymwipe.simtools import SimMan
-from gymwipe.networking.core import NetworkDevice, Position, Channel, FSPLAttenuationProvider
+from gymwipe.networking.core import NetworkDevice, Position, Channel, FSPLAttenuation
 from gymwipe.networking.construction import Gate
 from gymwipe.networking.stack import SimplePhy, SimpleMac, SimpleRrmMac
 from gymwipe.networking.messages import Transmittable, Packet, Signal, StackSignals, SimpleMacHeader, SimpleTransportHeader
@@ -34,7 +34,7 @@ def simple_phy():
     SimMan.initEnvironment()
 
     # create a wireless channel with FSPL attenuation
-    channel = Channel(FSPLAttenuationProvider())
+    channel = Channel(FSPLAttenuation())
 
     # create two network devices
     device1 = NetworkDevice("Device1", Position(0,0))

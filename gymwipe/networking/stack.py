@@ -90,7 +90,7 @@ class SimplePhy(StackLayer):
                     pass
                 else:
                     # no colliding transmissions, check attenuation
-                    a = self._channel.attenuationProvider.getAttenuation(t.sender.position, self._device.position, t.startTime)
+                    a = self._channel.attenuationModel.getSample(t.sender.position, self._device.position, t.startTime)
                     recvPower = t.power - a
                     if recvPower < self.RECV_THRESHOLD:
                         logger.debug("%s: Signal strength of %6d dBm is insufficient (RECV_THRESHOLD is %6d dBm), packet could not be received correctly.", self, recvPower, self.RECV_THRESHOLD)
