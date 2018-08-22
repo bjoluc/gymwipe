@@ -1,6 +1,6 @@
 import pytest, logging
 from pytest_mock import mocker
-from gymwipe.networking.construction import Port, Gate, Module
+from gymwipe.networking.construction import Port, Gate, Module, GateListener
 from gymwipe.simtools import SimMan
 
 # Note: When mocking member functions of a class:
@@ -119,3 +119,69 @@ def test_module_simulation(caplog):
     
     SimMan.process(simulation())
     SimMan.runSimulation(50)
+
+class MyModule(Module):
+    @GateListener.setup
+    def __init__(self, name: str):
+        super(MyModule, self).__init__(name)
+        self._addGate("a")
+        self._addGate("b")
+        self.logs = [[] for _ in range(4)]
+
+    @GateListener("a", buffered=False)
+    def aListener(self, message):
+        self.logs[0].append(message)
+    
+    @GateListener("a", buffered=True)
+    def aListenerBuffered(self, message):
+        self.logs[1].append(message)
+        yield SimMan.timeout(10)
+
+    @GateListener("b", buffered=False)
+    def bListener(self, message):
+        self.logs[2].append(message)
+        yield SimMan.timeout(10)
+    
+    @GateListener("b", buffered=True)
+    def bListenerBuffered(self, message):
+        self.logs[3].append(message)
+        yield SimMan.timeout(10)
+
+def test_gate_listener_method(caplog):
+    caplog.set_level(logging.DEBUG, logger='gymwipe.networking.construction')
+    # Create two identical modules in order to check for side effects
+    # due to GateListener objects used twice
+    modules = MyModule("Test1"), MyModule("Test2")
+
+    for i in range(3):
+        for module in modules:
+            # pass a message to gate a
+            module.gates["a"].input.send("msg" + str(i))
+            for j in range(1):
+                # All messages passed yet should be received (and thus logged),
+                # regardless of the buffered flag.
+                assert module.logs[j] == ["msg" + str(n) for n in range(i+1)]
+
+def test_gate_listener_generator(caplog):
+    caplog.set_level(logging.DEBUG, logger='gymwipe.networking.construction')
+    SimMan.initEnvironment()
+
+    # Checking side effects by using two identical modules again
+    modules = MyModule("Test1"), MyModule("Test2")
+
+    def main():
+        for i in range(3):
+            for module in modules:
+                module.gates["b"].input.send("msg" + str(i))
+                yield SimMan.timeout(1)
+
+    SimMan.process(main())
+    SimMan.runSimulation(40)
+
+    for module in modules:
+        # Non-buffered port should only have received the first message,
+        # since receiving takes 10 time units and the send interval is 1 time unit.
+        assert module.logs[2] == ["msg0"]
+        
+        # Buffered port should have received all messages.
+        assert module.logs[3] == ["msg" + str(n) for n in range(3)]
