@@ -6,7 +6,7 @@ from collections import deque
 from typing import Callable, Any, Union, Tuple
 from functools import wraps
 from simpy.events import Event
-from gymwipe.simtools import SimMan, SimTimePrepender
+from gymwipe.simtools import SimMan, SimTimePrepender, ensureType
 
 logger = SimTimePrepender(logging.getLogger(__name__))
 
@@ -204,22 +204,6 @@ class Module:
     def name(self):
         """str: The Module's name"""
         return self._name
-
-def ensureType(input: Any, validTypes: Union[type, Tuple[type]], caller: Any) -> None:
-    """
-    Checks whether `input` is an instance of the type / one of the types provided as `validTypes`.
-    If not, raises a :class:`TypeError` with a message containing the string representation of `caller`.
-
-    Args:
-        input: The object for which to check the type
-        validTypes: The type / tuple of types to be allowed
-        caller: The object that (on type mismatch) will be mentioned in the error message.
-    
-    Raises:
-        TypeError: If the type of `input` mismatches the type(s) specified in `validClasses`
-    """
-    if not isinstance(input, validTypes):
-        raise TypeError("{}: Got object of invalid type {}. Expected type(s): {}".format(caller, type(input), validTypes) )
 
 class GateListener:
     """
