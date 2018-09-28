@@ -2,11 +2,12 @@
 Module for simulation tools
 """
 import logging
-from typing import Generator, Any
+from collections import deque
+from typing import Any, Callable, Generator, Tuple, Union
+
 from simpy import Environment
 from simpy.events import Event, Process
 
-logger = logging.getLogger(__name__)
 
 class SimulationManager:
     """
@@ -63,8 +64,14 @@ class SimulationManager:
         """
         return self.env.process(process)
 
+    def event(self):
+        """
+        Creates and returns a new :class:`~simpy.Event` object belonging to the current environment.
+        """
+        return Event(self.env)
+
     def runSimulation(self, timesteps: int) -> None:
-        self.env.run(until=timesteps)
+        self.env.run(until=self.now + timesteps)
         logger.info("SimulationManager: Starting simulation...")
     
     def initEnvironment(self) -> None:
@@ -130,3 +137,130 @@ class SimTimePrepender(logging.LoggerAdapter):
     def process(self, msg, kwargs):
         """Prepends "[Time: x]"to `message`, with x being the current simulation time."""
         return "[Time: {}] {}".format(SimMan.now, msg), kwargs
+
+logger = SimTimePrepender(logging.getLogger(__name__))
+
+def ensureType(input: Any, validTypes: Union[type, Tuple[type]], caller: Any) -> None:
+    """
+    Checks whether `input` is an instance of the type / one of the types provided as `validTypes`.
+    If not, raises a :class:`TypeError` with a message containing the string representation of `caller`.
+
+    Args:
+        input: The object for which to check the type
+        validTypes: The type / tuple of types to be allowed
+        caller: The object that (on type mismatch) will be mentioned in the error message.
+    
+    Raises:
+        TypeError: If the type of `input` mismatches the type(s) specified in `validClasses`
+    """
+    if not isinstance(input, validTypes):
+        raise TypeError("{}: Got object of invalid type {}. Expected type(s): {}".format(caller, type(input), validTypes) )
+
+class Notifier:
+    """
+    A class implementing the observer pattern.
+    A :class:`Notifier` can be triggered providing a value.
+    Both callback functions and SimPy generators can be subscribed.
+    Every time the :class:`Notifier` is triggered, it will run its
+    callback methods and trigger the execution of the subscribed SimPy generators.
+    Aditionally, SimPy generators can wait for a :class:`Notifier` to be
+    triggered by yielding its :attr:`event`.
+    """
+
+    def __init__(self, name: str):
+        self._name = name
+        self._event = None
+        self._callbacks = set()
+        self._processExecutors = {}
+    
+    def subscribeCallback(self, callback: Callable[[Any], None]) -> None:
+        """
+        Adds the passed callable to the set of callback functions.
+        Thus, when the notifier gets triggered, the callable will be invoked passing
+        the value that the notifier was triggered with.
+        """
+        self._callbacks.add(callback)
+
+    def unsubscribeCallback(self, callback: Callable[[Any], None]) -> None:
+        """
+        If the passed callable is contained in the set of callback functions,
+        this method will remove it.
+        """
+        self._callbacks.remove(callback)
+    
+    def subscribeProcess(self, process: Generator[Event, Any, None], blocking=True, queued=False):
+        """
+        Makes the SimPy environment process the passed generator function when
+        :attr:`trigger` is called. The value passed to :attr:`trigger` will also
+        be passed to the generator function.
+
+        Args:
+            blocking: If set to ``False``, only one instance of the generator
+                will be processed at a time. Thus, if :attr:`trigger` is called
+                while the SimPy process started by an earlier call has not terminated,
+                no action is taken.
+            queued: If blocking is ``True`` and queued is ``False``, a :attr:`trigger` call
+                while an instance of the generator is still active will not result in a new generator instance.
+                If queued is set to ``True`` instead, the values of those :attr:`trigger` calls
+                will be queued and as long as the queue is not empty, a new generator instance
+                with a queued value will be created every time a previous instance has terminated.
+        """
+
+        if process in self._processExecutors:
+            logger.warn("%s: Generator function %s was already subscribed! Ignoring the call.", self, process)
+        else:
+            # creating an executor function that will be called whenever trigger is called
+            def executor(value: Any) -> None:
+                if executor.running:
+                    if blocking:
+                        executor.queue.append(value)
+                    else:
+                        # start a new process
+                        SimMan.process(process(value))
+                else:
+                    executor.running = True
+                    event = SimMan.process(process(value))
+                    if queued:
+                        def executeNext(prevProcessReturnValue: Any) -> None:
+                            # callback for running the next process from the queue
+                            if len(executor.queue) > 0:
+                                event = SimMan.process(process(executor.queue.popleft()))
+                                event.callbacks.append(executeNext)
+                            else:
+                                executor.running = False
+                        event.callbacks.append(executeNext)
+
+            executor.running = False
+            if blocking:
+                executor.queue = deque()
+            self._processExecutors[process] = executor
+    
+    def trigger(self, value: Any) -> None:
+        """
+        Triggers the :class:`Notifier`.
+        This runs the callbacks, makes the :attr:`Notifier.event` succeed,
+        and schedules the SimPy generators for processing.
+        """
+        for c in self._callbacks:
+            c(value)
+        for executor in self._processExecutors.values():
+            executor(value)
+        if self._event is not None:
+            self._event.succeed(value)
+            self._event = None
+    
+    @property
+    def event(self):
+        if self._event is None:
+            self._event = SimMan.event()
+        return self._event
+    
+    @property
+    def name(self):
+        """
+        str: The notifier's name as it has been passed to the constructor
+        """
+        return self._name
+    
+    def __str__(self):
+        return "Notifier('{}')".format(self.name)
