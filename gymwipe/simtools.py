@@ -167,7 +167,13 @@ class Notifier:
     triggered by yielding its :attr:`event`.
     """
 
-    def __init__(self, name: str):
+    def __init__(self, owner: Any = None, name: str = ""):
+        """
+        Args:
+            owner: The object that provides the :class:`Notifier` instance
+            name: A string to identify the :class:`Notifier` instance among all other :class:`Notifier` instances of the owner object.
+        """
+        self._owner = owner
         self._name = name
         self._event = None
         self._callbacks = set()
@@ -211,24 +217,37 @@ class Notifier:
         else:
             # creating an executor function that will be called whenever trigger is called
             def executor(value: Any) -> None:
-                if executor.running:
-                    if blocking:
-                        executor.queue.append(value)
-                    else:
-                        # start a new process
-                        SimMan.process(process(value))
+                if not blocking:
+                    # start a new process
+                    SimMan.process(process(value))
                 else:
-                    executor.running = True
-                    event = SimMan.process(process(value))
-                    if queued:
-                        def executeNext(prevProcessReturnValue: Any) -> None:
-                            # callback for running the next process from the queue
-                            if len(executor.queue) > 0:
-                                event = SimMan.process(process(executor.queue.popleft()))
-                                event.callbacks.append(executeNext)
-                            else:
-                                executor.running = False
-                        event.callbacks.append(executeNext)
+                    if executor.running:
+                        if not queued:
+                            logger.debug("{}: Notification with object '{}' did not lead "
+                                            "to the processing of {}, since a previous SimPy "
+                                            "process is still active, 'blocking' is 'True', and "
+                                            "'queued' is 'False'.".format(self, value, process))
+                        else:
+                            executor.queue.append(value)
+                            logger.debug("{}: Object '{}' was appended to queue for SimPy generator {}, "
+                                        "since a previous SimPy process is still active. "
+                                        "Queue length: {:d}".format(self, value, process, len(executor.queue)))
+                    else:
+                        executor.running = True
+                        event = SimMan.process(process(value))
+                        if queued:
+                            def executeNext(prevProcessReturnValue: Any) -> None:
+                                # callback for running the next process from the queue
+                                if len(executor.queue) > 0:
+                                    nextObject = executor.queue.popleft()
+                                    logger.debug("{}: Processing generator {} "
+                                                "with queued object {}.".format(self, process, nextObject))
+                                    event = SimMan.process(process(nextObject))
+                                    event.callbacks.append(executeNext)
+                                else:
+                                    executor.running = False
+                                    logger.debug("{}: All queued jobs for generator {} were executed.".format(self, process))
+                            event.callbacks.append(executeNext)
 
             executor.running = False
             if blocking:
@@ -241,6 +260,7 @@ class Notifier:
         This runs the callbacks, makes the :attr:`Notifier.event` succeed,
         and schedules the SimPy generators for processing.
         """
+        logger.debug("{}: Triggered with value {}".format(self, value))
         for c in self._callbacks:
             c(value)
         for executor in self._processExecutors.values():
@@ -263,4 +283,7 @@ class Notifier:
         return self._name
     
     def __str__(self):
-        return "Notifier('{}')".format(self.name)
+        ownerString = ""
+        if self._owner is not None:
+            ownerString = str(self._owner) + "."
+        return "{}Notifier('{}')".format(ownerString, self.name)
