@@ -8,7 +8,6 @@ Subpackages
 
     gymwipe.networking
     gymwipe.processes
-    gymwipe.test
 
 Submodules
 ----------
