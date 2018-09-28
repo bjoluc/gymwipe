@@ -79,9 +79,7 @@ def test_module_simulation(caplog):
                 # Listen on gate fromGate and proxy messages
                 print("TestModule " + self.name + " port " + fromGate + " waiting for message")
 
-                assert self.gates[fromGate].receivesMessage is not None
-
-                msg = yield self.gates[fromGate].receivesMessage
+                msg = yield self.gates[fromGate].nReceives.event
 
                 print("TestModule " + self.name + " port " + fromGate + " received message " + str(msg))
                 self.msgVal = msg
@@ -128,21 +126,21 @@ class MyModule(Module):
         self._addGate("b")
         self.logs = [[] for _ in range(4)]
 
-    @GateListener("a", buffered=False)
+    @GateListener("a", queued=False)
     def aListener(self, message):
         self.logs[0].append(message)
     
-    @GateListener("a", buffered=True)
+    @GateListener("a", queued=True)
     def aListenerBuffered(self, message):
         self.logs[1].append(message)
         yield SimMan.timeout(10)
 
-    @GateListener("b", buffered=False)
+    @GateListener("b", queued=False)
     def bListener(self, message):
         self.logs[2].append(message)
         yield SimMan.timeout(10)
     
-    @GateListener("b", buffered=True)
+    @GateListener("b", queued=True)
     def bListenerBuffered(self, message):
         self.logs[3].append(message)
         yield SimMan.timeout(10)
@@ -159,7 +157,7 @@ def test_gate_listener_method(caplog):
             module.gates["a"].input.send("msg" + str(i))
             for j in range(1):
                 # All messages passed yet should be received (and thus logged),
-                # regardless of the buffered flag.
+                # regardless of the queued flag.
                 assert module.logs[j] == ["msg" + str(n) for n in range(i+1)]
 
 def test_gate_listener_generator(caplog):
@@ -179,9 +177,9 @@ def test_gate_listener_generator(caplog):
     SimMan.runSimulation(40)
 
     for module in modules:
-        # Non-buffered port should only have received the first message,
+        # Non-queued GateListener should only have received the first message,
         # since receiving takes 10 time units and the send interval is 1 time unit.
         assert module.logs[2] == ["msg0"]
         
-        # Buffered port should have received all messages.
+        # Queued GateListener should have received all messages.
         assert module.logs[3] == ["msg" + str(n) for n in range(3)]

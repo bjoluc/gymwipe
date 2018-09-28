@@ -71,8 +71,8 @@ class SimulationManager:
         return Event(self.env)
 
     def runSimulation(self, timesteps: int) -> None:
-        self.env.run(until=self.now + timesteps)
         logger.info("SimulationManager: Starting simulation...")
+        self.env.run(until=self.now + timesteps)
     
     def initEnvironment(self) -> None:
         """
@@ -82,15 +82,15 @@ class SimulationManager:
         self._env = Environment()
         logger.debug("SimulationManager: Initialized environment")
     
-    def timeout(self, steps: int, value: Any = None) -> Event:
+    def timeout(self, duration: float, value: Any = None) -> Event:
         """
-        Shorthand for env.timeout(steps, value)
+        Shorthand for env.timeout(duration, value)
         """
-        return self.env.timeout(steps, value)
+        return self.env.timeout(duration, value)
     
-    def timeoutUntil(self, triggerTime: int, value: Any = None) -> Event:
+    def timeoutUntil(self, triggerTime: float, value: Any = None) -> Event:
         """
-        Returns a SimPy :class:`~simpy.Event` that is triggered at the time step specified by `triggerTime`.
+        Returns a SimPy :class:`~simpy.Event` that is triggered at the time specified by `triggerTime`.
 
         Args:
             triggerTime: When to trigger the :class:`~simpy.Event`

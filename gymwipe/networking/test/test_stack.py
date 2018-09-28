@@ -133,9 +133,10 @@ def simple_mac(simple_phy):
     return s
 
 def test_simple_mac(caplog, simple_mac):
-    #caplog.set_level(logging.DEBUG, logger='gymwipe.networking.construction')
-    caplog.set_level(logging.DEBUG, logger='gymwipe.networking.core')
-    caplog.set_level(logging.DEBUG, logger='gymwipe.networking.stack')
+    caplog.set_level(logging.DEBUG, logger='gymwipe.simtools')
+    #caplog.set_level(logging.INFO, logger='gymwipe.networking.construction')
+    #caplog.set_level(logging.DEBUG, logger='gymwipe.networking.core')
+    #caplog.set_level(logging.DEBUG, logger='gymwipe.networking.stack')
 
     s = simple_mac
 

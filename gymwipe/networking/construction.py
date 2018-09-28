@@ -1,12 +1,15 @@
 """
 Contains classes for building network stack representations.
 """
-import logging, inspect
+import inspect
+import logging
 from collections import deque
-from typing import Callable, Any, Union, Tuple
 from functools import wraps
+from typing import Any, Callable, Tuple, Union
+
 from simpy.events import Event
-from gymwipe.simtools import SimMan, SimTimePrepender, ensureType
+
+from gymwipe.simtools import Notifier, SimMan, SimTimePrepender, ensureType
 
 logger = SimTimePrepender(logging.getLogger(__name__))
 
@@ -20,8 +23,11 @@ class Port:
     def __init__(self, name: str = None, buffered: bool = True):
         self._name = name
         self._onSendCallables = set()
-        self._sendEvent = None
-    
+
+        # Notifiers
+        self.nReceives = Notifier(self, 'Receives')
+        """Notifier: A notifier that is triggered when :meth:`send` is called, providing the value passed to :meth:`send`"""
+
     def __str__(self):
         return "Port('{}')".format(self._name)
 
@@ -29,7 +35,7 @@ class Port:
         """
         Args:
             callback: A callback function that will be called with a message
-                object when send is called on the Port
+                object when :attr:`Port.send` is called
         """
         self._onSendCallables.add(callback)
     
@@ -56,28 +62,8 @@ class Port:
         logger.debug("%s received message %s", self, message)
         for send in self._onSendCallables:
             send(message)
-        self._triggerSendEvent(message)
-    
-    # SimPy events
+        self.nReceives.trigger(message)
 
-    @property
-    def receivesMessage(self) -> Event:
-        """
-        simpy.Event: A SimPy :class:`~simpy.Event` that is triggered
-            when :meth:`send` is called on this :class:`Port`.
-        """
-        logger.debug("sendEvent of %s was requested", self)
-        if self._sendEvent is None or self._sendEvent.triggered:
-            # the current _sendEvent has been processed by SimPy and is outdated now
-            # creating a new one
-            self._sendEvent = Event(SimMan.env)
-        return self._sendEvent
-
-    def _triggerSendEvent(self, message) -> None:
-        if self._sendEvent is not None and not self._sendEvent.triggered:
-            # Only triggering the send event if it was requested and has not been triggered yet.
-            self._sendEvent.succeed(message)
-            logger.debug("sendEvent of %s was triggered (value: %s)", self, message)
 
 class Gate:
     """   
@@ -158,12 +144,12 @@ class Gate:
     # SimPy events for message handling
     
     @property
-    def receivesMessage(self):
+    def nReceives(self):
         """
-        Event: A SimPy :class:`~simpy.Event` that is triggered when
+        simtools.Notifier: A notifier that is triggered when
         the input :class:`Port` receives a message
         """
-        return self.input.receivesMessage
+        return self.input.nReceives
     
 class Module:
     """
@@ -207,18 +193,14 @@ class Module:
 
 class GateListener:
     """
-    A decorator for both generator and non-generator methods.
-    The resulting generator will be registered as a SimPy process
-    that (during simulation) executes the decorated method whenever the input
-    :class:`Port` of the provided :class:`Gate` receives an object.
+    A decorator factory to call methods or process SimPy generators whenever
+    a specified gate receives an object.
     The received object is provided to the decorated method as a parameter.
-    If the decorated method is a generator, it will be executed as a SimPy process.
 
     Note:
-        SimPy process registration is done in the :class:`Module` constructor.
-        Thus, when using :class:`GateListener` for methods that do not belong to
-        a subclass of :class:`Module`, one has to call :code:`SimMan.process(decoratedMethod())`
-        in the subclass constructor.
+        In order to make this work for an object's methods,
+        you have to decorate that object's constructor
+        with `@GateListener.setup`.
 
     Examples:
         A method using this decorator could look like this:
@@ -226,140 +208,87 @@ class GateListener:
         ::
 
             @GateListener("myGate")
-            def myGateListener(self, msg):
-                # this is executed whenever self.gates["myGate"].input.receivesMessage
-                # is triggered and this SimPy process is not running
+            def myGateListener(self, obj):
+                # This SimPy generator is processed whenever
+                # self.gates["myGate"] receives an object and all
+                # previously created instances have been processed.
                 yield SimMan.timeout(1)
-    
-    Todo:
-        * update documentation to reference GateListener.setup
-        * Add an example for the buffered flag
     """
 
-    def __init__(self, gateName: str, validTypes: Union[type, Tuple[type]]=None, buffered=False):
+    def __init__(self, gateName: str, validTypes: Union[type, Tuple[type]]=None, blocking=True, queued=False):
         """
         Args:
             gateName: The index of the module's :class:`Gate` to listen on
             validTypes: If this argument is provided, a :class:`TypeError` will
                 be raised when an object received via the specified :class:`Gate`
                 is not of the :class:`type` / one of the types specified.
-            buffered: Only applies when decorating a generator function.
-                If set to ``True``, the decorated SimPy process is running
-                (due to an object received earlier in the program flow) and the specified :class:`Gate`
-                receives one or more objects, they will be queued and the SimPy process
-                will be executed with queued objects until the queue is empty again.
-                Thus, the buffer flag also enables a decorated SimPy process to process
-                multiple objects that are received at the same simulated time.
+            blocking: Set this to false if you decorate a SimPy generator and
+                want it to be processed for each received object, regardless of whether
+                an instance of the generator is still being processed or not.
+                By default, only one instance of the decorated generator method is run
+                at a time (blocking is ``True``).
+            queued: If you decorate a generator method, `blocking` is ``True`` and
+                you set `queued` to ``True``, an object received while an instance of
+                the generator is being processed will be queued. Sequentially, a new generator
+                will then be processed for every queued object as soon as the current
+                generator is processed.
+                Using `queued`, you can thus react to multiple objects that are received at
+                the same simulated time, while still only having one generator processed at a time.
         """
         self._gateName = gateName
         self._validTypes = validTypes
-        self._buffered = buffered
+        self._blocking = blocking
+        self._queued = queued
     
     def __call__(self, method):
         typecheck = self._validTypes is not None
-        wrapper = None
+        isGenerator = inspect.isgeneratorfunction(method)
+
+        # define the initialization method to be returned
+        def wrapper(instance):
+
+            def callAdapter(obj: Any):
+                # Takes any object, performs a typecheck (if requested),
+                # and calls the decorated method with the given object.
+                if typecheck:
+                    ensureType(obj, self._validTypes, instance)
+                return method(instance, obj)
+
+            receiveNotifier = instance.gates[self._gateName].nReceives
+
+            if isGenerator:
+                receiveNotifier.subscribeProcess(callAdapter, self._blocking, self._queued)
+            else:
+                if self._queued:
+                    logger.warning("GateListener decorator for {}: The 'queued' "
+                                    "flag only effects generator methods. "
+                                    "Did you mean to make the decorated "
+                                    "method a generator?".format(method))
+                receiveNotifier.subscribeCallback(callAdapter)
         
-        if inspect.isgeneratorfunction(method):
-            # The decorated method is a generator (yielding SimPy events).
-            # We will return a generator method (declared below).
+        # Set the docstring accordingly
 
-            def processWrapper(instance):
-                """
-                A generator which is decorated with the
-                :class:`~gymwipe.networking.construction.GateListener` decorator,
-                running it as a SimPy process when the module's `{}`
-                :class:`~gymwipe.networking.construction.Gate` receives an object.
-                """
-
-                gate = instance.gates[self._gateName]
-
-                if self._buffered:
-                    # buffering is enabled
-                    
-                    buffer = deque()
-
-                    def bufferFiller(obj: Any):
-                        if typecheck:
-                            ensureType(obj, self._validTypes, instance)
-                        buffer.append(obj)
-                        logger.debug("{}: Buffered GateListener on Gate '{}': Received '{}', queued. "
-                                        "Buffer usage: {:d}".format(instance, self._gateName, obj, len(buffer)))
-                
-                    # register callback function at the gate's input port
-                    gate.input.addCallback(bufferFiller)
-
-                    while True:
-                        logger.debug("{}: Buffered GateListener on Gate '{}': Idling.".format(instance, self._gateName))
-                        yield gate.receivesMessage
-                        while len(buffer) > 0:
-                            obj = buffer.popleft()
-                            logger.debug("{}: Buffered GateListener on Gate '{}': Processing '{}'. "
-                                            "Buffer usage: {:d}".format(instance, self._gateName, obj, len(buffer)))
-                            yield SimMan.process(method(instance, obj))
-                else:
-                    # buffering is disabled
-                    while True:
-                        logger.debug("{}: GateListener on Gate '{}': Idling.".format(instance, self._gateName))
-                        obj = yield gate.receivesMessage
-                        logger.debug("{}: GateListener on Gate '{}': Received '{}', "
-                                        "processing...".format(instance, self._gateName, obj))
-                        if typecheck:
-                            ensureType(obj, self._validTypes, instance)
-                        yield SimMan.process(method(instance, obj))
-
-            # Set the registerAsProcess flag.
-            # This will make the setup decorator add it as a SimPy process.
-            processWrapper.makeSimPyProcess = True
-            
-            wrapper = processWrapper
-        
+        if isGenerator:
+            wrapper.__doc__ = """
+            A SimPy generator which is decorated with the
+            :class:`~gymwipe.networking.construction.GateListener` decorator,
+            processing it when the module's `{}`
+            :class:`~gymwipe.networking.construction.Gate` receives an object.
+            """
         else:
-            # The decorated method is not a generator.
-            # We will directly register it as a callback at the input port.
+            wrapper.__doc__ = """
+            A method which is decorated with the
+            :class:`~gymwipe.networking.construction.GateListener` decorator,
+            invoking it when the module's `{}` :class:`~gymwipe.networking.construction.Gate`
+            receives an object.
+            """
 
-            if self._buffered:
-                logger.warn("{}: The 'buffered' flag only "
-                            "effects generator functions. Did you mean to make the decorated "
-                            "method a generator?".format(method))
-
-            def methodWrapper(instance):
-                """
-                A method which is decorated with the
-                :class:`~gymwipe.networking.construction.GateListener` decorator,
-                invoking it when the module's `{}` :class:`~gymwipe.networking.construction.Gate`
-                receives an object.
-                """
-
-                # Making sure callback registration is done only once
-                # per decorated method and instance.
-                if (method, instance) in methodWrapper.executedFor:
-                    logger.info("{}: GateListener on Gate '{}': Duplicate method call of {} of {}, ignored."
-                                "Methods decorated with GateListener do not have to be invoked manually. "
-                                "@GateListener.setup does this for you. "
-                                .format(instance, self._gateName, method, instance))
-                else:
-                    def messageAdapter(obj: Any):
-                        # Takes any object, performs a typecheck (if requested),
-                        # and calls the decorated method with the given object.
-                        logger.debug("{}: GateListener on Gate '{}': Received '{}', "
-                                        "calling decorated method.".format(instance, self._gateName, obj))
-                        if typecheck:
-                            ensureType(obj, self._validTypes, instance)
-                        method(instance, obj)
-                    
-                    instance.gates[self._gateName].input.addCallback(messageAdapter)
-
-                    methodWrapper.executedFor.add((method, instance))
-            
-            methodWrapper.executedFor = set()
-            
-            # Set the callAtConstruction flag.
-            # This will make the setup generator invoke it.
-            methodWrapper.callAtConstruction = True
-
-            wrapper = methodWrapper
-        
         wrapper.__doc__ = wrapper.__doc__.format(self._gateName)
+
+        # Set the callAtConstruction flag.
+        # This will make the setup generator invoke the method.
+        wrapper.callAtConstruction = True
+
         return wrapper
 
     @staticmethod
@@ -367,19 +296,14 @@ class GateListener:
         """
         A decorator to be used for the constructor of any :class:`Module` sublass
         that makes use of the :class:`GateListener` decorator.
-        When applied, it will register decorated generator functions as SimPy processes
-        and execute the setup code for non-generator functions.
         """
 
         @wraps(function)
         def wrapper(self, *args, **kwargs):
             retVal = function(self, *args, **kwargs) # keep return value (just in case)
 
-            # Register SimPy processes (those methods with makeSimPyProcess set to true)
-            # and invoke methods with the callAtConstruction flag.
+            # Invoke methods with the callAtConstruction flag set to True
             for method in [getattr(self, a) for a in dir(self) if not a.startswith("__")]:
-                if getattr(method, "makeSimPyProcess", False):
-                    SimMan.process(method())
                 if getattr(method, "callAtConstruction", False):
                     method()
             

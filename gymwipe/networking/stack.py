@@ -61,7 +61,7 @@ class SimplePhy(StackLayer):
     
     RECV_THRESHOLD = -80 # dBm (https://www.metageek.com/training/resources/wifi-signal-strength-basics.html)
     
-    @GateListener("mac", Signal, buffered=True)
+    @GateListener("mac", Signal, queued=True)
     def macGateListener(self, cmd):
         p = cmd.properties
 
@@ -197,7 +197,7 @@ class SimpleMac(StackLayer):
         addr[5] = cls._macCounter
         return bytes(addr)
     
-    @GateListener("phy", Packet)
+    @GateListener("phy", Packet, queued=True)
     def phyGateListener(self, packet):
         header = packet.header
         if not isinstance(header, SimpleMacHeader):
