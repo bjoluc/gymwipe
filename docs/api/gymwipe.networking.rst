@@ -9,6 +9,7 @@ Submodules
    gymwipe.networking.construction
    gymwipe.networking.core
    gymwipe.networking.messages
+   gymwipe.networking.physical
    gymwipe.networking.stack
 
 Module contents
