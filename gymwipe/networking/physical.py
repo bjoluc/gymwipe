@@ -84,16 +84,25 @@ class Transmission:
 
 class AttenuationModel(ABC):
     """
-    Todo:
-        * Documentation
-        * Ways to retrieve values for time intervals
+    An :class:`AttenuationModel` calculates the attenuation (measured in db)
+    of any signal sent from one network device to another.
+    It runs a SimPy process and subscribes to the positionChanged events
+    of the :class:`NetworkDevice` instances it belongs to.
+    When the attenuation value changes, the :attr:`attenuationChanged` event succeeds.
     """
 
+    def __init__(self, deviceA: NetworkDevice, deviceB: NetworkDevice):
+        self.devices = (deviceA, deviceB)
+        self._attenuationChangedEvent = SimMan.event()
+        SimMan.process(self._process)
+
+        # TODO subscribe to events - how to achieve this -> Own PubSub mechanism? SimPy PubSub integration?
+
     @abstractmethod
-    def getSample(self, a: Position, b: Position, time: int) -> float:
+    def getAttenuation(self) -> float:
         """
         Returns the attenuation of any signal sent from :class:`Position` `a`
-        to :class:`Position` `b` at the simulated time specified by `time`.
+        to :class:`Position` `b` at the currently simulated time.
 
         Args:
             a: Position a
@@ -104,19 +113,20 @@ class AttenuationModel(ABC):
             The attenuation between a and b, measured in db
         """
     
-    @abstractmethod
-    def getIntervalsAboveThreshold(self, a: Position, b: Position, fromTime: float, toTime: float, threshold: float) -> List[Tuple[float, float]]:
-        """
-        Returns a chronologically sorted list of (from, to) tuples, where [from, to] is a
-        maximum-length time interval in which the model's attenuation values constantly outrun `threshold`.
+    #@abstractmethod
+    def _process(self):
+        pass
 
-        Args:
-            a: Position a
-            b: Position b
-            fromTime: The first moment in simulated time to be considered
-            toTime: The last moment in simulated time to be considered
-            threshold: The attenuation threshold (measured in db)
+    #@property
+    def attenuationChanged(self):
         """
+        Event: A SimPy event that succeeds when the attenuation value changes.
+        The event's value is the new attenuation value.
+        """
+        if self._attenuationChangedEvent.processed:
+            self._attenuationChangedEvent = SimMan.event()
+        return self._attenuationChangedEvent
+    
 
 class JoinedAttenuation(AttenuationModel):
     """
@@ -231,3 +241,30 @@ class Channel:
         Its value is the :class:`Transmission` object representing the transmission.
         """
         return self._transmissionStartedEvent
+
+
+class AttenuationModelFactory():
+    """
+    A factory for the instantiation of JoinedAttenuationModel instances.
+    It is instantiated providing the AttenuationModel subclasses that will be used.
+    """
+
+    def __init__(self, *args):
+        self.modelClasses = args
+        self.instances = {}
+    
+    def getInstance(self, deviceA: NetworkDevice, deviceB: NetworkDevice):
+        if deviceB > deviceA:
+            deviceA, deviceB = deviceB, deviceA
+            # sorting references in order to create unique dictionary entries for every pair of devices
+        key = (deviceA, deviceB)
+        if key in self.instances:
+            return self.instances.get(key)
+        else:
+            # initializing new instance
+            if len(self.modelClasses) == 1:
+                instance = self.modelClasses[0]()
+            else:
+                instance = None#JoinedAttenuationModel(*self.modelClasses)
+            self.instances[key] = instance
+            return instance
