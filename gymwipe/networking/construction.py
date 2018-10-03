@@ -26,7 +26,10 @@ class Port:
 
         # Notifiers
         self.nReceives = Notifier(self, 'Receives')
-        """Notifier: A notifier that is triggered when :meth:`send` is called, providing the value passed to :meth:`send`"""
+        """
+        :class:`~gymwipe.simtools.Notifier`: A notifier that is triggered when
+        :meth:`send` is called, providing the value passed to :meth:`send`
+        """
 
     def __str__(self):
         return "Port('{}')".format(self._name)
@@ -34,8 +37,8 @@ class Port:
     def addCallback(self, callback: Callable[[Any], None]) -> None:
         """
         Args:
-            callback: A callback function that will be called with a message
-                object when :attr:`Port.send` is called
+            callback: A callback function that will be invoked whenever
+                :meth:`send` is called, providing the object passed to :meth:`send`
         """
         self._onSendCallables.add(callback)
     
@@ -52,17 +55,17 @@ class Port:
         """
         self.addCallback(port.send)
 
-    # sending messages
+    # sending objects
 
-    def send(self, message: Any):
+    def send(self, object: Any):
         """
-        Sends the object provided as `message` to all connected ports
+        Sends the object provided to all connected ports
         and registered callback functions (if any).
         """
-        logger.debug("%s received message %s", self, message)
+        logger.debug("%s received message %s", self, object)
         for send in self._onSendCallables:
-            send(message)
-        self.nReceives.trigger(message)
+            send(object)
+        self.nReceives.trigger(object)
 
 
 class Gate:
@@ -75,7 +78,8 @@ class Gate:
     def __init__(self, name: str, inputCallback: Callable[[Any], None] = None):
         """
         Args:
-            inputCallback: A callback function that will be used when a message is sent to the input Port.
+            inputCallback: A callback function that will be invoked when an object
+                is sent to the :attr:`input` Port.
         """
         
         self._name = name
@@ -141,13 +145,13 @@ class Gate:
         self.connectOutputTo(gate.output)
         gate.connectInputTo(self.input)
     
-    # SimPy events for message handling
+    # SimPy events for object handling
     
     @property
     def nReceives(self):
         """
-        simtools.Notifier: A notifier that is triggered when
-        the input :class:`Port` receives a message
+        :class:`~gymwipe.simtools.Notifier`: A notifier that is triggered
+        when the input :class:`Port` receives an object
         """
         return self.input.nReceives
     

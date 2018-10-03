@@ -197,17 +197,17 @@ class Notifier:
     def subscribeProcess(self, process: Generator[Event, Any, None], blocking=True, queued=False):
         """
         Makes the SimPy environment process the passed generator function when
-        :attr:`trigger` is called. The value passed to :attr:`trigger` will also
+        :meth:`trigger` is called. The value passed to :meth:`trigger` will also
         be passed to the generator function.
 
         Args:
             blocking: If set to ``False``, only one instance of the generator
-                will be processed at a time. Thus, if :attr:`trigger` is called
+                will be processed at a time. Thus, if :meth:`trigger` is called
                 while the SimPy process started by an earlier call has not terminated,
                 no action is taken.
-            queued: If blocking is ``True`` and queued is ``False``, a :attr:`trigger` call
+            queued: If blocking is ``True`` and queued is ``False``, a :meth:`trigger` call
                 while an instance of the generator is still active will not result in a new generator instance.
-                If queued is set to ``True`` instead, the values of those :attr:`trigger` calls
+                If queued is set to ``True`` instead, the values of those :meth:`trigger` calls
                 will be queued and as long as the queue is not empty, a new generator instance
                 with a queued value will be created every time a previous instance has terminated.
         """
@@ -257,7 +257,7 @@ class Notifier:
     def trigger(self, value: Any) -> None:
         """
         Triggers the :class:`Notifier`.
-        This runs the callbacks, makes the :attr:`Notifier.event` succeed,
+        This runs the callbacks, makes the :attr:`event` succeed,
         and schedules the SimPy generators for processing.
         """
         logger.debug("{}: Triggered with value {}".format(self, value))
