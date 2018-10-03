@@ -130,10 +130,9 @@ class MyModule(Module):
     def aListener(self, message):
         self.logs[0].append(message)
     
-    @GateListener("a", queued=True)
-    def aListenerBuffered(self, message):
+    @GateListener("a", queued=True) # queued should have no effect here
+    def aListenerQueued(self, message):
         self.logs[1].append(message)
-        yield SimMan.timeout(10)
 
     @GateListener("b", queued=False)
     def bListener(self, message):
@@ -141,14 +140,14 @@ class MyModule(Module):
         yield SimMan.timeout(10)
     
     @GateListener("b", queued=True)
-    def bListenerBuffered(self, message):
+    def bListenerQueued(self, message):
         self.logs[3].append(message)
         yield SimMan.timeout(10)
 
 def test_gate_listener_method(caplog):
     caplog.set_level(logging.DEBUG, logger='gymwipe.networking.construction')
     # Create two identical modules in order to check for side effects
-    # due to GateListener objects used twice
+    # due to GateListener objects being used twice
     modules = MyModule("Test1"), MyModule("Test2")
 
     for i in range(3):
@@ -156,7 +155,7 @@ def test_gate_listener_method(caplog):
             # pass a message to gate a
             module.gates["a"].input.send("msg" + str(i))
             for j in range(1):
-                # All messages passed yet should be received (and thus logged),
+                # All messages passed yet should have been received (and thus logged),
                 # regardless of the queued flag.
                 assert module.logs[j] == ["msg" + str(n) for n in range(i+1)]
 

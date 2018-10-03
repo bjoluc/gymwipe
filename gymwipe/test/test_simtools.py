@@ -15,30 +15,24 @@ def test_notifier_callback(caplog, mocker):
     caplog.set_level(logging.DEBUG, logger='gymwipe.simtools')
 
     n = Notifier('myNotifier')
-    value1 = "test1"
-    value2 = "test2"
+    value = "test1"
 
-    # testing callback subscription
-    callbackMocks = getMockList(mocker, 3)
+    # testing callback subscription and invocation
+    callHistory = []
+    callbackList = []
+    for i in range(3, 0, -1):
+        def callback(value, i=i): # force early binding for the i values
+            callHistory.append((i, value))
+            print(i)
+        callbackList.append(callback)
 
-    for mock in callbackMocks:
-        n.subscribeCallback(mock)
+    for priority, c in enumerate(callbackList):
+        n.subscribeCallback(c, priority)
 
-    n.trigger(value1)
+    n.trigger(value)
 
-    for mock in callbackMocks:
-        mock.assert_called_with(value1)
+    assert callHistory == [(i, value) for i in range(1, 4)]
     
-    # testing callback unsubscription
-    for mock in callbackMocks:
-        n.unsubscribeCallback(mock)
-    
-    n.trigger(value2)
-
-    for mock in callbackMocks:
-        # there should have been no call with value2
-        mock.assert_called_with(value1)
-
 def makeLoggingProcess(timeoutLength: int):
     """
     Returns a generator function that logs the value it is

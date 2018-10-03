@@ -25,7 +25,7 @@ class Port:
         self._onSendCallables = set()
 
         # Notifiers
-        self.nReceives = Notifier(self, 'Receives')
+        self.nReceives = Notifier('Receives', self)
         """
         :class:`~gymwipe.simtools.Notifier`: A notifier that is triggered when
         :meth:`send` is called, providing the value passed to :meth:`send`
@@ -249,7 +249,7 @@ class GateListener:
         isGenerator = inspect.isgeneratorfunction(method)
 
         # define the initialization method to be returned
-        def wrapper(instance):
+        def initializer(instance):
 
             def callAdapter(obj: Any):
                 # Takes any object, performs a typecheck (if requested),
@@ -273,27 +273,27 @@ class GateListener:
         # Set the docstring accordingly
 
         if isGenerator:
-            wrapper.__doc__ = """
+            initializer.__doc__ = """
             A SimPy generator which is decorated with the
             :class:`~gymwipe.networking.construction.GateListener` decorator,
             processing it when the module's `{}`
             :class:`~gymwipe.networking.construction.Gate` receives an object.
             """
         else:
-            wrapper.__doc__ = """
+            initializer.__doc__ = """
             A method which is decorated with the
             :class:`~gymwipe.networking.construction.GateListener` decorator,
             invoking it when the module's `{}` :class:`~gymwipe.networking.construction.Gate`
             receives an object.
             """
 
-        wrapper.__doc__ = wrapper.__doc__.format(self._gateName)
+        initializer.__doc__ = initializer.__doc__.format(self._gateName)
 
         # Set the callAtConstruction flag.
         # This will make the setup generator invoke the method.
-        wrapper.callAtConstruction = True
+        initializer.callAtConstruction = True
 
-        return wrapper
+        return initializer
 
     @staticmethod
     def setup(function):

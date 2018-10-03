@@ -1,8 +1,9 @@
 """
 Module for simulation tools
 """
+import itertools
 import logging
-from collections import deque
+from collections import defaultdict, deque
 from typing import Any, Callable, Generator, Tuple, Union
 
 from simpy import Environment
@@ -169,33 +170,41 @@ class Notifier:
     triggered by yielding its :attr:`event`.
     """
 
-    def __init__(self, owner: Any = None, name: str = ""):
+    def __init__(self, name: str = "", owner: Any = None):
         """
         Args:
+            name: A string to identify the :class:`Notifier` instance (e.g. among all other
+                :class:`Notifier` instances of the owner object)
             owner: The object that provides the :class:`Notifier` instance
-            name: A string to identify the :class:`Notifier` instance among all other :class:`Notifier` instances of the owner object.
         """
-        self.owner = owner
         self._name = name
+        self.owner = owner
+
         self._event = None
-        self._callbacks = set()
+        self._callbacks = defaultdict(list) # a priority -> List[callable] defaultdict
+        self._sortedCallbacks = [] # list of callbacks sorted by their priority
         self._processExecutors = {}
     
-    def subscribeCallback(self, callback: Callable[[Any], None]) -> None:
+    def subscribeCallback(self, callback: Callable[[Any], None], priority: int = 0) -> None:
         """
         Adds the passed callable to the set of callback functions.
         Thus, when the notifier gets triggered, the callable will be invoked passing
         the value that the notifier was triggered with.
-        """
-        self._callbacks.add(callback)
 
-    def unsubscribeCallback(self, callback: Callable[[Any], None]) -> None:
+        Args:
+            callback: The callable to be subscribed
+            priority: If set, the callable is guaranteed to be invoked only after every
+                callback with a higher priority value has been executed.
+                Callbacks added without a priority value are assumed to have priority `0`.
         """
-        If the passed callable is contained in the set of callback functions,
-        this method will remove it.
-        """
-        self._callbacks.remove(callback)
-    
+        callbacks = self._callbacks
+        priorityCallbacks = callbacks[priority]
+        priorityCallbacks.append(callback)
+        if len(priorityCallbacks) == 1:
+            # A new priority was added, we have to update the callback iterable.
+            sortedPriorities = sorted(callbacks.keys(), reverse=True)
+            self._sortedCallbacks = list(itertools.chain(*[callbacks[p] for p in sortedPriorities]))
+
     def subscribeProcess(self, process: Generator[Event, Any, None], blocking=True, queued=False):
         """
         Makes the SimPy environment process the passed generator function when
@@ -263,7 +272,7 @@ class Notifier:
         and schedules the SimPy generators for processing.
         """
         logger.debug("{}: Triggered with value {}".format(self, value))
-        for c in self._callbacks:
+        for c in self._sortedCallbacks:
             c(value)
         for executor in self._processExecutors.values():
             executor(value)
