@@ -25,7 +25,7 @@ class Port:
         self._onSendCallables = set()
 
         # Notifiers
-        self.nReceives = Notifier('Receives', self)
+        self.nReceives: Notifier = Notifier('Receives', self)
         """
         :class:`~gymwipe.simtools.Notifier`: A notifier that is triggered when
         :meth:`send` is called, providing the value passed to :meth:`send`
@@ -46,9 +46,9 @@ class Port:
 
     def connectTo(self, port: 'Port') -> None:
         """
-        Connects this :class:`Port` to the provided :class:`Port`.
-        Thus, if :meth:`send` is called on this :class:`Port`, it will
-        also be called on the provided :class:`Port`.
+        Connects this :class:`Port` to the provided :class:`Port`. Thus, if
+        :meth:`send` is called on this :class:`Port`, it will also be called on
+        the provided :class:`Port`.
 
         Args:
             port: The :class:`Port` for the connection to be established to
@@ -59,8 +59,8 @@ class Port:
 
     def send(self, object: Any):
         """
-        Sends the object provided to all connected ports
-        and registered callback functions (if any).
+        Sends the object provided to all connected ports and registered callback
+        functions (if any).
         """
         logger.debug("%s received message %s", self, object)
         for send in self._onSendCallables:
@@ -101,7 +101,8 @@ class Gate:
             port: The port to connect this Gate's output to
         """
         if not isinstance(port, Port):
-            raise TypeError("Expected Port, got {}. Use .input or .output to access a Gate's ports.".format(type(port)))
+            raise TypeError("Expected Port, got {}. Use .input or .output to "
+                            "access a Gate's ports.".format(type(port)))
         self.output.connectTo(port)
     
     def connectInputTo(self, port: Port) -> None:
@@ -150,8 +151,8 @@ class Gate:
     @property
     def nReceives(self):
         """
-        :class:`~gymwipe.simtools.Notifier`: A notifier that is triggered
-        when the input :class:`Port` receives an object
+        :class:`~gymwipe.simtools.Notifier`: A notifier that is triggered when
+        the input :class:`Port` receives an object
         """
         return self.input.nReceives
     
@@ -172,12 +173,14 @@ class Module:
     
     def _addGate(self, name: str, gate: Gate = None) -> None:
         """
-        Adds a new :class:`Gate` to the *gates* dictionary, indexed by the name passed.
+        Adds a new :class:`Gate` to the :attr:`gates` dictionary, indexed by the name
+        passed.
         
         Args:
             name: The name for the :class:`Gate` to be accessed by
-            gate: The :class:`Gate` object to be added. If not provided, a new :class:`Gate` will be
-                instantiated using a combination of the Module's name property and `name` as its name.
+            gate: The :class:`Gate` object to be added. If not provided, a new
+                :class:`Gate` will be instantiated using a combination of the
+                Module's name property and `name` as its name.
         """
         if name in self.gates:
             raise ValueError("A gate indexed by '{}' already exists.".format(name))
@@ -197,14 +200,13 @@ class Module:
 
 class GateListener:
     """
-    A decorator factory to call methods or process SimPy generators whenever
-    a specified gate receives an object.
-    The received object is provided to the decorated method as a parameter.
+    A decorator factory to call methods or process SimPy generators whenever a
+    specified gate receives an object. The received object is provided to the
+    decorated method as a parameter.
 
     Note:
-        In order to make this work for an object's methods,
-        you have to decorate that object's constructor
-        with `@GateListener.setup`.
+        In order to make this work for an object's methods, you have to decorate
+        that object's constructor with `@GateListener.setup`.
 
     Examples:
         A method using this decorator could look like this:
@@ -224,20 +226,21 @@ class GateListener:
         Args:
             gateName: The index of the module's :class:`Gate` to listen on
             validTypes: If this argument is provided, a :class:`TypeError` will
-                be raised when an object received via the specified :class:`Gate`
-                is not of the :class:`type` / one of the types specified.
+                be raised when an object received via the specified :class:`Gate` is
+                not of the :class:`type` / one of the types specified.
             blocking: Set this to false if you decorate a SimPy generator and
-                want it to be processed for each received object, regardless of whether
-                an instance of the generator is still being processed or not.
-                By default, only one instance of the decorated generator method is run
-                at a time (blocking is ``True``).
-            queued: If you decorate a generator method, `blocking` is ``True`` and
-                you set `queued` to ``True``, an object received while an instance of
-                the generator is being processed will be queued. Sequentially, a new generator
-                will then be processed for every queued object as soon as the current
-                generator is processed.
-                Using `queued`, you can thus react to multiple objects that are received at
-                the same simulated time, while still only having one generator processed at a time.
+                want it to be processed for each received object, regardless of
+                whether an instance of the generator is still being processed or
+                not. By default, only one instance of the decorated generator method
+                is run at a time (blocking is ``True``).
+            queued: If you decorate a generator method, `blocking` is ``True``
+                and you set `queued` to ``True``, an object received while an
+                instance of the generator is being processed will be queued.
+                Sequentially, a new generator will then be processed for every
+                queued object as soon as the current generator is processed.
+                Using `queued`, you can thus react to multiple objects that are
+                received at the same simulated time, while still only having one
+                generator processed at a time.
         """
         self._gateName = gateName
         self._validTypes = validTypes
@@ -252,8 +255,8 @@ class GateListener:
         def initializer(instance):
 
             def callAdapter(obj: Any):
-                # Takes any object, performs a typecheck (if requested),
-                # and calls the decorated method with the given object.
+                # Takes any object, performs a typecheck (if requested), and
+                # calls the decorated method with the given object.
                 if typecheck:
                     ensureType(obj, self._validTypes, instance)
                 return method(instance, obj)

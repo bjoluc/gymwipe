@@ -19,9 +19,10 @@ from gymwipe.simtools import SimMan
 class Transmittable:
     """
     The :class:`Transmittable` class provides a :meth:`byteSize` method allowing
-    objects of it to be nested in packets and sent via a channel.
-    Unless for representing simple objects such as strings, it should be subclassed and both the
-    :meth:`byteSize` and the :meth:`__str__` method should be overridden.
+    objects of it to be nested in packets and sent via a channel. Unless for
+    representing simple objects such as strings, it should be subclassed and
+    both the :meth:`byteSize` and the :meth:`__str__` method should be
+    overridden.
 
     Attributes:
         obj(Any): The object that has been provided to the constructor
@@ -66,17 +67,19 @@ class Transmittable:
 
 class Packet(Transmittable):
     """
-    The Packet class represents packets.
-    A Packet consists of a header and a payload.
-    Packets can be nested by providing them as payloads to the packet constructor.
+    The Packet class represents packets. A Packet consists of a header and a
+    payload. Packets can be nested by providing them as payloads to the packet
+    constructor.
 
     Attributes:
-        header(Transmittable): The object representing the Packet's header
-        payload(Transmittable): The object representing the Packet's payload. Might be another :class:`Packet`.
-        trailer(Transmittable): The object representing the Packet's trailer (might be ``None``)
+        header(Transmittable): The object representing the Packet's
+            header
+        payload(Transmittable): The object representing the Packet's payload.
+            Might be another :class:`Packet`.
+        trailer(Transmittable): The object representing the Packet's trailer
+            (defaults to ``None``)
 
-    .. force documenting the __str__ function
-    .. automethod:: __str__
+    .. force documenting the __str__ function .. automethod:: __str__
     """
 
     def __init__(self, header: Transmittable, payload: Transmittable, trailer: Transmittable = None):
@@ -86,8 +89,8 @@ class Packet(Transmittable):
 
     def __str__(self):
         """
-        Returns the comma-seperated list of ``str(header)``, ``str(payload)`` and
-        ``str(trailer)`` (if provided).
+        Returns the comma-seperated list of ``str(header)``, ``str(payload)``,
+        and ``str(trailer)`` (if provided).
         """
         return ','.join([str(c) for c in [self.header, self.payload, self.trailer] if not c is None])
     
@@ -123,11 +126,11 @@ class SimpleMacHeader(Transmittable):
 
 class SimpleTransportHeader(Transmittable):
     """
-    Since IP is not implemented in gymwipe, there is a need for some
-    interim way to specify source and destination addresses in packets that
-    are passed to the :class:`SimpleMAC` layer.
-    Therefore, a :class:`SimpleTransportHeader` holds a source and a destination MAC address.
-    The destination address will be used by the :class:`SimpleMAC` layer.
+    Since IP is not implemented in gymwipe, there is a need for some interim way
+    to specify source and destination addresses in packets that are passed to
+    the :class:`SimpleMAC` layer. Therefore, a :class:`SimpleTransportHeader`
+    holds a source and a destination MAC address. The destination address will
+    be used by the :class:`SimpleMAC` layer.
 
     Attributes:
         sourceMAC(bytes): The 6-byte-long source MAC address
@@ -152,13 +155,15 @@ class SimpleTransportHeader(Transmittable):
 class Signal:
     """
     A class used for the exchange of arbitrary signals between components.
-    Signals can be used to simulate both asynchronous and synchronous function calls.
+    Signals can be used to simulate both asynchronous and synchronous function
+    calls.
 
     Attributes:
         type(Enum): An enumeration object that defines the signal type
-        properties(Dict[str, Any]): A dictionary containing additional signal properties
-        processed(Event): A SimPy event that is triggered when setProcessed is called.
-            This is useful for simulating synchronous function calls.
+        properties(Dict[str, Any]): A dictionary containing additional signal
+            properties
+        processed(Event): A SimPy event that is triggered when setProcessed is
+            called. This is useful for simulating synchronous function calls.
     """
 
     def __init__(self, type: Enum, properties: Dict[str, Any] = None):
@@ -171,11 +176,12 @@ class Signal:
         Triggers the :attr:`processed` event.
 
         Args:
-            returnValue: If specified, will be used as the `value` of the :attr:`processed` event.
+            returnValue: If specified, will be used as the `value` of the
+                :attr:`processed` event.
 
         Examples:
-            If `returnValue` is specified, SimPy processes can use Signals
-            for simulating synchronous function calls with return values like this:
+            If `returnValue` is specified, SimPy processes can use Signals for
+            simulating synchronous function calls with return values like this:
 
             ::
 

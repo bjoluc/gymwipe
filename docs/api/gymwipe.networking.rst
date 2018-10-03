@@ -6,6 +6,7 @@ Submodules
 
 .. toctree::
 
+   gymwipe.networking.attenuation_models
    gymwipe.networking.construction
    gymwipe.networking.core
    gymwipe.networking.messages
