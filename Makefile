@@ -7,6 +7,9 @@ init:
 dev:
 	pipenv install --dev
 
+update:
+	pipenv update
+
 test:
 	pipenv run py.test -v --exitfirst gymwipe
 
@@ -20,4 +23,4 @@ requirements:
 	pipenv run pipenv_to_requirements
 	cat requirements.txt | grep -v "#" >> requirements-dev.txt
 
-.PHONY: init dev test docs requirements
+.PHONY: init dev update test docs requirements
