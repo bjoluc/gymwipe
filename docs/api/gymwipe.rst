@@ -14,7 +14,6 @@ Submodules
 
 .. toctree::
 
-   gymwipe.gymwipe
    gymwipe.simtools
 
 Module contents
