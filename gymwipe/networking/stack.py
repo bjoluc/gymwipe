@@ -17,20 +17,20 @@ class StackLayer(Module):
 
     def __init__(self, name: str, device: NetworkDevice):
         super(StackLayer, self).__init__(name)
-        self._device = device
+        self.device = device
     
     def __str__(self):
-        return "{}.{}('{}')".format(self._device, self.__class__.__name__, self._name)
+        return "{}.{}('{}')".format(self.device, self.__class__.__name__, self._name)
 
 class SimplePhy(StackLayer):
     """
-    A very basic physical layer implementation, mainly for demonstration purposes.
-    It provides a single gate called `mac` to be connected to the mac layer.
-    Slotted time is used, with the size of a time slot being defined by
+    A very basic physical layer implementation, mainly for demonstration
+    purposes. It provides a single gate called `mac` to be connected to the mac
+    layer. Slotted time is used, with the size of a time slot being defined by
     :attr:`~gymwipe.simtools.SimulationManager.timeSlotSize`.
     
-    During simulation the the channel is sensed for transmissions and
-    any successfully received packet is sent out via the `mac` gate.
+    During simulation the the channel is sensed for transmissions and any
+    successfully received packet is sent out via the `mac` gate.
 
     The `mac` gate accepts :class:`~gymwipe.networking.messages.Signal` objects
     of the following types:
@@ -41,25 +41,26 @@ class SimplePhy(StackLayer):
 
         :class:`~gymwipe.networking.messages.Signal` properties:
 
-        :packet: The :class:`~gymwipe.networking.messages.Packet` object representing the packet to be sent
+        :packet: The :class:`~gymwipe.networking.messages.Packet` object
+            representing the packet to be sent
         :power: The transmission power [dBm]
         :bitrate: The bitrate of the transmission [bits/time step]
     
     Todo:
         * Interrupt receiver while sending?
-        * Sample attenuation while receiving (find something more performant than brute-force sampling)
+        * React to attenuation changes, calculate SNR values, concern MCS
     """
+
+    RECV_THRESHOLD = -80 # dBm (https://www.metageek.com/training/resources/wifi-signal-strength-basics.html)
 
     @GateListener.setup
     def __init__(self, name: str, device: NetworkDevice, channel: Channel):
         super(SimplePhy, self).__init__(name, device)
-        self._channel = channel
+        self.channel: Channel = channel
         self._addGate("mac")
         self._currentTransmission = None
-        self._receiverProcess = SimMan.process(self.receiver())
-        logger.debug("Initialized %s", self)
-    
-    RECV_THRESHOLD = -80 # dBm (https://www.metageek.com/training/resources/wifi-signal-strength-basics.html)
+        SimMan.process(self.receiver())
+        logger.debug("%s: Initialization completed", self)
     
     @GateListener("mac", Signal, queued=True)
     def macGateListener(self, cmd):
@@ -70,7 +71,7 @@ class SimplePhy(StackLayer):
             # wait for the beginning of the next time slot
             yield SimMan.nextTimeSlot()
             # simulate sending
-            t = self._channel.transmit(self._device, p["power"], p["bitrate"], p["bitrate"], p["packet"])
+            t = self.channel.transmit(self.device, p["power"], p["bitrate"], p["bitrate"], p["packet"])
             self._currentTransmission = t
             # wait for the transmission to finish
             yield t.completes
@@ -80,24 +81,27 @@ class SimplePhy(StackLayer):
     def receiver(self):
         while True:
             # simulate channel sensing & receiving
-            t = yield self._channel.transmissionStarted
+            t = yield self.channel.nNewTransmission.event
             if not t == self._currentTransmission:
                 logger.debug("%s: Sensed a transmission.", self)
                 # wait until the transmission has finished
                 yield t.completes
                 # check for collisions
-                if len(self._channel.getTransmissions(t.startTime, t.stopTime)) > 1:
+                if len(self.channel.getTransmissions(t.startTime, t.stopTime)) > 1:
                     logger.debug("%s: Colliding transmission(s) were detected, transmission could not be received.", self)
                     pass
                 else:
                     # no colliding transmissions, check attenuation
-                    a = self._channel.attenuationModel.getSample(t.sender.position, self._device.position, t.startTime)
+                    a = self.channel.getAttenuationModel(t.sender, self.device).attenuation
                     recvPower = t.power - a
                     if recvPower < self.RECV_THRESHOLD:
-                        logger.debug("%s: Signal strength of %6d dBm is insufficient (RECV_THRESHOLD is %6d dBm), packet could not be received correctly.", self, recvPower, self.RECV_THRESHOLD)
+                        logger.debug("%s: Signal strength of %6d dBm is insufficient "
+                                        "(RECV_THRESHOLD is %6d dBm), packet could not be "
+                                        "received correctly.", self, recvPower, self.RECV_THRESHOLD)
                         pass
                     else:
-                        logger.debug("%s: Packet successfully received (Signal power was %6d dBm)!", self, recvPower)
+                        logger.debug("%s: Packet successfully received (Signal power was %6d dBm)!",
+                                        self, recvPower)
                         packet = t.packet
                         # sending the packet via the mac gate
                         self.gates["mac"].output.send(packet)

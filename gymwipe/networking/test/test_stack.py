@@ -1,12 +1,19 @@
-import pytest, logging
+import logging
+from typing import Iterable, List
+
+import pytest
 from pytest_mock import mocker
-from typing import List, Iterable
-from gymwipe.simtools import SimMan
-from gymwipe.networking.core import Position, NetworkDevice
-from gymwipe.networking.physical import Channel, FSPLAttenuation
+
+from gymwipe.networking.attenuation_models import FSPLAttenuation
 from gymwipe.networking.construction import Gate
-from gymwipe.networking.stack import SimplePhy, SimpleMac, SimpleRrmMac
-from gymwipe.networking.messages import Transmittable, Packet, Signal, StackSignals, SimpleMacHeader, SimpleTransportHeader
+from gymwipe.networking.core import NetworkDevice, Position
+from gymwipe.networking.messages import (Packet, Signal, SimpleMacHeader,
+                                         SimpleTransportHeader, StackSignals,
+                                         Transmittable)
+from gymwipe.networking.physical import AttenuationModelFactory, Channel
+from gymwipe.networking.stack import SimpleMac, SimplePhy, SimpleRrmMac
+from gymwipe.simtools import SimMan
+
 
 class dotdict(dict):
     """dot.notation access to dictionary attributes"""
@@ -15,7 +22,7 @@ class dotdict(dict):
     __delattr__ = dict.__delitem__
 
 class CollectorGate(Gate):
-    """A subclass of Gate that stores received objects in lists"""
+    """A subclass of Gate that stores received and sent objects in lists"""
     def __init__(self, name: str):
         super(CollectorGate, self).__init__(name)
         self.inputHistory = []
@@ -35,11 +42,11 @@ def simple_phy():
     SimMan.initEnvironment()
 
     # create a wireless channel with FSPL attenuation
-    channel = Channel(FSPLAttenuation())
+    channel = Channel(AttenuationModelFactory(FSPLAttenuation))
 
     # create two network devices
-    device1 = NetworkDevice("Device1", Position(0,0))
-    device2 = NetworkDevice("Device2", Position(6,5))
+    device1 = NetworkDevice("Device1", 0, 0)
+    device2 = NetworkDevice("Device2", 6, 5)
 
     # create the SimplePhy network stack layers
     device1Phy = SimplePhy("Phy", device1, channel)
@@ -73,7 +80,7 @@ def test_simple_phy(caplog, mocker, simple_phy):
 
     def sending():
         # the channel should be unused yet
-        assert len(channel.getActiveTransmissions(SimMan.now)) == 0
+        assert len(channel.getActiveTransmissions()) == 0
 
         # setup the message to the physical layer
         cmd = Signal(StackSignals.SEND, {"packet": packet, "power": -20, "bitrate": 16})
@@ -86,7 +93,7 @@ def test_simple_phy(caplog, mocker, simple_phy):
 
         # wait and assert
         yield SimMan.timeout(10)
-        transmissions = channel.getActiveTransmissions(SimMan.now)
+        transmissions = channel.getActiveTransmissions()
         assert len(transmissions) == 1
         t = transmissions[0]
         # check the correctness of the transmission created
@@ -96,7 +103,7 @@ def test_simple_phy(caplog, mocker, simple_phy):
         assert t.bitratePayload == 16
 
         yield SimMan.timeout(100)
-        assert len(channel.getActiveTransmissions(SimMan.now)) == 0
+        assert len(channel.getActiveTransmissions()) == 0
     
     def receiving():
         yield SimMan.timeout(150)
@@ -109,7 +116,7 @@ def test_simple_phy(caplog, mocker, simple_phy):
 @pytest.fixture
 def simple_mac(simple_phy):
     s = simple_phy
-    s.rrm = NetworkDevice("RRM", Position(2,2))
+    s.rrm = NetworkDevice("RRM", 2, 2)
     s.rrmPhy = SimplePhy("RrmPhy", s.rrm, s.channel)
     s.rrmMac = SimpleRrmMac("RrmMac", s.rrm)
     s.device1Mac = SimpleMac("Mac", s.device1, SimpleMac.newMacAddress())
