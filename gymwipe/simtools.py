@@ -8,6 +8,8 @@ from typing import Any, Callable, Generator, Tuple, Union
 from simpy import Environment
 from simpy.events import Event, Process
 
+from gymwipe import ownerPrefix
+
 
 class SimulationManager:
     """
@@ -173,7 +175,7 @@ class Notifier:
             owner: The object that provides the :class:`Notifier` instance
             name: A string to identify the :class:`Notifier` instance among all other :class:`Notifier` instances of the owner object.
         """
-        self._owner = owner
+        self.owner = owner
         self._name = name
         self._event = None
         self._callbacks = set()
@@ -283,7 +285,4 @@ class Notifier:
         return self._name
     
     def __str__(self):
-        ownerString = ""
-        if self._owner is not None:
-            ownerString = str(self._owner) + "."
-        return "{}Notifier('{}')".format(ownerString, self.name)
+        return "{}Notifier('{}')".format(ownerPrefix(self.owner), self.name)
