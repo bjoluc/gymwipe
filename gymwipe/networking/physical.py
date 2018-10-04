@@ -3,7 +3,7 @@ Physical layer related components
 """
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, List, Tuple, Type, TypeVar
+from typing import Any, Dict, List, Tuple, Type, TypeVar
 
 from simpy import Event
 
@@ -260,8 +260,10 @@ class Channel:
     """
 
     def __init__(self, attenuationModelFactory: AttenuationModelFactory):
-        self._attenuationModelFactory = attenuationModelFactory
-        self._transmissions = []
+        self._attenuationModelFactory: AttenuationModelFactory = attenuationModelFactory
+        self._transmissions: List[Transmission] = []
+        self._transmissionInReachNotifiers: Dict[Tuple[NetworkDevice, float], Notifier] = {}
+
         self.nNewTransmission: Notifier = Notifier("New transmission", self)
         """
         :class:`~gymwipe.simtools.Notifier`: A notifier that is triggered when
@@ -297,6 +299,10 @@ class Channel:
         self._transmissions.append((t, t.startTime, t.stopTime))
         logger.debug("Transmission %s added to channel", t)
         self.nNewTransmission.trigger(t)
+        # check which transmissionInReachNotifiers have to be triggered
+        for (receiver, radius), notifier in self._transmissionInReachNotifiers.items():
+            if receiver.position.distanceTo(sender.position) <= radius:
+                notifier.trigger(t)
         return t
     
     def getTransmissions(self, fromTime: int, toTime: int) -> List[Tuple[Transmission, int, int]]:
@@ -326,3 +332,35 @@ class Channel:
         """
         now = SimMan.now
         return [t for (t, a, b) in self._transmissions if a <= now <= b]
+    
+    def getActiveTransmissionsInReach(self, receiver: NetworkDevice, radius: float) -> List[Transmission]:
+        """
+        Returns a list of transmissions that are currently active and whose
+        sender is positioned within the radius specified by `radius` around the
+        receiver.
+        
+        Args:
+            receiver: The :class:`NetworkDevice`, around which the radius is
+                considered
+            radius: The radius around the receiver (in metres)
+        """
+        return [t for t in self.getActiveTransmissions() if t.sender.position.distanceTo(receiver) <= radius]
+    
+    def nNewTransmissionInReach(self, receiver: NetworkDevice, radius: float) -> Notifier:
+        """
+        Returns a notifier that is triggered iff a new :class:`Transmission`
+        starts whose sender is positioned within the radius specified by
+        `radius` around the `receiver`.
+
+        Args:
+            receiver: The :class:`NetworkDevice`, around which the radius is
+                considered
+            radius: The radius around the receiver (in metres)
+        """
+
+        if (receiver, radius) in self._transmissionInReachNotifiers:
+            return self._transmissionInReachNotifiers[receiver, radius]
+        # creating a new notifier otherwise
+        n = Notifier("New Transmission within radius {:d} around {}".format(radius, receiver), self)
+        self._transmissionInReachNotifiers[receiver, radius] = n
+        return n
