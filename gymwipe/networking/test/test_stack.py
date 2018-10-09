@@ -4,9 +4,9 @@ from typing import Iterable, List
 import pytest
 from pytest_mock import mocker
 
+from gymwipe.devices import Device
 from gymwipe.networking.attenuation_models import FSPLAttenuation
 from gymwipe.networking.construction import Gate
-from gymwipe.networking.core import NetworkDevice, Position
 from gymwipe.networking.messages import (Packet, Signal, SimpleMacHeader,
                                          SimpleTransportHeader, StackSignals,
                                          Transmittable)
@@ -45,8 +45,8 @@ def simple_phy():
     channel = Channel(AttenuationModelFactory(FSPLAttenuation))
 
     # create two network devices
-    device1 = NetworkDevice("Device1", 0, 0)
-    device2 = NetworkDevice("Device2", 6, 5)
+    device1 = Device("Device1", 0, 0)
+    device2 = Device("Device2", 6, 5)
 
     # create the SimplePhy network stack layers
     device1Phy = SimplePhy("Phy", device1, channel)
@@ -61,9 +61,10 @@ def simple_phy():
     return setup
 
 def test_simple_phy(caplog, mocker, simple_phy):
-    caplog.set_level(logging.DEBUG, logger='gymwipe.networking.construction')
-    caplog.set_level(logging.DEBUG, logger='gymwipe.networking.core')
+    #caplog.set_level(logging.DEBUG, logger='gymwipe.networking.construction')
+    #caplog.set_level(logging.DEBUG, logger='gymwipe.networking.core')
     caplog.set_level(logging.DEBUG, logger='gymwipe.networking.stack')
+    caplog.set_level(logging.DEBUG, logger='gymwipe.networking.physical')
 
     setup = simple_phy
     channel = setup.channel
@@ -89,7 +90,7 @@ def test_simple_phy(caplog, mocker, simple_phy):
         yield SimMan.timeout(1)
 
         # send the message to the physical layer
-        senderPhy.gates["mac"].input.send(cmd)
+        senderPhy.gates["mac"].send(cmd)
 
         # wait and assert
         yield SimMan.timeout(10)
@@ -116,7 +117,7 @@ def test_simple_phy(caplog, mocker, simple_phy):
 @pytest.fixture
 def simple_mac(simple_phy):
     s = simple_phy
-    s.rrm = NetworkDevice("RRM", 2, 2)
+    s.rrm = Device("RRM", 2, 2)
     s.rrmPhy = SimplePhy("RrmPhy", s.rrm, s.channel)
     s.rrmMac = SimpleRrmMac("RrmMac", s.rrm)
     s.device1Mac = SimpleMac("Mac", s.device1, SimpleMac.newMacAddress())
@@ -140,10 +141,11 @@ def simple_mac(simple_phy):
     return s
 
 def test_simple_mac(caplog, simple_mac):
-    caplog.set_level(logging.DEBUG, logger='gymwipe.simtools')
+    #caplog.set_level(logging.DEBUG, logger='gymwipe.simtools')
     #caplog.set_level(logging.INFO, logger='gymwipe.networking.construction')
     #caplog.set_level(logging.DEBUG, logger='gymwipe.networking.core')
-    #caplog.set_level(logging.DEBUG, logger='gymwipe.networking.stack')
+    caplog.set_level(logging.DEBUG, logger='gymwipe.networking.stack')
+    caplog.set_level(logging.DEBUG, logger='gymwipe.networking.physical')
 
     s = simple_mac
 
@@ -154,16 +156,15 @@ def test_simple_mac(caplog, simple_mac):
         # send a bunch of packets from `fromMacLayer` to `toMacLayer`
         for p in payloads:
             packet = Packet(SimpleTransportHeader(fromMacLayer.addr, toMacLayer.addr), p)
-            fromMacLayer.gates["transport"].input.send(packet)
+            fromMacLayer.gates["transport"].send(packet)
             yield SimMan.timeout(1)
 
     def receiver(macLayer: SimpleMac, receivedPacketsList: List[Packet]):
         # receive forever
         while True:
             receiveCmd = Signal(StackSignals.RECEIVE, {"duration": 10000})
-            macLayer.gates["transport"].input.send(receiveCmd)
+            macLayer.gates["transport"].send(receiveCmd)
             result = yield receiveCmd.processed
-            yield SimMan.clockTick()
             receivedPacketsList.append(result)
 
     
@@ -177,7 +178,7 @@ def test_simple_mac(caplog, simple_mac):
                 dest = dev2Addr
             cmd = Signal(StackSignals.ASSIGN, {"duration": 50, "dest": dest})
             SimMan.timeout(1)
-            s.rrmMac.gates["transport"].input.send(cmd)
+            s.rrmMac.gates["transport"].send(cmd)
             if previousCmd is not None:
                 yield previousCmd.processed
             previousCmd = cmd

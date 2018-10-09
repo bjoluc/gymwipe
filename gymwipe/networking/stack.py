@@ -2,14 +2,17 @@
 The Stack package contains implementations of network stack layers. Layers are modeled by :class:`~gymwipe.networking.construction.Module` objects.
 """
 import logging
-from typing import Any
 from collections import deque
+from typing import Any, Deque
+
 from simpy.events import Event
-from gymwipe.networking.construction import Module, Gate, GateListener
+
+from gymwipe.networking.construction import Gate, GateListener, Module
 from gymwipe.networking.core import NetworkDevice
+from gymwipe.networking.messages import (Packet, Signal, SimpleMacHeader,
+                                         StackSignals, Transmittable)
 from gymwipe.networking.physical import Channel, Transmission
-from gymwipe.networking.messages import Signal, StackSignals, Transmittable, Packet, SimpleMacHeader
-from gymwipe.simtools import SimMan, SimTimePrepender
+from gymwipe.simtools import Notifier, SimMan, SimTimePrepender
 
 logger = SimTimePrepender(logging.getLogger(__name__))
 
@@ -58,8 +61,9 @@ class SimplePhy(StackLayer):
         super(SimplePhy, self).__init__(name, device)
         self.channel: Channel = channel
         self._addGate("mac")
+
         self._currentTransmission = None
-        SimMan.process(self.receiver())
+        self.channel.nNewTransmission.subscribeProcess(self._onNewTransmission)
         logger.debug("%s: Initialization completed", self)
     
     @GateListener("mac", Signal, queued=True)
@@ -75,36 +79,33 @@ class SimplePhy(StackLayer):
             self._currentTransmission = t
             # wait for the transmission to finish
             yield t.completes
-            # indicate that processing the send command was completed
-            cmd.triggerProcessed()
+            # indicate that the send command was processed
+            cmd.setProcessed()
     
-    def receiver(self):
-        while True:
-            # simulate channel sensing & receiving
-            t = yield self.channel.nNewTransmission.event
-            if not t == self._currentTransmission:
-                logger.debug("%s: Sensed a transmission.", self)
-                # wait until the transmission has finished
-                yield t.completes
-                # check for collisions
-                if len(self.channel.getTransmissions(t.startTime, t.stopTime)) > 1:
-                    logger.debug("%s: Colliding transmission(s) were detected, transmission could not be received.", self)
-                    pass
+    def _onNewTransmission(self, t: Transmission):
+        # simulates receiving via the channel
+        if not t == self._currentTransmission:
+            logger.debug("%s: Sensed a transmission.", self)
+            # wait until the transmission has finished
+            yield t.completes
+            # check for collisions
+            if len(self.channel.getTransmissions(t.startTime, t.stopTime)) > 1:
+                logger.debug("%s: Colliding transmission(s) were detected, transmission could not be received.", self)
+            else:
+                # no colliding transmissions, check attenuation
+                a = self.channel.getAttenuationModel(t.sender, self.device).attenuation
+                recvPower = t.power - a
+                if recvPower < self.RECV_THRESHOLD:
+                    logger.debug("%s: Signal strength of %6d dBm is insufficient "
+                                    "(RECV_THRESHOLD is %6d dBm), packet could not be "
+                                    "received correctly.", self, recvPower, self.RECV_THRESHOLD)
                 else:
-                    # no colliding transmissions, check attenuation
-                    a = self.channel.getAttenuationModel(t.sender, self.device).attenuation
-                    recvPower = t.power - a
-                    if recvPower < self.RECV_THRESHOLD:
-                        logger.debug("%s: Signal strength of %6d dBm is insufficient "
-                                        "(RECV_THRESHOLD is %6d dBm), packet could not be "
-                                        "received correctly.", self, recvPower, self.RECV_THRESHOLD)
-                        pass
-                    else:
-                        logger.debug("%s: Packet successfully received (Signal power was %6d dBm)!",
-                                        self, recvPower)
-                        packet = t.packet
-                        # sending the packet via the mac gate
-                        self.gates["mac"].output.send(packet)
+                    logger.debug("%s: Packet successfully received (Signal power was %6d dBm)!",
+                                    self, recvPower)
+                    packet = t.packet
+                    # sending the packet via the mac gate
+                    self.gates["mac"].output.send(packet)
+                    print("Should terminate now")
 
 class SimpleMac(StackLayer):
     """
@@ -256,7 +257,7 @@ class SimpleMac(StackLayer):
                     logger.info("%s: Received Packet.", self)
                     logger.debug("%s: Packet: %s", self, packet.payload)
                     # return the packet's payload to the transport layer
-                    self._receiveCmd.triggerProcessed(packet.payload)
+                    self._receiveCmd.setProcessed(packet.payload)
                     self._stopReceiving()
                 else:
                     logger.debug("%s: Received Packet from Phy, but not in receiving mode. Packet ignored.", self)
@@ -324,56 +325,51 @@ class SimpleRrmMac(StackLayer):
         super(SimpleRrmMac, self).__init__(name, device)
         self._addGate("phy")
         self._addGate("transport")
-        self._macAddr = bytes(6) # 6 zero bytes
+        self.macAddress = bytes(6) # 6 zero bytes
+        """bytes: The RRM's MAC address"""
+
         self._announcementBitrate = 16
-        self._announcementQueue = deque(maxlen=50)
-        self._announcementAdded = Event(SimMan.env)
-        self._currentAnnouncement = None
-        self._currentAnnouncementReward = float('inf')
-        SimMan.process(self.announcementSender())
+        self._nAnnouncementReceived = Notifier("new announcement signal received", self)
+        self._currentAssignSignal = None
+        self._currentAssignReward = float('inf')
+        self._nAnnouncementReceived.subscribeProcess(self._sendAnnouncement, queued=True)
     
     @GateListener("phy", Packet)
-    def phyGateListener(self, packet):
-        if packet.header.sourceMAC == self._currentAnnouncement.properties["dest"]:
+    def phyGateListener(self, packet: Packet):
+        if packet.header.sourceMAC == self._currentAssignSignal.properties["dest"]:
             # packet was sent by the device mentioned in the current announcement
             # Use the object wrapped in the packet's trailer Transmittable as the reward
             reward = packet.trailer.obj
             logger.debug("%s: Extracted reward from %s: %d", self, packet.header.sourceMAC, reward)
-            self._currentAnnouncementReward = reward
+            self._currentAssignReward = reward
             
     @GateListener("transport", Signal)
-    def transportGateListener(self, cmd):
-        logger.debug("%s: Queuing new announcement Signal %s.", self, cmd)
-        self._announcementQueue.append(cmd)
-        self._announcementAdded.succeed()
-        self._announcementAdded = Event(SimMan.env)
+    def transportGateListener(self, signal: Signal):
+        logger.debug("%s: Got new ASSIGN Signal %s.", self, signal)
+        self._nAnnouncementReceived.trigger(signal)
     
-    def announcementSender(self):
-        while True:
-            if len(self._announcementQueue) == 0:
-                logger.debug("%s: No announcements to be sent, idling.", self)
-                yield self._announcementAdded
-            
-            while len(self._announcementQueue) > 0:
-                # pop announcement queue
-                cmd = self._announcementQueue.popleft()
-                self._currentAnnouncement = cmd
+    def _sendAnnouncement(self, assignSignal: Signal):
+        """
+        Is executed by the `_nAnnouncementReceived` notifier in a blocking and
+        queued way for every assignSignal that is received on the `transport`
+        gate.
+        """
+        self._currentAssignSignal = assignSignal
 
-                destination = cmd.properties["dest"]
-                duration = cmd.properties["duration"]
-                announcement = Packet(
-                    SimpleMacHeader(self._macAddr, destination, flag=1),
-                    Transmittable(duration)
-                )
-                sendCmd = Signal(
-                    StackSignals.SEND,
-                    {"packet": announcement, "power": -20, "bitrate": self._announcementBitrate}
-                )
-                logger.debug("%s: Sending new announcement: %s", self, announcement)
-                self.gates["phy"].output.send(sendCmd)
-                yield sendCmd.processed
-                yield SimMan.timeout(duration+1) # one extra time slot to be save from collisions (in reality)
+        destination = assignSignal.properties["dest"]
+        duration = assignSignal.properties["duration"]
+        announcement = Packet(
+            SimpleMacHeader(self.macAddress, destination, flag=1),
+            Transmittable(duration)
+        )
+        sendCmd = Signal(
+            StackSignals.SEND,
+            {"packet": announcement, "power": -20, "bitrate": self._announcementBitrate}
+        )
+        logger.debug("%s: Sending new announcement: %s", self, announcement)
+        self.gates["phy"].output.send(sendCmd)
+        yield sendCmd.processed
+        yield SimMan.timeout(duration+1) # one extra time slot to prevent collisions
 
-                # mark the current announcement command as processed and return the reward
-                self._currentAnnouncement.triggerProcessed(self._currentAnnouncementReward)
-                self._currentAnnouncementReward = float('inf')
+        # mark the current ASSIGN signal as processed and return the reward
+        self._currentAssignSignal.setProcessed(self._currentAssignReward)
