@@ -171,9 +171,9 @@ class Signal:
         self.properties = properties
         self.processed = Event(SimMan.env)
 
-    def triggerProcessed(self, returnValue: Any = None):
+    def setProcessed(self, returnValue: Any = None):
         """
-        Triggers the :attr:`processed` event.
+        Makes the :attr:`processed` event succeed.
 
         Args:
             returnValue: If specified, will be used as the `value` of the
@@ -191,11 +191,6 @@ class Signal:
                 # value now contains the `returnValue` that :meth:`setProcessed` was called with
         """
         self.processed.succeed(returnValue)
-    
-    @property
-    def processedTriggered(self):
-        """boolean: Whether or not the :attr:`processed` event was triggered"""
-        return self.processed.triggered
     
     def __str__(self):
         return "Signal('{}', properties: {})".format(self.type.name, self.properties)
