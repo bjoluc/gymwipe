@@ -5,7 +5,7 @@ import inspect
 import logging
 from collections import deque
 from functools import wraps
-from typing import Any, Callable, Tuple, Union
+from typing import Any, Callable, Dict, Tuple, Union
 
 from simpy.events import Event
 
@@ -83,10 +83,10 @@ class Gate:
         """
         
         self._name = name
-        self.input = Port(name + ".input")
+        self.input: Port = Port(name + ".input")
         if callable(inputCallback):
             self.input.addCallback(inputCallback)
-        self.output = Port(name + ".output")
+        self.output: Port = Port(name + ".output")
     
     def __str__(self):
         return "Gate('{}')".format(self._name)
@@ -146,7 +146,14 @@ class Gate:
         self.connectOutputTo(gate.output)
         gate.connectInputTo(self.input)
     
-    # SimPy events for object handling
+    def send(self, object: Any):
+        """
+        Calls the :meth:`~gymwipe.networking.construction.Port.send` method of
+        the :attr:`input` port
+        """
+        self.input.send(object)
+
+    # Notifiers
     
     @property
     def nReceives(self):
@@ -165,8 +172,8 @@ class Module:
 
     def __init__(self, name: str):
         self._name = name
-        self.gates = {}
-        self.subModules = {}
+        self.gates: Dict[str, Gate]  = {}
+        self.subModules: Dict[str, Module] = {}
     
     def __str__(self):
         return "{} '{}'".format(self.__class__.__name__, self._name)
