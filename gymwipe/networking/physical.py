@@ -7,7 +7,8 @@ from typing import Any, Dict, List, Tuple, Type, TypeVar
 
 from simpy import Event
 
-from gymwipe.networking.core import NetworkDevice, Position
+import gymwipe.devices as devices
+from gymwipe.networking.core import NetworkDevice
 from gymwipe.networking.messages import Packet
 from gymwipe.simtools import Notifier, SimMan, SimTimePrepender
 
@@ -145,7 +146,7 @@ class BaseAttenuationModel(AttenuationModel):
     def __init__(self, deviceA: NetworkDevice, deviceB: NetworkDevice):
         super(BaseAttenuationModel, self).__init__(deviceA, deviceB)
 
-        def positionChangedCallback(p: Position):
+        def positionChangedCallback(p: devices.Position):
             distance = self.devices[0].position.distanceTo(self.devices[1].position)
             if distance < self.STANDBY_THRESHOLD:
                 self._positionChanged(p.owner)

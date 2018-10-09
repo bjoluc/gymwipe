@@ -10,7 +10,7 @@ implementations. Currently contains:
 import logging
 from math import log10, sqrt
 
-from gymwipe.networking.core import NetworkDevice, Position
+from gymwipe.devices import Device
 from gymwipe.networking.physical import BaseAttenuationModel
 from gymwipe.simtools import SimTimePrepender
 
@@ -24,7 +24,7 @@ class FSPLAttenuation(BaseAttenuationModel):
     f: float = 2.4e9 # 2.4 GHz
     """float: The transmission frequency in Hertz"""
 
-    def __init__(self, deviceA: NetworkDevice, deviceB: NetworkDevice):
+    def __init__(self, deviceA: Device, deviceB: Device):
         super(FSPLAttenuation, self).__init__(deviceA, deviceB)
         self._update()
 
@@ -37,5 +37,5 @@ class FSPLAttenuation(BaseAttenuationModel):
             return 0
         return 20*log10(a.distanceTo(b)) + 20*log10(self.f) - 147.55
     
-    def _positionChanged(self, device: NetworkDevice):
+    def _positionChanged(self, device: Device):
         self._update()
