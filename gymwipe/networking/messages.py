@@ -162,8 +162,10 @@ class Signal:
         type(Enum): An enumeration object that defines the signal type
         properties(Dict[str, Any]): A dictionary containing additional signal
             properties
-        processed(Event): A SimPy event that is triggered when setProcessed is
-            called. This is useful for simulating synchronous function calls.
+        processed(Event): A SimPy event that is triggered when
+            :meth:`setProcessed` is called. This is useful for simulating
+            synchronous function calls and also allows for return values (an
+            example is provided in :meth:`setProcessed`).
     """
 
     def __init__(self, type: Enum, properties: Dict[str, Any] = None):
@@ -188,7 +190,7 @@ class Signal:
                 signal = Signal(myType, {"key", value})
                 gate.output.send(signal)
                 value = yield signal.processed
-                # value now contains the `returnValue` that :meth:`setProcessed` was called with
+                # value now contains the returnValue that setProcessed() was called with
         """
         self.processed.succeed(returnValue)
     
