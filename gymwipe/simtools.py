@@ -245,7 +245,7 @@ class Notifier:
                                         "Queue length: {:d}".format(self, value, process, len(executor.queue)))
                     else:
                         executor.running = True
-                        event = SimMan.process(process(value))
+                        processedEvent = SimMan.process(process(value))
                         if queued:
                             def executeNext(prevProcessReturnValue: Any) -> None:
                                 # callback for running the next process from the queue
@@ -258,7 +258,14 @@ class Notifier:
                                 else:
                                     executor.running = False
                                     logger.debug("{}: All queued jobs for generator {} were executed.".format(self, process))
-                            event.callbacks.append(executeNext)
+                            processedEvent.callbacks.append(executeNext)
+                        else:
+                            # We have to set executor.running back to False,
+                            # once the generator has been processed.
+                            def setRunningFlagToFalse(prevProcessReturnValue: Any):
+                                executor.running = False
+                            processedEvent.callbacks.append(setRunningFlagToFalse)
+
 
             executor.running = False
             if blocking:
@@ -269,7 +276,7 @@ class Notifier:
         """
         Triggers the :class:`Notifier`.
         This runs the callbacks, makes the :attr:`event` succeed,
-        and schedules the SimPy generators for processing.
+        and triggers the processing of subscribed SimPy generators.
         """
         logger.debug("{}: Triggered with value {}".format(self, value))
         for c in self._sortedCallbacks:
