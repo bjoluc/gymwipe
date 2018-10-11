@@ -92,6 +92,21 @@ class Transmission:
         """
         return self._completesEvent
 
+class ChannelSpec:
+    """
+    A channel specification stores a channel's frequency and its bandwidth.
+    """
+
+    def __init__(self, frequency: float = 2.4e9, bandwidth: float = 22e6):
+        """
+        Args:
+            frequency: The channel's frequency in Hz. Defaults to 2.4 GHz.
+            bandwidth: The channel's bandwidth in Hz. Defaults to 22 MHz (as in
+                IEEE 802.11)
+        """
+        self.frequency = frequency
+        self.bandwidth = bandwidth
+
 class AttenuationModel():
     """
     An :class:`AttenuationModel` calculates the attenuation (measured in db) of
@@ -101,12 +116,14 @@ class AttenuationModel():
     :attr:`attenuationChanged` event succeeds.
     """
 
-    def __init__(self, deviceA: Device, deviceB: Device):
+    def __init__(self, channelSpec: ChannelSpec, deviceA: Device, deviceB: Device):
         """
         Args:
+            channelSpec: The channel specification of the corresponding channel
             deviceA: Network device a
             deviceB: Network device b
         """
+        self.channelSpec = channelSpec
         self.devices: Tuple[Device] = (deviceA, deviceB)
         self.attenuation: float = 0
         """
@@ -143,8 +160,8 @@ class BaseAttenuationModel(AttenuationModel):
     :class:`AttenuationModel` not to react on position changes of its devices
     """
 
-    def __init__(self, deviceA: Device, deviceB: Device):
-        super(BaseAttenuationModel, self).__init__(deviceA, deviceB)
+    def __init__(self, channelSpec: ChannelSpec, deviceA: Device, deviceB: Device):
+        super(BaseAttenuationModel, self).__init__(channelSpec, deviceA, deviceB)
 
         def positionChangedCallback(p: devices.Position):
             distance = self.devices[0].position.distanceTo(self.devices[1].position)
@@ -180,17 +197,17 @@ class JoinedAttenuationModel(AttenuationModel):
     will be triggered as a direct consequence.
     """
 
-    def __init__(self, deviceA: Device, deviceB: Device, models: List[Type[AttenuationModelClass]]):
+    def __init__(self, channelSpec: ChannelSpec, deviceA: Device, deviceB: Device, models: List[Type[AttenuationModelClass]]):
         """
         Args:
+            channelSpec: The channel specification of the corresponding channel
             deviceA: Network device a
             deviceB: Network device b
-            models: The :class:`AttenuationModel` subclasses to create a
-                :class:`JoinedAttenuationModel` instance of
+            models: A non-empty list of the :class:`AttenuationModel` subclasses
+                to create a :class:`JoinedAttenuationModel` instance of
         """
-        #super(JoinedAttenuation, self).__init__()
         # instantiate models
-        self._models = [model(deviceA, deviceB) for model in models]
+        self._models = [model(channelSpec, deviceA, deviceB) for model in models]
         self._modelAttenuations = {}
 
         for model in self._models:
@@ -225,12 +242,17 @@ class JoinedAttenuationModel(AttenuationModel):
 
 class AttenuationModelFactory():
     """
-    A factory for :class:`AttenuationModel` instances. It is instantiated
-    providing a non-empty list of :class:`AttenuationModel` subclasses that
-    will be used for instantiating attenuation models.
+    A factory for :class:`AttenuationModel` instances.
     """
 
-    def __init__(self, models: List[AttenuationModelClass]):
+    def __init__(self, channelSpec: "ChannelSpec", models: List[AttenuationModelClass]):
+        """
+        Args:
+            channelSpec: The channel specification of the corresponding channel
+            models: A non-empty list of :class:`AttenuationModel` subclasses
+                that will be used for instantiating attenuation models.
+        """
+        self._channelSpec = channelSpec
         self._models = models
         self._instances = {}
     
@@ -248,9 +270,9 @@ class AttenuationModelFactory():
         else:
             # initializing a new instance
             if len(self._models) == 1:
-                instance = self._models[0](deviceA, deviceB)
+                instance = self._models[0](self._channelSpec, deviceA, deviceB)
             else:
-                instance = JoinedAttenuationModel(deviceA, deviceB, self._models)
+                instance = JoinedAttenuationModel(self._channelSpec, deviceA, deviceB, self._models)
             self._instances[key] = instance
             return instance
 
@@ -262,15 +284,26 @@ class Channel:
     pair of devices. 
     """
 
-    def __init__(self, *args: List[AttenuationModelClass]):
+    def __init__(self, modelClasses: List[AttenuationModelClass], frequency: float = 2.4e9, bandwidth: float = 22e6):
         """
-        The constructor takes one or more :class:`AttenuationModel` subclasses
-        that will be used for attenuation calculations on this channel.
+        Args:
+            modelClasses: A non-empty list :class:`AttenuationModel` subclasses
+                that will be used for attenuation calculations regarding this
+                channel.
+            frequency: The channel's frequency in Hz. Defaults to 2.4 GHz.
+            bandwidth: The channel's bandwidth in Hz. Defaults to 22 MHz (as in
+                IEEE 802.11)
         """
+
+        self.spec = ChannelSpec(frequency, bandwidth)
+        """
+        :class:`ChannelSpec`: The channel's specification object
+        """
+
         # The isinstance check below would always return false - why?
         #for a in args:
         #    assert isinstance(a, AttenuationModel)
-        self._attenuationModelFactory = AttenuationModelFactory(args)
+        self._attenuationModelFactory = AttenuationModelFactory(self.spec, modelClasses)
         self._transmissions: List[Transmission] = []
         self._transmissionInReachNotifiers: Dict[Tuple[Device, float], Notifier] = {}
 

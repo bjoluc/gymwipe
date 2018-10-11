@@ -42,7 +42,7 @@ def simple_phy():
     SimMan.initEnvironment()
 
     # create a wireless channel with FSPL attenuation
-    channel = Channel(FSPLAttenuation)
+    channel = Channel([FSPLAttenuation])
 
     # create two network devices
     device1 = Device("Device1", 0, 0)
