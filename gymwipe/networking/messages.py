@@ -1,14 +1,16 @@
 """
-The messages module provides classes for network packet representation and inter-module communication.
+The messages module provides classes for network packet representations and
+inter-module communication.
 
 .. autosummary::
 
     ~gymwipe.networking.messages.Signal
+    ~gymwipe.networking.messages.StackSignals
     ~gymwipe.networking.messages.Transmittable
+    ~gymwipe.networking.messages.FakeTransmittable
     ~gymwipe.networking.messages.Packet
     ~gymwipe.networking.messages.SimpleMacHeader
     ~gymwipe.networking.messages.SimpleTransportHeader
-    
 
 """
 from typing import Any, Dict
@@ -21,8 +23,7 @@ class Transmittable:
     The :class:`Transmittable` class provides a :meth:`byteSize` method allowing
     objects of it to be nested in packets and sent via a channel. Unless for
     representing simple objects such as strings, it should be subclassed and
-    both the :meth:`byteSize` and the :meth:`__str__` method should be
-    overridden.
+    both :meth:`byteSize` and :meth:`__str__` should be overridden.
 
     Attributes:
         obj(Any): The object that has been provided to the constructor
@@ -30,12 +31,13 @@ class Transmittable:
 
     def __init__(self, obj: Any):
         """
-        The constructor takes any object and creates a
-        :class:`Transmittable` with the byte length of its UTF-8 string representation.
+        The constructor takes any object and creates a :class:`Transmittable`
+        with the byte length of its UTF-8 string representation.
 
         Note:
-            Subclasses should not invoke the constructor, unless they also wrap a single object
-            and use its string representation for :meth:`byteSize` calculation.
+            Subclasses should not invoke the constructor, unless they also wrap
+            a single object and use its string representation for
+            :meth:`byteSize` calculation.
         
         Args:
             obj: The object of which the string representation will be used
@@ -49,27 +51,42 @@ class Transmittable:
 
     def byteSize(self) -> int:
         """
-        Returns the number of bytes that are to be transmitted when
-        the data represented by this object is sent via a physical channel.
+        Returns the number of bytes that are to be transmitted when the data
+        represented by this object is sent via a physical channel.
         """
         return self._size
     
     def transmissionTime(self, bitrate: int) -> int:
         """
-        Returns the number of time steps needed to transmit the data represented by the
-        :class:`Transmittable` at a specified bit rate.
+        Returns the number of time steps needed to transmit the data represented
+        by the :class:`Transmittable` at a specified bit rate.
 
         Args:
             bitrate: The number of bits that are transmitted in a single timeStep
         """
         return self.byteSize()*8 / bitrate
 
+class FakeTransmittable(Transmittable):
+    """
+    A :class:`Transmittable` implementation that fakes its byteSize. This can be
+    helpful for test applications when the data itself is irrelevant and only
+    its size has to be considered.
+    """
+
+    def __init__(self, byteSize: int):
+        """
+        Args:
+            byteSize: The number of bytes that the :class:`FakeTransmittable`
+                will be long
+        """
+        self._size = byteSize
+        self._str = "FakeTransmittable(byteSize={d})".format(self._size)
 
 class Packet(Transmittable):
     """
-    The Packet class represents packets. A Packet consists of a header and a
-    payload. Packets can be nested by providing them as payloads to the packet
-    constructor.
+    The Packet class represents packets. A Packet consists of a header, a
+    payload and an optional trailer. Packets can be nested by providing them as
+    payloads to the packet constructor.
 
     Attributes:
         header(Transmittable): The object representing the Packet's
@@ -79,7 +96,8 @@ class Packet(Transmittable):
         trailer(Transmittable): The object representing the Packet's trailer
             (defaults to ``None``)
 
-    .. force documenting the __str__ function .. automethod:: __str__
+    .. force documenting the __str__ function
+    .. automethod:: __str__
     """
 
     def __init__(self, header: Transmittable, payload: Transmittable, trailer: Transmittable = None):
@@ -199,8 +217,8 @@ class Signal:
 
 class StackSignals(Enum):
     """
-    An enumeration of control signal types to be used for
-    the exchange of `Signal` objects between network stack layers.
+    An enumeration of control signal types to be used for the exchange of
+    `Signal` objects between network stack layers.
     """
     RECEIVE = 0
     SEND = 1
