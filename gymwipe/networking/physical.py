@@ -260,15 +260,17 @@ class Channel:
     represents a physical channel. It also offers the
     :meth:`getAttenuationModel` method that returns an AttenuationModel for any
     pair of devices. 
-    device 
     """
 
-    def __init__(self, attenuationModels: List[AttenuationModelClass]):
+    def __init__(self, *args: List[AttenuationModelClass]):
         """
         The constructor takes one or more :class:`AttenuationModel` subclasses
         that will be used for attenuation calculations on this channel.
         """
-        self._attenuationModelFactory = AttenuationModelFactory(attenuationModels)
+        # The isinstance check below would always return false - why?
+        #for a in args:
+        #    assert isinstance(a, AttenuationModel)
+        self._attenuationModelFactory = AttenuationModelFactory(args)
         self._transmissions: List[Transmission] = []
         self._transmissionInReachNotifiers: Dict[Tuple[Device, float], Notifier] = {}
 
