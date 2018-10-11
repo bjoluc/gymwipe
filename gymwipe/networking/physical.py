@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Tuple, Type, TypeVar
 from simpy import Event
 
 import gymwipe.devices as devices
-from gymwipe.networking.core import NetworkDevice
+from gymwipe.devices import Device
 from gymwipe.networking.messages import Packet
 from gymwipe.simtools import Notifier, SimMan, SimTimePrepender
 
@@ -24,7 +24,7 @@ class Transmission:
         :meth:`Channel.transmit`.
     """
 
-    def __init__(self, sender: NetworkDevice, power: float, bitrateHeader: int, bitratePayload: int, packet: Packet, startTime: int):
+    def __init__(self, sender: Device, power: float, bitrateHeader: int, bitratePayload: int, packet: Packet, startTime: int):
         self._sender = sender
         self._power = power
         self._bitrateHeader = bitrateHeader
@@ -101,13 +101,13 @@ class AttenuationModel():
     :attr:`attenuationChanged` event succeeds.
     """
 
-    def __init__(self, deviceA: NetworkDevice, deviceB: NetworkDevice):
+    def __init__(self, deviceA: Device, deviceB: Device):
         """
         Args:
             deviceA: Network device a
             deviceB: Network device b
         """
-        self.devices: Tuple[NetworkDevice] = (deviceA, deviceB)
+        self.devices: Tuple[Device] = (deviceA, deviceB)
         self.attenuation: float = 0
         """
         float: The attenuation of any signal sent from :class:`NetworkDevice`
@@ -143,7 +143,7 @@ class BaseAttenuationModel(AttenuationModel):
     :class:`AttenuationModel` not to react on position changes of its devices
     """
 
-    def __init__(self, deviceA: NetworkDevice, deviceB: NetworkDevice):
+    def __init__(self, deviceA: Device, deviceB: Device):
         super(BaseAttenuationModel, self).__init__(deviceA, deviceB)
 
         def positionChangedCallback(p: devices.Position):
@@ -153,7 +153,7 @@ class BaseAttenuationModel(AttenuationModel):
         for device in self.devices:
             device.position.nChange.subscribeCallback(positionChangedCallback)
     
-    def _positionChanged(self, device: NetworkDevice):
+    def _positionChanged(self, device: Device):
         """
         This method is called whenever the position of either deviceA or deviceB
         changes and the distance between the devices does not exceed
@@ -180,13 +180,13 @@ class JoinedAttenuationModel(AttenuationModel):
     will be triggered as a direct consequence.
     """
 
-    def __init__(self, deviceA: NetworkDevice, deviceB: NetworkDevice, models: List[Type[AttenuationModelClass]]):
+    def __init__(self, deviceA: Device, deviceB: Device, models: List[Type[AttenuationModelClass]]):
         """
         Args:
             deviceA: Network device a
             deviceB: Network device b
             models: The :class:`AttenuationModel` subclasses to create a
-                :class:`JoinedAttenuation` instance of
+                :class:`JoinedAttenuationModel` instance of
         """
         #super(JoinedAttenuation, self).__init__()
         # instantiate models
@@ -226,14 +226,15 @@ class JoinedAttenuationModel(AttenuationModel):
 class AttenuationModelFactory():
     """
     A factory for :class:`AttenuationModel` instances. It is instantiated
-    providing the :class:`AttenuationModel` subclass(es) that will be applied.
+    providing a non-empty list of :class:`AttenuationModel` subclasses that
+    will be used for instantiating attenuation models.
     """
 
-    def __init__(self, *args):
-        self._models = args
+    def __init__(self, models: List[AttenuationModelClass]):
+        self._models = models
         self._instances = {}
     
-    def getInstance(self, deviceA: NetworkDevice, deviceB: NetworkDevice) -> AttenuationModel:
+    def getInstance(self, deviceA: Device, deviceB: Device) -> AttenuationModel:
         """
         Returns the :class:`AttenuationModel` for signals sent from `deviceA` to
         `deviceB` and vice versa. If not yet existent, a new
@@ -256,14 +257,20 @@ class AttenuationModelFactory():
 class Channel:
     """
     The Channel class serves as a manager for transmission objects and
-    represents a physical channel. It also holds the corresponding
-    AttenuationModel instance.
+    represents a physical channel. It also offers the
+    :meth:`getAttenuationModel` method that returns an AttenuationModel for any
+    pair of devices. 
+    device 
     """
 
-    def __init__(self, attenuationModelFactory: AttenuationModelFactory):
-        self._attenuationModelFactory: AttenuationModelFactory = attenuationModelFactory
+    def __init__(self, attenuationModels: List[AttenuationModelClass]):
+        """
+        The constructor takes one or more :class:`AttenuationModel` subclasses
+        that will be used for attenuation calculations on this channel.
+        """
+        self._attenuationModelFactory = AttenuationModelFactory(attenuationModels)
         self._transmissions: List[Transmission] = []
-        self._transmissionInReachNotifiers: Dict[Tuple[NetworkDevice, float], Notifier] = {}
+        self._transmissionInReachNotifiers: Dict[Tuple[Device, float], Notifier] = {}
 
         self.nNewTransmission: Notifier = Notifier("New transmission", self)
         """
@@ -271,15 +278,15 @@ class Channel:
         :meth:`transmit` is executed, providing the :class:`Transmission` object
         representing the transmission.
         """
-    
-    def getAttenuationModel(self, deviceA: NetworkDevice, deviceB: NetworkDevice) -> AttenuationModel:
+
+    def getAttenuationModel(self, deviceA: Device, deviceB: Device) -> AttenuationModel:
         """
         Returns the AttenuationModel instance that provides attenuation values
         for transmissions between `deviceA` and `deviceB`.
         """
         return self._attenuationModelFactory.getInstance(deviceA, deviceB)
 
-    def transmit(self, sender: NetworkDevice, power: float, brHeader: int, brPayload: int, packet: Packet) -> Transmission:
+    def transmit(self, sender: Device, power: float, brHeader: int, brPayload: int, packet: Packet) -> Transmission:
         """
         Creates a :class:`Transmission` object with the values passed and stores
         it. Also triggers the :attr:`~Channel.transmissionStarted` event of the
@@ -334,7 +341,7 @@ class Channel:
         now = SimMan.now
         return [t for (t, a, b) in self._transmissions if a <= now <= b]
     
-    def getActiveTransmissionsInReach(self, receiver: NetworkDevice, radius: float) -> List[Transmission]:
+    def getActiveTransmissionsInReach(self, receiver: Device, radius: float) -> List[Transmission]:
         """
         Returns a list of transmissions that are currently active and whose
         sender is positioned within the radius specified by `radius` around the
@@ -347,7 +354,7 @@ class Channel:
         """
         return [t for t in self.getActiveTransmissions() if t.sender.position.distanceTo(receiver) <= radius]
     
-    def nNewTransmissionInReach(self, receiver: NetworkDevice, radius: float) -> Notifier:
+    def nNewTransmissionInReach(self, receiver: Device, radius: float) -> Notifier:
         """
         Returns a notifier that is triggered iff a new :class:`Transmission`
         starts whose sender is positioned within the radius specified by

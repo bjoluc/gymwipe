@@ -10,7 +10,7 @@ from gymwipe.networking.construction import Gate
 from gymwipe.networking.messages import (Packet, Signal, SimpleMacHeader,
                                          SimpleTransportHeader, StackSignals,
                                          Transmittable)
-from gymwipe.networking.physical import AttenuationModelFactory, Channel
+from gymwipe.networking.physical import Channel
 from gymwipe.networking.stack import SimpleMac, SimplePhy, SimpleRrmMac
 from gymwipe.simtools import SimMan
 
@@ -42,7 +42,7 @@ def simple_phy():
     SimMan.initEnvironment()
 
     # create a wireless channel with FSPL attenuation
-    channel = Channel(AttenuationModelFactory(FSPLAttenuation))
+    channel = Channel(FSPLAttenuation)
 
     # create two network devices
     device1 = Device("Device1", 0, 0)
