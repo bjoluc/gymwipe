@@ -4,6 +4,7 @@ Module for simulation tools
 import itertools
 import logging
 from collections import defaultdict, deque
+from numbers import Number
 from typing import Any, Callable, Generator, Tuple, Union
 
 from simpy import Environment
@@ -73,9 +74,18 @@ class SimulationManager:
         """
         return Event(self.env)
 
-    def runSimulation(self, timesteps: int) -> None:
-        logger.info("SimulationManager: Starting simulation...")
-        self.env.run(until=self.now + timesteps)
+    def runSimulation(self, until: Union[int, float, Event]) -> None:
+        """
+        Runs the simulation (or continues running it) until the amount of
+        simulated time specified by `until` has passed (with `until` being a
+        :class:`float`) or `until` is triggered (with `until` being an
+        :class:`Event`).
+        """
+        logger.info("SimulationManager: Running simulation...")
+        if not isinstance(until, Event):
+            assert isinstance(until, Number)
+            until = self.now + until
+        self.env.run(until)
     
     def initEnvironment(self) -> None:
         """
