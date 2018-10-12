@@ -27,13 +27,13 @@ class StackLayer(Module):
 
 class SimplePhy(StackLayer):
     """
-    A very basic physical layer implementation, mainly for demonstration
-    purposes. It provides a single gate called `mac` to be connected to the mac
-    layer. Slotted time is used, with the size of a time slot being defined by
+    A phy layer implementation that does not take propagation delays into
+    account. It provides a gate called `mac` to be connected to the mac layer.
+    Slotted time is used, with the size of a time slot being defined by
     :attr:`~gymwipe.simtools.SimulationManager.timeSlotSize`.
     
-    During simulation the the channel is sensed for transmissions and any
-    successfully received packet is sent out via the `mac` gate.
+    During simulation the channel is sensed and every successfully received
+    packet is sent via the `mac` gate.
 
     The `mac` gate accepts :class:`~gymwipe.networking.messages.Signal` objects
     of the following types:
@@ -52,6 +52,8 @@ class SimplePhy(StackLayer):
     Todo:
         * Interrupt receiver while sending?
         * React to attenuation changes, calculate SNR values, concern MCS
+
+        * Get MCS objects for the transmission
     """
 
     RECV_THRESHOLD = -80 # dBm (https://www.metageek.com/training/resources/wifi-signal-strength-basics.html)
