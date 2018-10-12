@@ -4,7 +4,7 @@ implementations. Currently contains:
 
 .. autosummary::
 
-    ~gymwipe.networking.attenuation_models.FSPLAttenuation
+    ~gymwipe.networking.attenuation_models.FsplAttenuation
 """
 
 import logging
@@ -16,13 +16,13 @@ from gymwipe.simtools import SimTimePrepender
 
 logger = SimTimePrepender(logging.getLogger(__name__))
 
-class FSPLAttenuation(BaseAttenuationModel):
+class FsplAttenuation(BaseAttenuationModel):
     """
-    Free-space path loss (FSPL) :class:`AttenuationModel` implementation
+    A free-space path loss (FSPL) :class:`AttenuationModel` implementation
     """
 
     def __init__(self, channelSpec: ChannelSpec, deviceA: Device, deviceB: Device):
-        super(FSPLAttenuation, self).__init__(channelSpec, deviceA, deviceB)
+        super(FsplAttenuation, self).__init__(channelSpec, deviceA, deviceB)
         self._update()
 
     def _update(self):

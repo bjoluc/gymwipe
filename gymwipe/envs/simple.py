@@ -9,7 +9,7 @@ import numpy as np
 from gym import error, spaces, utils
 from gym.utils import seeding
 
-from gymwipe.networking.attenuation_models import FSPLAttenuation
+from gymwipe.networking.attenuation_models import FsplAttenuation
 from gymwipe.networking.devices import SimpleNetworkDevice, SimpleRrmDevice
 from gymwipe.networking.messages import (FakeTransmittable, Packet,
                                          Transmittable)
@@ -84,7 +84,7 @@ class SimpleTestEnv(BaseEnv):
 
 
     def __init__(self):
-        channel = Channel(FSPLAttenuation)
+        channel = Channel(FsplAttenuation)
         super(SimpleTestEnv, self).__init__(channel, deviceCount=2)
 
         # no observations in this environment
