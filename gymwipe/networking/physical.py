@@ -2,7 +2,7 @@
 Physical layer related components
 """
 import logging
-from abc import ABC, abstractmethod
+from abc import ABC, abstractmethod, abstractproperty
 from typing import Any, Dict, List, Tuple, Type, TypeVar
 
 from simpy import Event
@@ -13,6 +13,37 @@ from gymwipe.networking.messages import Packet
 from gymwipe.simtools import Notifier, SimMan, SimTimePrepender
 
 logger = SimTimePrepender(logging.getLogger(__name__))
+
+class Mcs(ABC):
+    """
+    An :class:`Mcs` object represents a Modulation and Coding Scheme. As the MCS
+    (beside channel characteristics) determines the relation between
+    Signal-to-Noise Ratio (SNR) and the resulting Bit Error Rate (BER), it
+    offers a :meth:`getBitErrorRateBySnr` method that is used by receiving PHY
+    layer instances.
+
+    Currently, only BPSK is implemented (see :class:`BpskMcs` for details).
+    Subclass :class:`Mcs` if you need something more advanced.
+    """
+
+    @abstractmethod
+    def getBitErrorRateBySnr(self, snr: float) -> float:
+        """
+        Returns the bit error rate for the passed signal-to-noise ratio if this
+        modulation and coding scheme is used.
+
+        Args:
+            snr: The signal-to-noise ratio in db
+        
+        Returns: The estimated resulting bit error rate (a float in [0,1])
+        """
+    
+    @abstractproperty
+    def bitrate(self):
+        """
+        TODO
+        """
+
 
 class Transmission:
     """
