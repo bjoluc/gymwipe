@@ -1,6 +1,3 @@
-# uname will be linux if running on linux
-UNAME := $(shell uname)
-
 init:
 	pipenv install
 
@@ -17,7 +14,7 @@ docs:
 	pipenv run sphinx-apidoc --force --separate -o docs/api gymwipe gymwipe/test gymwipe/*/test
 	$(MAKE) -C docs clean
 	$(MAKE) -C docs html
-	# if [ $(UNAME) = Linux ]; then xdg-open docs/_build/html/index.html; fi
+	# Open docs/_build/html/index.html to see the results
 
 requirements:
 	pipenv run pipenv_to_requirements
