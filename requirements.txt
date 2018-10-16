@@ -13,4 +13,5 @@
 gym
 pytest-mock
 pytest==3.5.0
+scipy
 simpy

@@ -18,8 +18,10 @@ sphinx
 sphinx-autobuild
 sphinx-autodoc-typehints
 sphinx-rtd-theme
+sphinxcontrib-bibtex
 
 gym
 pytest-mock
 pytest==3.5.0
+scipy
 simpy
