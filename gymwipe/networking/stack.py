@@ -56,7 +56,10 @@ class SimplePhy(StackLayer):
         * Get MCS objects for the transmission
     """
 
-    RECV_THRESHOLD = -80 # dBm (https://www.metageek.com/training/resources/wifi-signal-strength-basics.html)
+    NOISE_POWER_DENSITY = 0.01
+    """float: The receiver's noise power density in Watts/Hertz"""
+
+    RECV_THRESHOLD = -80
 
     @GateListener.setup
     def __init__(self, name: str, device: NetworkDevice, channel: Channel):
