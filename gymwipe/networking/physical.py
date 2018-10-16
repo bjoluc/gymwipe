@@ -1,10 +1,14 @@
 """
 Physical layer related components
 """
+import functools
 import logging
 from abc import ABC, abstractmethod, abstractproperty
+from fractions import Fraction
+from math import e, exp, log10, pi, sqrt
 from typing import Any, Dict, List, Tuple, Type, TypeVar
 
+from scipy.special import binom
 from simpy import Event
 
 import gymwipe.devices as devices
@@ -14,36 +18,122 @@ from gymwipe.simtools import Notifier, SimMan, SimTimePrepender
 
 logger = SimTimePrepender(logging.getLogger(__name__))
 
+# Helper functions for physical calculations
+
+def calculateEbToN0Ratio(signalPower: float, noisePower: float, bitRate: int,
+                            returnDb: bool = False):
+    """
+    Computes :math:`E_b/N_0 = \\frac{S}{N_0 R}` (the "ratio of signal energy per
+    bit to noise power density per Hertz" :cite:`stallings2005data`) given the
+    signal power :math:`S_{dBm}`, the noise power :math:`N_{0_{dBm}}`, and the
+    bit rate :math:`R`, according to p. 95 of :cite:`stallings2005data`.
+
+    Args:
+        signalPower: The signal power :math:`S` in dBm
+        noisePower: The noise power :math:`N_0` in dBm
+        bitRate: The bit rate :math:`R` in bps
+        returnDb: If set to ``True``, the ratio will be returned in db.
+    """
+    s_dbw = signalPower + 30
+    n_dbw = noisePower + 30
+    ratio_db = s_dbw - n_dbw - 10*log10(bitRate)
+    if returnDb:
+        return ratio_db
+    return 10**(ratio_db/10)
+
+sqrtOfTwoPi = sqrt(2*pi)
+
+def approxQFunction(x: float):
+    """
+    Approximates the complementary error function
+
+    :math:`Q(x)=\\frac{1}{\\sqrt{2\\pi}} \\int_{x}^{\\infty} exp
+    \\big(-\\frac{u^2}{2} \\big) du` (see :cite:`sklar1993defining`)
+
+    for :math:`x > 3`. The following formula, taken from
+    :cite:`sklar1993defining`, is used:
+
+    :math:`Q(x) \\cong \\frac{1}{x\\sqrt{2\\pi}} exp \\big( -\\frac{x^2}{2}
+    \\big)`
+    """
+    return 1/(x*sqrtOfTwoPi) * exp(-(x^2 / 2))
+
 class Mcs(ABC):
     """
-    An :class:`Mcs` object represents a Modulation and Coding Scheme. As the MCS
+    The :class:`Mcs` class represents a Modulation and Coding Scheme. As the MCS
     (beside channel characteristics) determines the relation between
     Signal-to-Noise Ratio (SNR) and the resulting Bit Error Rate (BER), it
     offers a :meth:`getBitErrorRateBySnr` method that is used by receiving PHY
     layer instances.
 
-    Currently, only BPSK is implemented (see :class:`BpskMcs` for details).
+    Currently, only BPSK modulation is implemented (see :class:`DpskMcs` for details).
     Subclass :class:`Mcs` if you need something more advanced.
     """
 
+    _codeRateToMaxCorrectableBer = {}
+
     @abstractmethod
-    def getBitErrorRateBySnr(self, snr: float) -> float:
+    def calculateBitErrorRate(self, signalPower: float, noisePower: float, bitRate: float) -> float:
         """
-        Returns the bit error rate for the passed signal-to-noise ratio if this
-        modulation and coding scheme is used.
+        Computes the bit error rate for the passed parameters if this modulation
+        and coding scheme is used.
 
         Args:
-            snr: The signal-to-noise ratio in db
-        
+            signalPower: The signal power :math:`S` in dBm
+            noisePower: The noise power :math:`N_0` in dBm
+            bitRate: The bit rate :math:`R` in bps
+
         Returns: The estimated resulting bit error rate (a float in [0,1])
         """
     
+    # Transmissions need Mcs objects (also for length determination)
+    # Also: Bitrate needs a proper unit!
+    
     @abstractproperty
-    def bitrate(self):
+    def codeRate(self) -> Fraction:
         """
-        TODO
+        Fraction: The relative amount of transmitted bits that are not used for
+        forward error correction
         """
 
+    def maxCorrectableBer(self) -> float:
+        """
+        Returns the maximum bit error rate that can be handled when using the
+        MCS. It depends on the codeRate and is calculated via the
+        Varshamov-Gilbert bound.
+        """
+        # check for cached result
+        if self.codeRate in Mcs._codeRateToMaxCorrectableBer:
+            return Mcs._codeRateToMaxCorrectableBer[self.codeRate]
+
+        k = self.codeRate.numerator
+        n = self.codeRate.denominator
+        bound = 2**(n-k)
+
+        # find max. t with sum of binomial coefficients less or equal than bound
+        currentSum = 0
+        t = 0
+        while currentSum <= bound:
+            currentSum += binom(n, t)
+            t += 1
+        t -= 1
+        
+        # up to t errors can be corrected in a block of k bits
+        maxBer = float(t)/k
+        Mcs._codeRateToMaxCorrectableBer[self.codeRate] = maxBer
+        return maxBer
+
+class BpskMcs(Mcs):
+    """
+    A Binary Phase-Shift-Keying MCS
+    """
+
+    def __init__(self, codeRate: Fraction):
+        self.codeRate = codeRate
+
+    def calculateBitErrorRate(self, signalPower: float, noisePower: float, bitRate: float) -> float:
+        ratio = calculateEbToN0Ratio(signalPower, noisePower, bitRate)
+        return approxQFunction(sqrt(2*ratio))
 
 class Transmission:
     """
@@ -56,72 +146,43 @@ class Transmission:
     """
 
     def __init__(self, sender: Device, power: float, bitrateHeader: int, bitratePayload: int, packet: Packet, startTime: int):
-        self._sender = sender
-        self._power = power
-        self._bitrateHeader = bitrateHeader
-        self._bitratePayload = bitratePayload
-        self._packet = packet
-        self._startTime = startTime
+        self.sender: Device = sender
+        """Device: The device that initiated the transmission"""
 
-        # calculate duration
-        self._duration = packet.header.byteSize() * 8 / bitrateHeader + packet.payload.byteSize() * 8 / bitratePayload
-        self._stopTime = startTime + self._duration
-        # create the completesEvent
-        self._completesEvent = SimMan.timeoutUntil(self._stopTime)
-    
-    def __str__(self):
-        return "Transmission(from: {}, power: {}, duration: {})".format(self.sender, self.power, self.duration)
-    
-    @property
-    def startTime(self):
-        """int: The time at which the transmission started"""
-        return self._startTime
-    
-    @property
-    def power(self):
-        """float: The tramsmission power"""
-        return self._power
-    
-    @property
-    def bitrateHeader(self):
-        """int: The header's bitrate given in bits / time unit"""
-        return self._bitrateHeader
-    
-    @property
-    def bitratePayload(self):
-        """int: The payload's bitrate given in bits / time unit"""
-        return self._bitratePayload
-    
-    @property
-    def sender(self):
-        """NetworkDevice: The device that initiated the transmission"""
-        return self._sender
-    
-    @property
-    def packet(self):
+        self.power: float = power
+        """float: The tramsmission power in dBm"""
+
+        self.bitrateHeader: int = bitrateHeader
+        """int: The header's bitrate in bps"""
+
+        self.bitratePayload: int = bitratePayload
+        """int: The payload's bitrate in bps"""
+
+        self.packet: Packet = packet
         """Packet: The packet sent in the transmission"""
-        return self._packet
-    
-    @property
-    def duration(self):
-        """float: The number of time units taken by the transmission"""
-        return self._duration
-    
-    @property
-    def stopTime(self):
+
+        self.startTime: float = startTime
+        """float: The simulated time at which the transmission started"""
+
+        # TODO MCS
+        self.duration = packet.header.byteSize() * 8 / bitrateHeader + packet.payload.byteSize() * 8 / bitratePayload
+        """float: The time in seconds taken by the transmission"""
+        
+        self.stopTime = startTime + self.duration
         """
         float: The last moment in simulated time at which the transmission is
         active
         """
-        return self._stopTime
 
-    @property
-    def completes(self):
+        # create the completesEvent
+        self.completes: Event = SimMan.timeoutUntil(self.stopTime)
         """
         :class:`~simpy.events.Event`: A SimPy event that is triggered at
         :attr:`stopTime`.
         """
-        return self._completesEvent
+        
+    def __str__(self):
+        return "Transmission(from: {}, power: {}, duration: {})".format(self.sender, self.power, self.duration)
 
 class ChannelSpec:
     """

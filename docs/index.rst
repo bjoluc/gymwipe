@@ -7,10 +7,11 @@ Welcome to Gym-WiPE's documentation!
 
     api/index
 
+    bibliography
+
 Indices and tables
 ==================
 
 * :ref:`genindex`
 * :ref:`modindex`
 * :ref:`search`
-
