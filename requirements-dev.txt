@@ -13,12 +13,13 @@
 mypy-lang
 pipenv-to-requirements
 pylint
+rope
 sphinx
 sphinx-autobuild
 sphinx-autodoc-typehints
 sphinx-rtd-theme
 
 gym
-pytest
 pytest-mock
+pytest==3.5.0
 simpy
