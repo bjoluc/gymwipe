@@ -21,7 +21,7 @@ logger = SimTimePrepender(logging.getLogger(__name__))
 # Helper functions for physical calculations
 
 def calculateEbToN0Ratio(signalPower: float, noisePower: float, bitRate: int,
-                            returnDb: bool = False):
+                            returnDb: bool = False) -> float:
     """
     Computes :math:`E_b/N_0 = \\frac{S}{N_0 R}` (the "ratio of signal energy per
     bit to noise power density per Hertz" :cite:`stallings2005data`) given the
@@ -43,7 +43,7 @@ def calculateEbToN0Ratio(signalPower: float, noisePower: float, bitRate: int,
 
 sqrtOfTwoPi = sqrt(2*pi)
 
-def approxQFunction(x: float):
+def approxQFunction(x: float) -> float:
     """
     Approximates the complementary error function
 
@@ -56,6 +56,7 @@ def approxQFunction(x: float):
     :math:`Q(x) \\cong \\frac{1}{x\\sqrt{2\\pi}} exp \\big( -\\frac{x^2}{2}
     \\big)`
     """
+    assert x > 3
     return 1/(x*sqrtOfTwoPi) * exp(-(x^2 / 2))
 
 class Mcs(ABC):
@@ -145,12 +146,15 @@ class Transmission:
         :meth:`Channel.transmit`.
     """
 
-    def __init__(self, sender: Device, power: float, bitrateHeader: int, bitratePayload: int, packet: Packet, startTime: int):
+    def __init__(self, sender: Device, mcs: Mcs, power: float, bitrateHeader: int, bitratePayload: int, packet: Packet, startTime: float):
         self.sender: Device = sender
         """Device: The device that initiated the transmission"""
 
         self.power: float = power
         """float: The tramsmission power in dBm"""
+
+        self.mcs: Mcs = mcs
+        """Mcs: The modulation and coding scheme used for the transmission"""
 
         self.bitrateHeader: int = bitrateHeader
         """int: The header's bitrate in bps"""
@@ -164,7 +168,6 @@ class Transmission:
         self.startTime: float = startTime
         """float: The simulated time at which the transmission started"""
 
-        # TODO MCS
         self.duration = packet.header.byteSize() * 8 / bitrateHeader + packet.payload.byteSize() * 8 / bitratePayload
         """float: The time in seconds taken by the transmission"""
         
@@ -413,15 +416,18 @@ class Channel:
         """
         return self._attenuationModelFactory.getInstance(deviceA, deviceB)
 
-    def transmit(self, sender: Device, power: float, brHeader: int, brPayload: int, packet: Packet) -> Transmission:
+    def transmit(self, sender: Device, mcs: Mcs, power: float, brHeader: int, brPayload: int, packet: Packet) -> Transmission:
         """
-        Creates a :class:`Transmission` object with the values passed and stores
-        it. Also triggers the :attr:`~Channel.transmissionStarted` event of the
+        Simulates the transmission of `packet` with the given properties. This
+        is achieved by creating a :class:`Transmission` object with the values
+        passed and triggering the :attr:`transmissionStarted` event of the
         :class:`Channel`.
 
         Args:
-            sender: The NetworkDevice that transmits
-            power: Transmission power [dBm]
+            sender: The device that transmits
+            mcs: The modulation and coding scheme to be used (represented by an
+                instance of an Mcs subclass)
+            power: Transmission power in dBm
             brHeader: Header bitrate
             brPayload: Payload bitrate
             packet: :class:`~gymwipe.networking.messages.Packet` object
@@ -430,9 +436,9 @@ class Channel:
         Returns:
             The :class:`Transmission` object representing the transmission
         """
-        t = Transmission(sender, power, brHeader, brPayload, packet, SimMan.now)
+        t = Transmission(sender, mcs, power, brHeader, brPayload, packet, SimMan.now)
         self._transmissions.append((t, t.startTime, t.stopTime))
-        logger.debug("Transmission %s added to channel", t)
+        logger.debug("%s added to channel", t)
         self.nNewTransmission.trigger(t)
         # check which transmissionInReachNotifiers have to be triggered
         for (receiver, radius), notifier in self._transmissionInReachNotifiers.items():
