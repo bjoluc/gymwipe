@@ -8,6 +8,7 @@ gym = "*"
 pytest = "==3.5.0"
 pytest-mock = "*"
 simpy = "*"
+scipy = "*"
 
 [dev-packages]
 pylint = "*"
@@ -18,6 +19,7 @@ mypy-lang = "*"
 sphinx-autodoc-typehints = "*"
 pipenv-to-requirements = "*"
 rope = "*"
+sphinxcontrib-bibtex = "*"
 
 [requires]
 python_version = "3.6"
