@@ -32,6 +32,13 @@ def test_notifier_callback(caplog, mocker):
     n.trigger(value)
 
     assert callHistory == [(i, value) for i in range(1, 4)]
+
+    # test unsubscribing
+    callHistory = []
+    for c in callbackList:
+        n.unsubscribeCallback(c)
+    
+    assert callHistory == []
     
 def makeLoggingProcess(timeoutLength: int):
     """
