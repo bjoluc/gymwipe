@@ -75,6 +75,10 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 # The name of the Pygments (syntax highlighting) style to use.
 pygments_style = 'sphinx'
 
+# If true, the current module name will be prepended to all description
+# unit titles (such as .. function::).
+add_module_names = False
+
 
 # -- Options for HTML output -------------------------------------------------
 
@@ -174,7 +178,6 @@ texinfo_documents = [
      author, 'Gym-WiPE', 'An OpenAI Gym environment for channel assignment in the simulation of wirelessly networked feedback control loops',
      'Miscellaneous'),
 ]
-
 
 # -- Extension configuration -------------------------------------------------
 
