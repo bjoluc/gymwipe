@@ -14,8 +14,8 @@
 #
 import os
 import sys
-sys.path.insert(0, os.path.abspath('../'))
 
+sys.path.insert(0, os.path.abspath('../'))
 
 # -- Project information -----------------------------------------------------
 
@@ -42,10 +42,12 @@ extensions = [
     'sphinx.ext.autodoc',
     'sphinx.ext.autosummary',
     'sphinx.ext.todo',
+    'sphinx.ext.mathjax',
+    'sphinxcontrib.bibtex',
     'sphinx.ext.napoleon',
     'sphinx_autodoc_typehints',
-    'sphinx.ext.mathjax',
-    'sphinxcontrib.bibtex'
+    'sphinx.ext.intersphinx',
+    'sphinx.ext.linkcode'
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -183,6 +185,37 @@ texinfo_documents = [
 
 # __init__ docstring behaviour
 autoclass_content = 'both' # "Both the class’ and the init method’s docstring are concatenated and inserted."
+
+intersphinx_mapping = {
+    'python': ('https://docs.python.org/3', None),
+    'simpy': ('https://simpy.readthedocs.io/en/latest/', None)
+}
+
+# Resolve function for the linkcode extension
+# Based on this: https://github.com/Lasagne/Lasagne/blob/master/docs/conf.py
+def linkcode_resolve(domain, info):
+    def find_source():
+        # try to find the file and line number, based on code from numpy:
+        # https://github.com/numpy/numpy/blob/master/doc/source/conf.py#L286
+        obj = sys.modules[info['module']]
+        for part in info['fullname'].split('.'):
+            obj = getattr(obj, part)
+        import inspect
+        import os
+        fn = inspect.getsourcefile(obj)
+        fn = os.path.relpath(fn, start=os.path.dirname(os.path.abspath('./')))
+        source, lineno = inspect.getsourcelines(obj)
+        return fn, lineno, lineno + len(source) - 1
+
+    if domain != 'py' or not info['module']:
+        return None
+    try:
+        filename = '%s#L%d-L%d' % find_source()
+    except Exception:
+        filename = info['module'].replace('.', '/') + '.py'
+    #tag = 'master' if 'dev' in release else ('v' + release)
+    tag = 'develop'
+    return "https://github.com/bjoluc/gymwipe/blob/%s/%s" % (tag, filename)
 
 # -- Options for todo extension ----------------------------------------------
 
