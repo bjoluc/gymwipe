@@ -3,7 +3,7 @@ Physical layer related components
 """
 import functools
 import logging
-from abc import ABC, abstractmethod, abstractproperty
+from abc import ABC, abstractmethod
 from fractions import Fraction
 from math import e, exp, log10, pi, sqrt
 from typing import Any, Dict, List, Tuple, Type, TypeVar
@@ -34,9 +34,7 @@ def calculateEbToN0Ratio(signalPower: float, noisePower: float, bitRate: int,
         bitRate: The bit rate :math:`R` in bps
         returnDb: If set to ``True``, the ratio will be returned in db.
     """
-    s_dbw = signalPower + 30
-    n_dbw = noisePower + 30
-    ratio_db = s_dbw - n_dbw - 10*log10(bitRate)
+    ratio_db = signalPower - noisePower - 10*log10(bitRate)
     if returnDb:
         return ratio_db
     return 10**(ratio_db/10)
@@ -45,19 +43,30 @@ sqrtOfTwoPi = sqrt(2*pi)
 
 def approxQFunction(x: float) -> float:
     """
-    Approximates the complementary error function
+    Approximates the gaussian Q-Function for :math:`x \\ge 0` by using the
+    following formula, derived from :cite:`karagiannidis2007improved`:
 
-    :math:`Q(x)=\\frac{1}{\\sqrt{2\\pi}} \\int_{x}^{\\infty} exp
-    \\big(-\\frac{u^2}{2} \\big) du` (see :cite:`sklar1993defining`)
+    :math:`Q(x)\\approx\\frac{\\left( 1-e^{-1.4x}\\right)
+    e^{-\\frac{x^{2}}{2}}}{1.135\\sqrt{2\\pi}x}`
 
-    for :math:`x > 3`. The following formula, taken from
-    :cite:`sklar1993defining`, is used:
-
-    :math:`Q(x) \\cong \\frac{1}{x\\sqrt{2\\pi}} exp \\big( -\\frac{x^2}{2}
-    \\big)`
+    Args:
+        x: The :math:`x` value to approximate :math:`Q(x)` for
     """
-    assert x > 3
-    return 1/(x*sqrtOfTwoPi) * exp(-(x^2 / 2))
+    assert x >= 0
+    return (1 - e**(-1.4*x)) * e**(-(x**2 / 2)) / (1.135 * sqrtOfTwoPi * x)
+
+def temperatureToNoisePowerDensity(temperature: float) -> float:
+    """
+    Calculates the noise power density :math:`N_0` in W/Hz for a given
+    temperature :math:`T` in degrees Celsius according to
+    :cite:`stallings2005data` by using the following formula:
+
+    :math:`N_0 = k (T + 273.15)` with :math:`k` being Boltzmann’s constant
+    
+    Args:
+        temperature: The temperature :math:`T` in degrees Celsius
+    """
+    return 1.38e-23 * (temperature + 273.15)
 
 class Mcs(ABC):
     """
@@ -67,7 +76,7 @@ class Mcs(ABC):
     offers a :meth:`getBitErrorRateBySnr` method that is used by receiving PHY
     layer instances.
 
-    Currently, only BPSK modulation is implemented (see :class:`DpskMcs` for details).
+    Currently, only BPSK modulation is implemented (see :class:`BpskMcs` for details).
     Subclass :class:`Mcs` if you need something more advanced.
     """
 
@@ -87,10 +96,8 @@ class Mcs(ABC):
         Returns: The estimated resulting bit error rate (a float in [0,1])
         """
     
-    # Transmissions need Mcs objects (also for length determination)
-    # Also: Bitrate needs a proper unit!
-    
-    @abstractproperty
+    @property
+    @abstractmethod
     def codeRate(self) -> Fraction:
         """
         Fraction: The relative amount of transmitted bits that are not used for
@@ -129,8 +136,12 @@ class BpskMcs(Mcs):
     A Binary Phase-Shift-Keying MCS
     """
 
-    def __init__(self, codeRate: Fraction):
-        self.codeRate = codeRate
+    def __init__(self, codeRate: Fraction = Fraction(1,2)):
+        self._codeRate = codeRate
+    
+    @property
+    def codeRate(self) -> Fraction:
+        return self._codeRate
 
     def calculateBitErrorRate(self, signalPower: float, noisePower: float, bitRate: float) -> float:
         ratio = calculateEbToN0Ratio(signalPower, noisePower, bitRate)
@@ -147,6 +158,8 @@ class Transmission:
     """
 
     def __init__(self, sender: Device, mcs: Mcs, power: float, bitrateHeader: int, bitratePayload: int, packet: Packet, startTime: float):
+        bitTime = 1 / bitratePayload
+        
         self.sender: Device = sender
         """Device: The device that initiated the transmission"""
 
@@ -168,20 +181,35 @@ class Transmission:
         self.startTime: float = startTime
         """float: The simulated time at which the transmission started"""
 
-        self.duration = packet.header.byteSize() * 8 / bitrateHeader + packet.payload.byteSize() * 8 / bitratePayload
+        self.headerDuration = packet.header.byteSize() * 8 * bitTime
+        """float: The time in seconds taken by the transmission of the packet's header"""
+
+        self.payloadDuration = packet.payload.byteSize() * 8 * bitTime
+        """float: The time in seconds taken by the transmission of the packet's payload"""
+
+        self.duration = self.headerDuration + self.payloadDuration
         """float: The time in seconds taken by the transmission"""
         
-        self.stopTime = startTime + self.duration
+        self.stopTime = startTime + self.duration + bitTime
         """
-        float: The last moment in simulated time at which the transmission is
-        active
+        float: The moment in simulated time right after the transmission has
+        completed
         """
 
-        # create the completesEvent
-        self.completes: Event = SimMan.timeoutUntil(self.stopTime)
+        # SimPy events
+        headerStopTime = self.startTime + self.headerDuration + bitTime
+        self.headerCompletes: Event = SimMan.timeoutUntil(headerStopTime, self)
         """
-        :class:`~simpy.events.Event`: A SimPy event that is triggered at
-        :attr:`stopTime`.
+        :class:`~simpy.events.Event`: A SimPy event that succeeds at the moment
+        in simulated time right after the packet's header has been transmitted.
+        The transmission object is provided as the value to the
+        :meth:`~simpy.events.Event.succeed` call.
+        """
+
+        self.completes: Event = SimMan.timeoutUntil(self.stopTime, self)
+        """
+        :class:`~simpy.events.Event`: A SimPy event that succeeds at
+        :attr:`stopTime`, providing the transmission object as the value.
         """
         
     def __str__(self):
@@ -217,7 +245,13 @@ class AttenuationModel():
             channelSpec: The channel specification of the corresponding channel
             deviceA: Network device a
             deviceB: Network device b
+
+        Raises:
+            ValueError: If `deviceA` is `deviceB`
         """
+        if deviceA is deviceB:
+            raise ValueError("An AttenuationModel cannot be created with both "
+                             "deviceA and deviceB being the same device.")
         self.channelSpec = channelSpec
         self.devices: Tuple[Device] = (deviceA, deviceB)
         self.attenuation: float = 0
@@ -257,11 +291,12 @@ class BaseAttenuationModel(AttenuationModel):
 
     def __init__(self, channelSpec: ChannelSpec, deviceA: Device, deviceB: Device):
         super(BaseAttenuationModel, self).__init__(channelSpec, deviceA, deviceB)
-
+        
         def positionChangedCallback(p: devices.Position):
             distance = self.devices[0].position.distanceTo(self.devices[1].position)
             if distance < self.STANDBY_THRESHOLD:
                 self._positionChanged(p.owner)
+
         for device in self.devices:
             device.position.nChange.subscribeCallback(positionChangedCallback)
     
@@ -376,7 +411,7 @@ class Channel:
     The Channel class serves as a manager for transmission objects and
     represents a physical channel. It also offers the
     :meth:`getAttenuationModel` method that returns an AttenuationModel for any
-    pair of devices. 
+    pair of devices.
     """
 
     def __init__(self, modelClasses: List[AttenuationModelClass], frequency: float = 2.4e9, bandwidth: float = 22e6):
@@ -439,11 +474,14 @@ class Channel:
         t = Transmission(sender, mcs, power, brHeader, brPayload, packet, SimMan.now)
         self._transmissions.append((t, t.startTime, t.stopTime))
         logger.debug("%s added to channel", t)
-        self.nNewTransmission.trigger(t)
-        # check which transmissionInReachNotifiers have to be triggered
-        for (receiver, radius), notifier in self._transmissionInReachNotifiers.items():
-            if receiver.position.distanceTo(sender.position) <= radius:
-                notifier.trigger(t)
+        # trigger notifiers after returning the transmission
+        def callAfterReturn(value: Any):
+            self.nNewTransmission.trigger(t)
+            # check which transmissionInReachNotifiers have to be triggered
+            for (receiver, radius), notifier in self._transmissionInReachNotifiers.items():
+                if receiver.position.distanceTo(sender.position) <= radius:
+                    notifier.trigger(t)
+        SimMan.timeout(0).callbacks.append(callAfterReturn)
         return t
     
     def getTransmissions(self, fromTime: int, toTime: int) -> List[Tuple[Transmission, int, int]]:
