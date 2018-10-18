@@ -112,12 +112,11 @@ class SimulationManager:
     
     def timeoutUntil(self, triggerTime: float, value: Any = None) -> Event:
         """
-        Returns a SimPy :class:`~simpy.Event` that succeeds at the time
-        specified by `triggerTime`.
+        Returns a SimPy :class:`~simpy.Event` that succeeds at the simulated
+        time specified by `triggerTime`.
 
-        Args:
-            triggerTime: When to trigger the :class:`~simpy.Event`
-            value: The value to call :meth:`~simpy.Event.succeed` with
+        Args: triggerTime: When to trigger the :class:`~simpy.Event` value: The
+            value to call :meth:`~simpy.Event.succeed` with
         """
         now = self.now
         if triggerTime > now:

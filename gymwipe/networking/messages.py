@@ -11,12 +11,14 @@ inter-module communication.
     ~gymwipe.networking.messages.Packet
     ~gymwipe.networking.messages.SimpleMacHeader
     ~gymwipe.networking.messages.SimpleTransportHeader
-
 """
-from typing import Any, Dict
 from enum import Enum
+from typing import Any, Dict
+
 from simpy.events import Event
+
 from gymwipe.simtools import SimMan
+
 
 class Transmittable:
     """

@@ -3,22 +3,26 @@ The Stack package contains implementations of network stack layers. Layers are m
 """
 import logging
 from collections import deque
-from typing import Any, Deque
+from functools import partial
+from typing import Any, Deque, Dict, List
 
+import numpy as np
 from simpy.events import Event
 
+from gymwipe.devices import Device
 from gymwipe.networking.construction import Gate, GateListener, Module
-from gymwipe.networking.core import NetworkDevice
 from gymwipe.networking.messages import (Packet, Signal, SimpleMacHeader,
                                          StackSignals, Transmittable)
-from gymwipe.networking.physical import Channel, Transmission
+from gymwipe.networking.physical import (AttenuationModel, BpskMcs, Channel,
+                                         Mcs, Transmission,
+                                         temperatureToNoisePowerDensity)
 from gymwipe.simtools import Notifier, SimMan, SimTimePrepender
 
 logger = SimTimePrepender(logging.getLogger(__name__))
 
 class StackLayer(Module):
 
-    def __init__(self, name: str, device: NetworkDevice):
+    def __init__(self, name: str, device: Device):
         super(StackLayer, self).__init__(name)
         self.device = device
     
@@ -56,21 +60,98 @@ class SimplePhy(StackLayer):
         * Get MCS objects for the transmission
     """
 
-    NOISE_POWER_DENSITY = 0.01
+    NOISE_POWER_DENSITY = temperatureToNoisePowerDensity(20.0)
     """float: The receiver's noise power density in Watts/Hertz"""
 
-    RECV_THRESHOLD = -80
-
     @GateListener.setup
-    def __init__(self, name: str, device: NetworkDevice, channel: Channel):
+    def __init__(self, name: str, device: Device, channel: Channel, mcs: Mcs = BpskMcs()):
         super(SimplePhy, self).__init__(name, device)
-        self.channel: Channel = channel
+        self.channel = channel
+        self.mcs = mcs
         self._addGate("mac")
 
+        # Attributes related to sending
         self._currentTransmission = None
-        self.channel.nNewTransmission.subscribeProcess(self._onNewTransmission)
+        self._transmitting = False
+
+        # Attributes related to receiving
+        self._thermalNoiseLevel = self.NOISE_POWER_DENSITY * channel.spec.bandwidth
+        self._transmissionToReceivedPowerDict: Dict[Transmission, float] = {}
+        self._transmissionToAttenuationChangedCallbackDict = {}
+        self._receivedLevel = self._thermalNoiseLevel
+        def updateReceivedLevel(delta: float):
+            self._receivedLevel += delta
+        self._nReceivedLevelChanges = Notifier("Received level changes", self)
+        self._nReceivedLevelChanges.subscribeCallback(updateReceivedLevel, priority=1)
+
+        self.channel.nNewTransmission.subscribeCallback(self._onNewTransmission)
+        self.channel.nNewTransmission.subscribeProcess(self._receive)
         logger.debug("%s: Initialization completed", self)
+
+    def _getAttenuationModelByTransmission(self, t: Transmission) -> AttenuationModel:
+        """
+        Returns the attenuation model for this device and the sender of the
+        passed transmission.
+        """
+        return self.channel.getAttenuationModel(self.device, t.sender)
+
+    def _calculateReceivedPower(self, t: Transmission, attenuation = None) -> float:
+        """
+        Calculates the power that is received from a certain transmission.
+
+        Args:
+            t: The transmission to calculate the received power for
+            attenuation: The attenuation between the sender and this Phy's
+                device. If not provided, it will be requested by the corresponding
+                attenuation model.
+        """
+        if attenuation is None:
+            attenuation = self._getAttenuationModelByTransmission(t).attenuation
+        return t.power - attenuation
+
+    # Callbacks
+    # The purpose of the following callbacks is to maintain a dict that maps
+    # active transmissions to their received power. This is used to calculate
+    # signal and noise levels.
+
+    def _onAttenuationChange(self, t: Transmission, attenuation: float):
+        """
+        Callback that is invoked when the attenuation to the sender of
+        `transmission` changes, providing the new attenuation value
+        """
+        newReceivedPower = self._calculateReceivedPower(t, attenuation)
+        delta = self._transmissionToReceivedPowerDict[t] - newReceivedPower
+        self._nReceivedLevelChanges.trigger(delta)
     
+    def _onNewTransmission(self, t: Transmission):
+        """
+        Is called whenever a transmission starts
+        """
+        if t is not self._currentTransmission:
+            receivedPower = self._calculateReceivedPower(t)
+            self._transmissionToReceivedPowerDict[t] = receivedPower
+            self._nReceivedLevelChanges.trigger(receivedPower)
+            t.completes.callbacks.append(self._onCompletingTransmission)
+            # subscribe to changes of attenuation for the transmission
+            onAttenuationChange = partial(self._onAttenuationChange, t)
+            self._transmissionToAttenuationChangedCallbackDict[t] = onAttenuationChange
+            self._getAttenuationModelByTransmission(t).nAttenuationChanges.subscribeCallback(onAttenuationChange)
+    
+    def _onCompletingTransmission(self, t: Transmission):
+        """
+        Is called when a transmission completes
+        """
+        # Making sure the transmission has been added (this is not the case if
+        # this Phy is the sender)
+        if t in self._transmissionToReceivedPowerDict:
+            receivedPower = self._transmissionToReceivedPowerDict.pop(t)
+            self._nReceivedLevelChanges.trigger(-receivedPower)
+            # unsubscribe from changes of attenuation for the transmission
+            callback = self._transmissionToAttenuationChangedCallbackDict[t]
+            self._getAttenuationModelByTransmission(t).nAttenuationChanges.unsubscribeCallback(callback)
+    
+    # SimPy generators
+
     @GateListener("mac", Signal, queued=True)
     def macGateListener(self, cmd):
         p = cmd.properties
@@ -79,38 +160,67 @@ class SimplePhy(StackLayer):
             logger.debug("%s: Received SEND command", self)
             # wait for the beginning of the next time slot
             yield SimMan.nextTimeSlot()
-            # simulate sending
-            t = self.channel.transmit(self.device, p["power"], p["bitrate"], p["bitrate"], p["packet"])
+            # simulate transmitting
+            self._transmitting = True
+            t = self.channel.transmit(self.device, self.mcs, p["power"], p["bitrate"], p["bitrate"], p["packet"])
             self._currentTransmission = t
             # wait for the transmission to finish
             yield t.completes
+            self._transmitting = False
             # indicate that the send command was processed
             cmd.setProcessed()
     
-    def _onNewTransmission(self, t: Transmission):
-        # simulates receiving via the channel
-        if not t == self._currentTransmission:
+    def _receive(self, t: Transmission):
+        # Simulates receiving via the channel
+        if not self._transmitting:
             logger.debug("%s: Sensed a transmission.", self)
-            # wait until the transmission has finished
+
+            currentBitRate = t.bitrateHeader
+            bitErrorSum = 0
+            lastLevelChange = SimMan.now
+
+            # Callback for reacting to changes of the received level
+            def onLevelChange(delta: float):
+                nonlocal bitErrorSum
+                if delta != 0:
+                    # Calculate the duration for that the previous level was
+                    # "constant"
+                    now = SimMan.now
+                    prevLevelDuration = now - lastLevelChange
+
+                    # Calculate the bit error rate for that duration
+                    signalLevel = self._transmissionToReceivedPowerDict[t]
+                    noiseLevel = self._receivedLevel - signalLevel
+                    prevBitErrorRate = t.mcs.calculateBitErrorRate(signalLevel, noiseLevel, currentBitRate)
+                    
+                    # Derive the number of bit errors for that duration
+                    bitErrors = round(prevBitErrorRate * prevLevelDuration)
+                    bitErrorSum += bitErrors
+            
+            self._nReceivedLevelChanges.subscribeCallback(onLevelChange)
+            
+            # Wait for the header to be transmitted
+            yield t.headerCompletes
+
+            # Update the bitrate for the payload
+            currentBitRate = t.bitratePayload
+
+            # Wait for the payload to be transmitted
             yield t.completes
-            # check for collisions
-            if len(self.channel.getTransmissions(t.startTime, t.stopTime)) > 1:
-                logger.debug("%s: Colliding transmission(s) were detected, transmission could not be received.", self)
+
+            # Alright, we have the number of bit errors in bitErrorSum now!
+            bitErrorRate = bitErrorSum / t.duration
+            maxCorrectableBer = t.mcs.maxCorrectableBer()
+            if bitErrorRate > maxCorrectableBer:
+                logger.debug("%s: Packet received with uncorectable errors "
+                             "(bit error rate: %6d, maximum correctable bit error rate: %6d)!",
+                             self, bitErrorRate, maxCorrectableBer)
             else:
-                # no colliding transmissions, check attenuation
-                a = self.channel.getAttenuationModel(t.sender, self.device).attenuation
-                recvPower = t.power - a
-                if recvPower < self.RECV_THRESHOLD:
-                    logger.debug("%s: Signal strength of %6d dBm is insufficient "
-                                    "(RECV_THRESHOLD is %6d dBm), packet could not be "
-                                    "received correctly.", self, recvPower, self.RECV_THRESHOLD)
-                else:
-                    logger.debug("%s: Packet successfully received (Signal power was %6d dBm)!",
-                                    self, recvPower)
-                    packet = t.packet
-                    # sending the packet via the mac gate
-                    self.gates["mac"].output.send(packet)
-                    print("Should terminate now")
+                logger.debug("%s: Packet successfully received (bit error rate: %6d)!",
+                             self, bitErrorRate)
+                packet = t.packet
+                # sending the packet via the mac gate
+                self.gates["mac"].output.send(packet)
 
 class SimpleMac(StackLayer):
     """
@@ -172,7 +282,7 @@ class SimpleMac(StackLayer):
     """
 
     @GateListener.setup
-    def __init__(self, name: str, device: NetworkDevice, addr: bytes):
+    def __init__(self, name: str, device: Device, addr: bytes):
         """
         Args:
             name: The layer's name
@@ -326,7 +436,7 @@ class SimpleRrmMac(StackLayer):
     """
 
     @GateListener.setup
-    def __init__(self, name: str, device: NetworkDevice):
+    def __init__(self, name: str, device: Device):
         super(SimpleRrmMac, self).__init__(name, device)
         self._addGate("phy")
         self._addGate("transport")
