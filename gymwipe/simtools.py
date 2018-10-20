@@ -26,19 +26,16 @@ class SimulationManager:
     
     def __init__(self):
         self._env = None
-    
-    stepsPerSecond = 1000
-    """int: The number of SimPy time steps per simulated second"""
 
-    clockFreq = 1000
-    """int: The frequency of a network card's clock [1/time step]"""
+    clockFreq: float = 1e3
+    """float: The frequency of a network card's clock in Hertz"""
 
-    timeSlotSize = 1
-    """int: The number of time steps for one time slot (slotted time)"""
+    timeSlotSize: float = 1e-6
+    """float: The length of one time slot in seconds (slotted time)"""
     
     def clockTick(self) -> Event:
         """
-        Returns a SimPy timeout event with a duration of ``1/clockFreq``.
+        Returns a SimPy timeout event with a duration of 1/:attr:`clockFreq`.
         """
         return self.timeout(1/self.clockFreq)
     
@@ -77,7 +74,7 @@ class SimulationManager:
 
     def event(self):
         """
-        Creates and returns a new :class:`~simpy.Event` object belonging to the
+        Creates and returns a new :class:`~simpy.events.Event` object belonging to the
         current environment.
         """
         return Event(self.env)
@@ -112,11 +109,11 @@ class SimulationManager:
     
     def timeoutUntil(self, triggerTime: float, value: Any = None) -> Event:
         """
-        Returns a SimPy :class:`~simpy.Event` that succeeds at the simulated
+        Returns a SimPy :class:`~simpy.events.EventEvent` that succeeds at the simulated
         time specified by `triggerTime`.
 
-        Args: triggerTime: When to trigger the :class:`~simpy.Event` value: The
-            value to call :meth:`~simpy.Event.succeed` with
+        Args: triggerTime: When to trigger the :class:`~simpy.events.Event` value: The
+            value to call :meth:`~simpy.events.Event.succeed` with
         """
         now = self.now
         if triggerTime > now:
@@ -126,7 +123,7 @@ class SimulationManager:
     
     def triggerAfterTimeout(self, event: Event, timeout: float, value: Any = None) -> None:
         """
-        Calls :meth:`~simpy.Event.succeed` on the `event` after the simulated
+        Calls :meth:`~simpy.events.Event.succeed` on the `event` after the simulated
         time specified in `timeout` has passed. If the event has already been
         triggered by then, no action is taken.
         """
@@ -164,8 +161,8 @@ class SimTimePrepender(logging.LoggerAdapter):
         super(SimTimePrepender, self).__init__(logger, {})
 
     def process(self, msg, kwargs):
-        """Prepends "[Time: x]"to `message`, with x being the current simulation time."""
-        return "[Time: {}] {}".format(SimMan.now, msg), kwargs
+        """Prepends "[Time: `x`]" to `message`, with `x` being the current simulation time."""
+        return "[Time: {:12f}] {}".format(SimMan.now, msg), kwargs
 
 logger = SimTimePrepender(logging.getLogger(__name__))
 
@@ -242,14 +239,8 @@ class Notifier:
         # Add the callback to the set corresponding to its priority
         priorityCallbacks = self._priorityToCallbacksDict[priority]
         priorityCallbacks.add(callback)
-        if len(priorityCallbacks) == 1:
-            # A new priority was added, we have to update the callback iterable.
-            sortedPriorities = sorted(self._priorityToCallbacksDict.keys(), reverse=True)
-            self._sortedCallbacks = list(
-                itertools.chain(
-                    *[self._priorityToCallbacksDict[p] for p in sortedPriorities]
-                )
-            )
+
+        self._updateSortedCallbacks()
     
     def unsubscribeCallback(self, callback: Callable[[Any], None]):
         """
@@ -262,6 +253,18 @@ class Notifier:
         if callback in self._callbackToPriorityDict:
             priority = self._callbackToPriorityDict.pop(callback)
             self._priorityToCallbacksDict[priority].remove(callback)
+        self._updateSortedCallbacks()
+    
+    def _updateSortedCallbacks(self):
+        """
+        Rebuilds the sortedCallbacks list
+        """
+        sortedPriorities = sorted(self._priorityToCallbacksDict.keys(), reverse=True)
+        self._sortedCallbacks = list(
+            itertools.chain(
+                *[self._priorityToCallbacksDict[p] for p in sortedPriorities]
+            )
+        )
 
     def subscribeProcess(self, process: Generator[Event, Any, None], blocking=True, queued=False):
         """
@@ -350,7 +353,7 @@ class Notifier:
     @property
     def event(self):
         """
-        :class:`~simpy.Event`: A SimPy event that succeeds when the
+        :class:`~simpy.events.Event`: A SimPy event that succeeds when the
         :class:`Notifier` is triggered
         """
         if self._event is None:
