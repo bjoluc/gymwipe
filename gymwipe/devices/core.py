@@ -1,13 +1,16 @@
 """
 Core components for modelling physical devices
 """
+import logging
 from math import sqrt
 from typing import Any, List, Tuple
 
 from simpy import Event
 
 from gymwipe import ownerPrefix
-from gymwipe.simtools import Notifier
+from gymwipe.simtools import Notifier, SimTimePrepender
+
+logger = SimTimePrepender(logging.getLogger(__name__))
 
 class Position:
     """
@@ -48,6 +51,7 @@ class Position:
     @x.setter
     def x(self, x):
         if x != self._x:
+            logger.debug("%s: Changing x to %s", self, x)
             self._x = x
             self.nChange.trigger(self)
     
@@ -65,6 +69,7 @@ class Position:
     @y.setter
     def y(self, y):
         if y != self._y:
+            logger.debug("%s: Changing y to %s", self, y)
             self._y = y
             self.nChange.trigger(self)
     
@@ -74,6 +79,7 @@ class Position:
         :attr:`nChange` notifier only once.
         """
         if x != self._x or y != self._y:
+            logger.debug("%s: Setting x, y = %s, %s", self, x, y)
             self._x = x
             self._y = y
             self.nChange.trigger(self)
@@ -106,7 +112,7 @@ class Device:
         self._position: Position = Position(xPos, yPos, self)
     
     def __str__(self):
-        return "NetworkDevice('{}')".format(self.name)
+        return "Device('{}')".format(self.name)
     
     @property
     def position(self):
