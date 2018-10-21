@@ -7,7 +7,8 @@ from pytest_mock import mocker
 from gymwipe.devices import Device
 from gymwipe.networking.attenuation_models import FsplAttenuation
 from gymwipe.networking.construction import Gate
-from gymwipe.networking.messages import (Packet, Signal, SimpleMacHeader,
+from gymwipe.networking.messages import (FakeTransmittable, Packet, Signal,
+                                         SimpleMacHeader,
                                          SimpleTransportHeader, StackSignals,
                                          Transmittable)
 from gymwipe.networking.physical import Channel
@@ -45,8 +46,8 @@ def simple_phy():
     channel = Channel([FsplAttenuation])
 
     # create two network devices
-    device1 = Device("Device1", 0, 0)
-    device2 = Device("Device2", 6, 5)
+    device1 = Device("1", 0, 0)
+    device2 = Device("2", 6, 5)
 
     # create the SimplePhy network stack layers
     device1Phy = SimplePhy("Phy", device1, channel)
@@ -63,8 +64,9 @@ def simple_phy():
 def test_simple_phy(caplog, mocker, simple_phy):
     #caplog.set_level(logging.DEBUG, logger='gymwipe.networking.construction')
     #caplog.set_level(logging.DEBUG, logger='gymwipe.networking.core')
-    caplog.set_level(logging.DEBUG, logger='gymwipe.networking.stack')
-    caplog.set_level(logging.DEBUG, logger='gymwipe.networking.physical')
+    caplog.set_level(logging.INFO, logger='gymwipe.networking.stack')
+    caplog.set_level(logging.INFO, logger='gymwipe.networking.physical')
+    #caplog.set_level(logging.DEBUG, logger='gymwipe.simtools')
 
     setup = simple_phy
     channel = setup.channel
@@ -76,38 +78,51 @@ def test_simple_phy(caplog, mocker, simple_phy):
     receiverGate = Gate("Receiver Stack", receiverCallbackMock)
     receiverPhy.gates["mac"].connectOutputTo(receiverGate.input)
 
-    # create a packet
-    packet = Packet(Transmittable("Header2"), Packet(Transmittable("Header1"), Transmittable("Payload")))
+    # create something transmittable
+    packet = Packet(FakeTransmittable(8), FakeTransmittable(128))
 
     def sending():
         # the channel should be unused yet
         assert len(channel.getActiveTransmissions()) == 0
 
         # setup the message to the physical layer
-        cmd = Signal(StackSignals.SEND, {"packet": packet, "power": -20, "bitrate": 16})
-
-        # wait until the receiver is receiving
-        yield SimMan.timeout(1)
+        BITRATE = 1e6  # 1 Mb/s
+        POWER = -20.0 # dBm
+        cmd = Signal(StackSignals.SEND, {"packet": packet, "power": POWER, "bitrate": BITRATE})
 
         # send the message to the physical layer
         senderPhy.gates["mac"].send(cmd)
 
-        # wait and assert
-        yield SimMan.timeout(10)
+        # wait 8 bits
+        yield SimMan.timeout(8/BITRATE)
+
+        # assertions for the transmission
         transmissions = channel.getActiveTransmissions()
         assert len(transmissions) == 1
         t = transmissions[0]
         # check the correctness of the transmission created
         assert t.packet == packet
-        assert t.power == -20
-        assert t.bitrateHeader == 16
-        assert t.bitratePayload == 16
+        assert t.power == POWER
+        assert t.bitrateHeader == BITRATE
+        assert t.bitratePayload == BITRATE
 
-        yield SimMan.timeout(100)
+        power = receiverPhy._receivedPower
+
+        # wait another 64 bits
+        yield SimMan.timeout(64/BITRATE)
+
+        # move device 2
+        setup.device2.position.x = 50
+
+        yield SimMan.timeout(16/BITRATE)
+
+        assert receiverPhy._receivedPower < power
+
+        yield SimMan.timeout(1)
         assert len(channel.getActiveTransmissions()) == 0
     
     def receiving():
-        yield SimMan.timeout(150)
+        yield SimMan.timeout(4)
         receiverCallbackMock.assert_called_with(packet)
     
     SimMan.process(sending())
