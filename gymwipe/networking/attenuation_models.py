@@ -30,9 +30,10 @@ class FsplAttenuation(BaseAttenuationModel):
         a = self.devices[0].position
         b = self.devices[1].position
         if a == b:
-            logger.info("FSPLAttenuation: Source and destination position are equivalent.")
+            logger.warn("%s: Source and destination position are equivalent.", self)
             return 0
-        return 20*log10(a.distanceTo(b)) + 20*log10(self.channelSpec.frequency) - 147.55
+        attenuation = 20*log10(a.distanceTo(b)) + 20*log10(self.channelSpec.frequency) - 147.55
+        self._setAttenuation(attenuation)
     
     def _positionChanged(self, device: Device):
         self._update()
