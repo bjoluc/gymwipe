@@ -58,13 +58,19 @@ class Transmittable:
         """
         return self._size
     
-    def transmissionTime(self, bitrate: int) -> int:
+    def bitSize(self) -> int:
         """
-        Returns the number of time steps needed to transmit the data represented
-        by the :class:`Transmittable` at a specified bit rate.
+        Returns :meth:`byteSize` :math:`\\times 8`
+        """
+        return self.byteSize() * 8
+    
+    def transmissionTime(self, bitrate: float) -> float:
+        """
+        Returns the time in seconds needed to transmit the data represented
+        by the :class:`Transmittable` at the specified bit rate.
 
         Args:
-            bitrate: The number of bits that are transmitted in a single timeStep
+            bitrate: The bitrate in bps
         """
         return self.byteSize()*8 / bitrate
 
@@ -82,7 +88,7 @@ class FakeTransmittable(Transmittable):
                 will be long
         """
         self._size = byteSize
-        self._str = "FakeTransmittable(byteSize={d})".format(self._size)
+        self._str = "FakeTransmittable(byteSize={:d})".format(self._size)
 
 class Packet(Transmittable):
     """
