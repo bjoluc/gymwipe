@@ -27,7 +27,7 @@ class SimulationManager:
     def __init__(self):
         self._env = None
 
-    clockFreq: float = 1e3
+    clockFreq: float = 1e6
     """float: The frequency of a network card's clock in Hertz"""
 
     timeSlotSize: float = 1e-6
@@ -236,7 +236,7 @@ class Notifier:
 
         self._callbackToPriorityDict[callback] = priority
 
-        # Add the callback to the set corresponding to its priority
+        # Add the callback to the set belonging to its priority
         priorityCallbacks = self._priorityToCallbacksDict[priority]
         priorityCallbacks.add(callback)
 
