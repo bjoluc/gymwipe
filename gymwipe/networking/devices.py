@@ -13,7 +13,7 @@ class NetworkDevice(Device):
     """
     A subclass of :class:`~gymwipe.devices.core.Device` that extends the
     constructor's parameter list by a channel argument. The provided
-    :class:`gymwipe.networking.physical.Channel` object will be stored in the
+    :class:`~gymwipe.networking.physical.Channel` object will be stored in the
     :attr:`channel` attribute.
     """
 
@@ -23,15 +23,15 @@ class NetworkDevice(Device):
             name: The device name
             xPos: The device's physical x position
             yPos: The device's physical y position
-            channel: The :class:`gymwipe.networking.physical.Channel` instance
+            channel: The :class:`~gymwipe.networking.physical.Channel` instance
                 that will be used for transmissions
         """
         super(NetworkDevice, self).__init__(name, xPos, yPos)
 
         self.channel: Channel = channel
         """
-        :class:`gymwipe.networking.physical.Channel`: The
-            :class:`gymwipe.networking.physical.Channel` instance that
+        :class:`~gymwipe.networking.physical.Channel`: The
+            :class:`~gymwipe.networking.physical.Channel` instance that
             is used for transmissions
         """
 
@@ -132,7 +132,7 @@ class SimpleRrmDevice(NetworkDevice):
     @property
     def macAddress(self) -> bytes:
         """bytes: The RRM's MAC address"""
-        return self._mac.macAddress
+        return self._mac.addr
 
     def assignChannel(self, deviceMac: bytes, duration: int) -> Signal:
         """
