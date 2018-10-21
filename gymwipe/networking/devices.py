@@ -89,7 +89,7 @@ class SimpleNetworkDevice(NetworkDevice):
         while self._receiving:
             receiveCmd = Signal(StackSignals.RECEIVE, {"duration": self.RECEIVE_TIMEOUT})
             self._mac.gates["transport"].send(receiveCmd)
-            result = yield receiveCmd.processed
+            result = yield receiveCmd.eProcessed
             if result:
                 self.onReceive(result)
         # Reset receiver process reference so one can now that the process has

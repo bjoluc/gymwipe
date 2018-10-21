@@ -134,7 +134,7 @@ class SimplePhy(StackLayer):
             logger.debug("%s: %s was added, received power from that "
                             "transmission: %s mW", self, t, receivedPower)
             self._nReceivedPowerChanges.trigger(receivedPower)
-            t.completes.callbacks.append(self._onCompletingTransmission)
+            t.eCompletes.callbacks.append(self._onCompletingTransmission)
             # subscribe to changes of attenuation for the transmission
             onAttenuationChange = partial(self._onAttenuationChange, t)
             self._transmissionToAttenuationChangedCallbackDict[t] = onAttenuationChange
@@ -168,7 +168,7 @@ class SimplePhy(StackLayer):
             t = self.channel.transmit(self.device, self.mcs, p["power"], p["bitrate"], p["bitrate"], p["packet"])
             self._currentTransmission = t
             # wait for the transmission to finish
-            yield t.completes
+            yield t.eCompletes
             self._transmitting = False
             # indicate that the send command was processed
             cmd.setProcessed()
@@ -219,13 +219,13 @@ class SimplePhy(StackLayer):
             updateBitErrorRate() # calculate initial bitErrorRate
             
             # Wait for the header to be transmitted
-            yield t.headerCompletes
+            yield t.eHeaderCompletes
 
             # Update the bitrate for the payload
             currentBitRate = t.bitratePayload
 
             # Wait for the payload to be transmitted
-            yield t.completes
+            yield t.eCompletes
 
             self._nReceivedPowerChanges.unsubscribeCallback(onReceivedPowerChange)
 
@@ -386,7 +386,7 @@ class SimpleMac(StackLayer):
                                 self.gates["phy"].output.send(signal) # make the PHY send the packet
                                 logger.debug("%s: Transmitting packet. Time left: %d", self, timeLeft())
                                 logger.debug("%s: Packet: %s", self, packet)
-                                yield signal.processed # wait until the transmission has completed
+                                yield signal.eProcessed # wait until the transmission has completed
             else:
                 # packet from any other device
                 if self._receiving:
@@ -506,7 +506,7 @@ class SimpleRrmMac(StackLayer):
         )
         logger.debug("%s: Sending new announcement: %s", self, announcement)
         self.gates["phy"].output.send(sendCmd)
-        yield sendCmd.processed
+        yield sendCmd.eProcessed
         yield SimMan.timeout(duration+1) # one extra time slot to prevent collisions
 
         # mark the current ASSIGN signal as processed and return the reward

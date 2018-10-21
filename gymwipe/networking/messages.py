@@ -197,15 +197,15 @@ class Signal:
     def __init__(self, type: Enum, properties: Dict[str, Any] = None):
         self.type = type
         self.properties = properties
-        self.processed = Event(SimMan.env)
+        self.eProcessed = Event(SimMan.env)
 
     def setProcessed(self, returnValue: Any = None):
         """
-        Makes the :attr:`processed` event succeed.
+        Makes the :attr:`eProcessed` event succeed.
 
         Args:
             returnValue: If specified, will be used as the `value` of the
-                :attr:`processed` event.
+                :attr:`eProcessed` event.
 
         Examples:
             If `returnValue` is specified, SimPy processes can use Signals for
@@ -215,10 +215,10 @@ class Signal:
 
                 signal = Signal(myType, {"key", value})
                 gate.output.send(signal)
-                value = yield signal.processed
+                value = yield signal.eProcessed
                 # value now contains the returnValue that setProcessed() was called with
         """
-        self.processed.succeed(returnValue)
+        self.eProcessed.succeed(returnValue)
     
     def __str__(self):
         return "Signal('{}', properties: {})".format(self.type.name, self.properties)

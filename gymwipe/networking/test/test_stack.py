@@ -179,7 +179,7 @@ def test_simple_mac(caplog, simple_mac):
         while True:
             receiveCmd = Signal(StackSignals.RECEIVE, {"duration": 10000})
             macLayer.gates["transport"].send(receiveCmd)
-            result = yield receiveCmd.processed
+            result = yield receiveCmd.eProcessed
             receivedPacketsList.append(result)
 
     
@@ -195,7 +195,7 @@ def test_simple_mac(caplog, simple_mac):
             SimMan.timeout(1)
             s.rrmMac.gates["transport"].send(cmd)
             if previousCmd is not None:
-                yield previousCmd.processed
+                yield previousCmd.eProcessed
             previousCmd = cmd
 
     receivedPackets1, receivedPackets2 = [], []

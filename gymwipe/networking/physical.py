@@ -32,7 +32,7 @@ def calculateEbToN0Ratio(signalPower: float, noisePower: float, bitRate: float,
         signalPower: The signal power :math:`S` in dBm
         noisePower: The noise power :math:`N_0` in dBm
         bitRate: The bit rate :math:`R` in bps
-        returnDb: If set to ``True``, the ratio will be returned in db.
+        returnDb: If set to ``True``, the ratio will be returned in dB.
     """
     ratio_db = signalPower - noisePower - 10*log10(bitRate)
     if returnDb:
@@ -231,7 +231,7 @@ class Transmission:
 
         # SimPy events
         headerStopTime = self.startTime + self.headerDuration + bitTimeHeader
-        self.headerCompletes: Event = SimMan.timeoutUntil(headerStopTime, self)
+        self.eHeaderCompletes: Event = SimMan.timeoutUntil(headerStopTime, self)
         """
         :class:`~simpy.events.Event`: A SimPy event that succeeds at the moment
         in simulated time right after the packet's header has been transmitted.
@@ -239,7 +239,7 @@ class Transmission:
         :meth:`~simpy.events.Event.succeed` call.
         """
 
-        self.completes: Event = SimMan.timeoutUntil(self.stopTime, self)
+        self.eCompletes: Event = SimMan.timeoutUntil(self.stopTime, self)
         """
         :class:`~simpy.events.Event`: A SimPy event that succeeds at
         :attr:`stopTime`, providing the transmission object as the value.
