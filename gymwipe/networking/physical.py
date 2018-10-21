@@ -20,7 +20,7 @@ logger = SimTimePrepender(logging.getLogger(__name__))
 
 # Helper functions for physical calculations
 
-def calculateEbToN0Ratio(signalPower: float, noisePower: float, bitRate: int,
+def calculateEbToN0Ratio(signalPower: float, noisePower: float, bitRate: float,
                             returnDb: bool = False) -> float:
     """
     Computes :math:`E_b/N_0 = \\frac{S}{N_0 R}` (the "ratio of signal energy per
@@ -67,6 +67,33 @@ def temperatureToNoisePowerDensity(temperature: float) -> float:
         temperature: The temperature :math:`T` in degrees Celsius
     """
     return 1.38e-23 * (temperature + 273.15)
+
+def wattsToDbm(watts: float):
+    """
+    Converts a watt value to a dBm value.
+
+    Args:
+        watts: The watt value to be converted
+    """
+    return 10 * log10(watts) + 30
+
+def milliwattsToDbm(milliwatts: float):
+    """
+    Converts a milliwatt value to a dBm value.
+
+    Args:
+        watts: The milliwatt value to be converted
+    """
+    return 10 * log10(milliwatts)
+
+def dbmToMilliwatts(milliwatts: float):
+    """
+    Converts a dBm value to a milliwatt value.
+
+    Args:
+        watts: The dBm value to be converted
+    """
+    return 10 ** (milliwatts / 10)
 
 class Mcs(ABC):
     """
@@ -126,8 +153,8 @@ class Mcs(ABC):
             t += 1
         t -= 1
         
-        # up to t errors can be corrected in a block of k bits
-        maxBer = float(t)/k
+        # up to t errors can be corrected in a block of n bits
+        maxBer = float(t)/n
         Mcs._codeRateToMaxCorrectableBer[self.codeRate] = maxBer
         return maxBer
 
@@ -136,7 +163,7 @@ class BpskMcs(Mcs):
     A Binary Phase-Shift-Keying MCS
     """
 
-    def __init__(self, codeRate: Fraction = Fraction(1,2)):
+    def __init__(self, codeRate: Fraction = Fraction(3,4)):
         self._codeRate = codeRate
     
     @property
@@ -144,6 +171,8 @@ class BpskMcs(Mcs):
         return self._codeRate
 
     def calculateBitErrorRate(self, signalPower: float, noisePower: float, bitRate: float) -> float:
+        if signalPower <= noisePower:
+            return 0.5
         ratio = calculateEbToN0Ratio(signalPower, noisePower, bitRate)
         return approxQFunction(sqrt(2*ratio))
 
@@ -157,8 +186,12 @@ class Transmission:
         :meth:`Channel.transmit`.
     """
 
-    def __init__(self, sender: Device, mcs: Mcs, power: float, bitrateHeader: int, bitratePayload: int, packet: Packet, startTime: float):
-        bitTime = 1 / bitratePayload
+    def __init__(self, sender: Device, mcs: Mcs, power: float, bitrateHeader: float, bitratePayload: float, packet: Packet, startTime: float):
+        bitTimeHeader = 1 / bitrateHeader
+        if bitrateHeader == bitratePayload:
+            bitTimePayload = bitTimeHeader
+        else:
+            bitTimePayload = 1 / bitratePayload
         
         self.sender: Device = sender
         """Device: The device that initiated the transmission"""
@@ -181,23 +214,23 @@ class Transmission:
         self.startTime: float = startTime
         """float: The simulated time at which the transmission started"""
 
-        self.headerDuration = packet.header.byteSize() * 8 * bitTime
+        self.headerDuration = packet.header.bitSize() * bitTimeHeader
         """float: The time in seconds taken by the transmission of the packet's header"""
 
-        self.payloadDuration = packet.payload.byteSize() * 8 * bitTime
+        self.payloadDuration = packet.payload.bitSize() * bitTimePayload
         """float: The time in seconds taken by the transmission of the packet's payload"""
 
         self.duration = self.headerDuration + self.payloadDuration
         """float: The time in seconds taken by the transmission"""
         
-        self.stopTime = startTime + self.duration + bitTime
+        self.stopTime = startTime + self.duration + bitTimePayload
         """
         float: The moment in simulated time right after the transmission has
         completed
         """
 
         # SimPy events
-        headerStopTime = self.startTime + self.headerDuration + bitTime
+        headerStopTime = self.startTime + self.headerDuration + bitTimeHeader
         self.headerCompletes: Event = SimMan.timeoutUntil(headerStopTime, self)
         """
         :class:`~simpy.events.Event`: A SimPy event that succeeds at the moment
@@ -213,7 +246,16 @@ class Transmission:
         """
         
     def __str__(self):
-        return "Transmission(from: {}, power: {}, duration: {})".format(self.sender, self.power, self.duration)
+        return "Transmission(sender: {}, power: {} dBm, duration: {} s)".format(self.sender, self.power, self.duration)
+
+    @property
+    def completed(self):
+        """
+        Returns ``True`` if the transmission has completed (i.e. current
+        simulation time >= stopTime)
+        """
+        return SimMan.now >= self.stopTime
+
 
 class ChannelSpec:
     """
@@ -267,23 +309,27 @@ class AttenuationModel():
         the attenuation value changes, providing the new attenuation value.
         """
     
+    def __str__(self):
+        return "{}({}, {})".format(self.__class__.__name__, *self.devices)
+    
     def _setAttenuation(self, newAttenuation: float):
         """
         Updates :attr:`attenuation` to `newAttenuation` if they
         differ and triggers :attr:`nAttenuationChanges`.
         """
         if newAttenuation != self.attenuation:
+            logger.debug("%s: Setting attenuation to %f dB", self, newAttenuation)
             self.attenuation = newAttenuation
             self.nAttenuationChanges.trigger(newAttenuation)
 
-class BaseAttenuationModel(AttenuationModel):
+class BaseAttenuationModel(AttenuationModel, ABC):
     """
     An :class:`AttenuationModel` subclass that executes :meth:`_positionChanged`
     whenever one of its two devices changes its position and the distance
     between the devices does not exceed :attr:`STANDBY_THRESHOLD`.
     """
 
-    STANDBY_THRESHOLD: float = 30
+    STANDBY_THRESHOLD: float = 3000000
     """
     float: The minimum distance in metres, that allows the
     :class:`AttenuationModel` not to react on position changes of its devices
@@ -300,6 +346,7 @@ class BaseAttenuationModel(AttenuationModel):
         for device in self.devices:
             device.position.nChange.subscribeCallback(positionChangedCallback)
     
+    @abstractmethod
     def _positionChanged(self, device: Device):
         """
         This method is called whenever the position of either deviceA or deviceB
@@ -309,7 +356,6 @@ class BaseAttenuationModel(AttenuationModel):
         Args:
             device: The device of which the position has changed.
         """
-        pass
 
 
 AttenuationModelClass = TypeVar('AttenuationModel', bound=AttenuationModel)
@@ -451,7 +497,7 @@ class Channel:
         """
         return self._attenuationModelFactory.getInstance(deviceA, deviceB)
 
-    def transmit(self, sender: Device, mcs: Mcs, power: float, brHeader: int, brPayload: int, packet: Packet) -> Transmission:
+    def transmit(self, sender: Device, mcs: Mcs, power: float, brHeader: float, brPayload: float, packet: Packet) -> Transmission:
         """
         Simulates the transmission of `packet` with the given properties. This
         is achieved by creating a :class:`Transmission` object with the values
@@ -473,7 +519,7 @@ class Channel:
         """
         t = Transmission(sender, mcs, power, brHeader, brPayload, packet, SimMan.now)
         self._transmissions.append((t, t.startTime, t.stopTime))
-        logger.debug("%s added to channel", t)
+        logger.info("%s added to channel", t)
         # trigger notifiers after returning the transmission
         def callAfterReturn(value: Any):
             self.nNewTransmission.trigger(t)
