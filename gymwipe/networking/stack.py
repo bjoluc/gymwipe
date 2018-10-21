@@ -286,7 +286,7 @@ class SimpleMac(StackLayer):
                 :duration: The number of time steps to listen for
 
                 When a packet destinated to this device is received, the
-                :class:`~gymwipe.networking.messages.Signal.processed` event of the
+                :class:`~gymwipe.networking.messages.Signal.eProcessed` event of the
                 :class:`~gymwipe.networking.messages.Signal` will be triggered with the packet as a value.
                 If the time given by `duration` has passed and no packet was received,
                 it will be triggered with ``None``.
