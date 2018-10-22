@@ -26,26 +26,17 @@ class SimulationManager:
     
     def __init__(self):
         self._env = None
-
-    clockFreq: float = 1e6
-    """float: The frequency of a network card's clock in Hertz"""
-
-    timeSlotSize: float = 1e-6
-    """float: The length of one time slot in seconds (slotted time)"""
     
-    def clockTick(self) -> Event:
-        """
-        Returns a SimPy timeout event with a duration of 1/:attr:`clockFreq`.
-        """
-        return self.timeout(1/self.clockFreq)
-    
-    def nextTimeSlot(self) -> Event:
+    def nextTimeSlot(self, timeSlotLength: float) -> Event:
         """
         Returns a SimPy timeout event that is scheduled for the beginning of the
-        next time slot. A time slot starts whenever ``now % timeSlotSize`` is
+        next time slot. A time slot starts whenever `now` % `timeSlotLength` is
         ``0``.
+
+        Args:
+            timeSlotLength: The time slot length in seconds
         """
-        return self.timeout(self.timeSlotSize - (self.now % self.timeSlotSize))
+        return self.timeout(timeSlotLength - (self.now % timeSlotLength))
 
     @property
     def now(self):
