@@ -202,11 +202,11 @@ class Transmission:
         self.mcs: Mcs = mcs
         """Mcs: The modulation and coding scheme used for the transmission"""
 
-        self.bitrateHeader: int = bitrateHeader
-        """int: The header's bitrate in bps"""
+        self.bitrateHeader: float = bitrateHeader
+        """float: The header's bitrate in bps"""
 
-        self.bitratePayload: int = bitratePayload
-        """int: The payload's bitrate in bps"""
+        self.bitratePayload: float = bitratePayload
+        """float: The payload's bitrate in bps"""
 
         self.packet: Packet = packet
         """Packet: The packet sent in the transmission"""
@@ -223,14 +223,14 @@ class Transmission:
         self.duration = self.headerDuration + self.payloadDuration
         """float: The time in seconds taken by the transmission"""
         
-        self.stopTime = startTime + self.duration + bitTimePayload
+        self.stopTime = startTime + self.duration
         """
         float: The moment in simulated time right after the transmission has
         completed
         """
 
         # SimPy events
-        headerStopTime = self.startTime + self.headerDuration + bitTimeHeader
+        headerStopTime = self.startTime + self.headerDuration
         self.eHeaderCompletes: Event = SimMan.timeoutUntil(headerStopTime, self)
         """
         :class:`~simpy.events.Event`: A SimPy event that succeeds at the moment
@@ -251,7 +251,7 @@ class Transmission:
     @property
     def completed(self):
         """
-        Returns ``True`` if the transmission has completed (i.e. current
+        Returns ``True`` if the transmission has completed (i.e. the current
         simulation time >= stopTime)
         """
         return SimMan.now >= self.stopTime

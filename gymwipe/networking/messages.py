@@ -72,7 +72,7 @@ class Transmittable:
         Args:
             bitrate: The bitrate in bps
         """
-        return self.byteSize()*8 / bitrate
+        return self.bitSize() / bitrate
 
 class FakeTransmittable(Transmittable):
     """
