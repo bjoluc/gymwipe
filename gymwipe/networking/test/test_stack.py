@@ -1,4 +1,5 @@
 import logging
+from math import log10
 from typing import Iterable, List
 
 import pytest
@@ -12,7 +13,8 @@ from gymwipe.networking.messages import (FakeTransmittable, Packet, Signal,
                                          SimpleTransportHeader, StackSignals,
                                          Transmittable)
 from gymwipe.networking.physical import Channel
-from gymwipe.networking.stack import SimpleMac, SimplePhy, SimpleRrmMac
+from gymwipe.networking.stack import (TIME_SLOT_LENGTH, SimpleMac, SimplePhy,
+                                      SimpleRrmMac)
 from gymwipe.simtools import SimMan
 
 
@@ -47,7 +49,7 @@ def simple_phy():
 
     # create two network devices
     device1 = Device("1", 0, 0)
-    device2 = Device("2", 6, 5)
+    device2 = Device("2", 1, 1)
 
     # create the SimplePhy network stack layers
     device1Phy = SimplePhy("Phy", device1, channel)
@@ -62,11 +64,11 @@ def simple_phy():
     return setup
 
 def test_simple_phy(caplog, mocker, simple_phy):
-    #caplog.set_level(logging.DEBUG, logger='gymwipe.networking.construction')
-    #caplog.set_level(logging.DEBUG, logger='gymwipe.networking.core')
-    caplog.set_level(logging.INFO, logger='gymwipe.networking.stack')
+    caplog.set_level(logging.INFO, logger='gymwipe.networking.construction')
+    caplog.set_level(logging.INFO, logger='gymwipe.networking.core')
     caplog.set_level(logging.INFO, logger='gymwipe.networking.physical')
-    #caplog.set_level(logging.DEBUG, logger='gymwipe.simtools')
+    caplog.set_level(logging.INFO, logger='gymwipe.networking.stack')
+    caplog.set_level(logging.INFO, logger='gymwipe.simtools')
 
     setup = simple_phy
     channel = setup.channel
@@ -86,8 +88,8 @@ def test_simple_phy(caplog, mocker, simple_phy):
         assert len(channel.getActiveTransmissions()) == 0
 
         # setup the message to the physical layer
-        BITRATE = 1e6  # 1 Mb/s
-        POWER = -20.0 # dBm
+        BITRATE = 100e3  # 100 Kb/s
+        POWER = 0.0 # dBm
         cmd = Signal(StackSignals.SEND, {"packet": packet, "power": POWER, "bitrate": BITRATE})
 
         # send the message to the physical layer
@@ -112,7 +114,7 @@ def test_simple_phy(caplog, mocker, simple_phy):
         yield SimMan.timeout(64/BITRATE)
 
         # move device 2
-        setup.device2.position.x = 50
+        setup.device2.position.x = 5
 
         yield SimMan.timeout(16/BITRATE)
 
@@ -156,11 +158,11 @@ def simple_mac(simple_phy):
     return s
 
 def test_simple_mac(caplog, simple_mac):
-    #caplog.set_level(logging.DEBUG, logger='gymwipe.simtools')
-    #caplog.set_level(logging.INFO, logger='gymwipe.networking.construction')
-    #caplog.set_level(logging.DEBUG, logger='gymwipe.networking.core')
-    caplog.set_level(logging.DEBUG, logger='gymwipe.networking.stack')
-    caplog.set_level(logging.DEBUG, logger='gymwipe.networking.physical')
+    caplog.set_level(logging.INFO, logger='gymwipe.networking.construction')
+    caplog.set_level(logging.INFO, logger='gymwipe.networking.core')
+    #caplog.set_level(logging.INFO, logger='gymwipe.networking.physical')
+    caplog.set_level(logging.INFO, logger='gymwipe.networking.stack')
+    #caplog.set_level(logging.INFO, logger='gymwipe.simtools')
 
     s = simple_mac
 
@@ -172,27 +174,30 @@ def test_simple_mac(caplog, simple_mac):
         for p in payloads:
             packet = Packet(SimpleTransportHeader(fromMacLayer.addr, toMacLayer.addr), p)
             fromMacLayer.gates["transport"].send(packet)
-            yield SimMan.timeout(1)
+            yield SimMan.timeout(1e-4)
 
     def receiver(macLayer: SimpleMac, receivedPacketsList: List[Packet]):
         # receive forever
         while True:
-            receiveCmd = Signal(StackSignals.RECEIVE, {"duration": 10000})
+            receiveCmd = Signal(StackSignals.RECEIVE, {"duration": 10})
             macLayer.gates["transport"].send(receiveCmd)
             result = yield receiveCmd.eProcessed
-            receivedPacketsList.append(result)
+            if result is not None:
+                receivedPacketsList.append(result)
 
-    
+    ASSIGN_TIME = 0.01
+    ANNOUNCE_TIME = (13 + log10(ASSIGN_TIME/TIME_SLOT_LENGTH))*8 / s.rrmMac._announcementBitrate
+    # 13 bytes header + log10(ASSIGN_TIME/TIME_SLOT_LENGTH) bytes payload
+
     def resourceManagement():
-        # assign the channel 5 times for each device
+        # Assign the channel 5 times for each device
         previousCmd = None
         for i in range(10):
             if i % 2 == 0:
                 dest = dev1Addr
             else:
                 dest = dev2Addr
-            cmd = Signal(StackSignals.ASSIGN, {"duration": 50, "dest": dest})
-            SimMan.timeout(1)
+            cmd = Signal(StackSignals.ASSIGN, {"duration": ASSIGN_TIME/TIME_SLOT_LENGTH, "dest": dest})
             s.rrmMac.gates["transport"].send(cmd)
             if previousCmd is not None:
                 yield previousCmd.eProcessed
@@ -205,11 +210,26 @@ def test_simple_mac(caplog, simple_mac):
     SimMan.process(receiver(s.device1Mac, receivedPackets1))
     SimMan.process(receiver(s.device2Mac, receivedPackets2))
     SimMan.process(resourceManagement())
-    SimMan.runSimulation(2000)
 
-    # assertions
-    # both devices should have received 10 packets
+    ROUND_TIME = ANNOUNCE_TIME + ASSIGN_TIME
+    
+    # After 1 assignment, device 2 should have received the first chunk of
+    # packets. Highly depends on data rates, TIME_SLOT_LENGTH, and ASSIGN_TIME!
+    SimMan.runSimulation(ROUND_TIME)
+    assert len(receivedPackets2) == 4
+    
+    SimMan.runSimulation(ROUND_TIME)
+    # Same for device 1
+    assert len(receivedPackets1) == 4
+
+    SimMan.runSimulation(ROUND_TIME)
+    assert len(receivedPackets2) == 8
+    
+    SimMan.runSimulation(ROUND_TIME)
+    assert len(receivedPackets1) == 8
+
+    SimMan.runSimulation(6*ROUND_TIME)
+
+    # Both devices should have received 10 packets
     assert len(receivedPackets1) == 10
     assert len(receivedPackets2) == 10
-
-    # TODO add detailed assertions throughout the test

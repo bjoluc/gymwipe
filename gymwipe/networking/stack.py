@@ -22,6 +22,11 @@ from gymwipe.simtools import Notifier, SimMan, SimTimePrepender
 
 logger = SimTimePrepender(logging.getLogger(__name__))
 
+TIME_SLOT_LENGTH = 1e-6
+"""
+float: The length of one time slot in seconds (used for simulating slotted time)
+"""
+
 class StackLayer(Module):
 
     def __init__(self, name: str, device: Device):
@@ -72,7 +77,7 @@ class SimplePhy(StackLayer):
 
         # Attributes related to receiving
         # thermal noise power in mW
-        self._thermalNoisePower = self.NOISE_POWER_DENSITY * channel.spec.bandwidth / 1000
+        self._thermalNoisePower = self.NOISE_POWER_DENSITY * channel.spec.bandwidth * 1000
         self._transmissionToReceivedPowerDict: Dict[Transmission, float] = {}
         self._transmissionToAttenuationChangedCallbackDict = {}
         self._receivedPower = self._thermalNoisePower
@@ -162,7 +167,7 @@ class SimplePhy(StackLayer):
         if cmd.type is StackSignals.SEND:
             logger.info("%s: Received SEND command", self)
             # wait for the beginning of the next time slot
-            yield SimMan.nextTimeSlot()
+            yield SimMan.nextTimeSlot(TIME_SLOT_LENGTH)
             # simulate transmitting
             self._transmitting = True
             t = self.channel.transmit(self.device, self.mcs, p["power"], p["bitrate"], p["bitrate"], p["packet"])
@@ -186,7 +191,7 @@ class SimplePhy(StackLayer):
             def updateBitErrorRate():
                 """
                 Sets `bitErrorRate` to the current bit error rate for the
-                transmission `t`.
+                transmission `t` if t has not yet completed.
                 """
                 nonlocal bitErrorRate
                 signalPower = self._transmissionToReceivedPowerDict[t]
@@ -212,6 +217,8 @@ class SimplePhy(StackLayer):
 
                     if not t.completed:
                         # Update the bit error rate accordingly
+                        print(t.stopTime)
+                        print(SimMan.now)
                         updateBitErrorRate()
             
             self._nReceivedPowerChanges.subscribeCallback(onReceivedPowerChange)
@@ -226,7 +233,6 @@ class SimplePhy(StackLayer):
 
             # Wait for the payload to be transmitted
             yield t.eCompletes
-
             self._nReceivedPowerChanges.unsubscribeCallback(onReceivedPowerChange)
 
             # Alright, we have the number of bit errors in bitErrorSum now!
@@ -238,15 +244,16 @@ class SimplePhy(StackLayer):
                              "bit error rate: {:.3%})!".format(self, bitErrorRate, maxCorrectableBer))
             else:
                 logger.info("{}: Packet successfully received (bit error "
-                             "rate: {:.3%})!".format(self, bitErrorRate))
+                             "rate: {:.3%})".format(self, bitErrorRate))
                 packet = t.packet
                 # sending the packet via the mac gate
                 self.gates["mac"].output.send(packet)
 
 class SimpleMac(StackLayer):
     """
-    A MAC layer implementation of the contention-free protocol described as follows:
-    
+    A MAC layer implementation of the contention-free protocol described as
+    follows:
+
         *   Every SimpleMac has a unique 6-byte-long MAC address.
         *   The MAC layer with address ``0`` is considered to belong to the RRM.
         *   Time slots are grouped into frames.
@@ -265,12 +272,12 @@ class SimpleMac(StackLayer):
                 :attr:`~gymwipe.networking.messages.SimpleMacHeader.destMAC`: The MAC address of the device that may transmit next
 
                 :attr:`~gymwipe.networking.messages.SimpleMacHeader.flag`: ``1`` (flag for allowing a device to transmit)
-            
+
             The packet's :attr:`~gymwipe.networking.messages.Packet.payload` is the number **n**
             mentioned above (wrapped inside a :class:`~gymwipe.networking.messages.Transmittable`)
         *   Every other packet sent has a :class:`~gymwipe.networking.messages.SimpleMacHeader`
             with :attr:`~gymwipe.networking.messages.SimpleMacHeader.flag` ``0``.
-    
+
     The `transport` gate accepts objects of the following types:
 
         * :class:`~gymwipe.networking.messages.Signal`
@@ -283,18 +290,18 @@ class SimpleMac(StackLayer):
 
                 :class:`~gymwipe.networking.messages.Signal` properties:
 
-                :duration: The number of time steps to listen for
+                :duration: The time in seconds to listen for
 
                 When a packet destinated to this device is received, the
                 :class:`~gymwipe.networking.messages.Signal.eProcessed` event of the
-                :class:`~gymwipe.networking.messages.Signal` will be triggered with the packet as a value.
+                :class:`~gymwipe.networking.messages.Signal` will be triggered providing the packet as the value.
                 If the time given by `duration` has passed and no packet was received,
                 it will be triggered with ``None``.
 
         * :attr:`~gymwipe.networking.messages.Packet`
 
             Send a given packet (with a :attr:`~gymwipe.networking.messages.SimpleTransportHeader`) to the MAC address defined in the header.
-    
+
     The `phy` gate accepts objects of the following types:
 
         * :attr:`~gymwipe.networking.messages.Packet`
@@ -307,17 +314,17 @@ class SimpleMac(StackLayer):
         """
         Args:
             name: The layer's name
-            device: The NetworkDevice that operates the SimpleMac layer
+            device: The device that operates the SimpleMac layer
             addr: The 6-byte-long MAC address to be assigned to this MAC layer
         """
         super(SimpleMac, self).__init__(name, device)
         self._addGate("phy")
         self._addGate("transport")
         self.addr = addr
-        self._packetQueue = deque(maxlen=1000) # allow 1000 packets to be queued
+        self._packetQueue = deque(maxlen=100) # allow 100 packets to be queued
         self._packetAddedEvent = Event(SimMan.env)
-        self._bitrate = 5e6 # fixed bitrate, might be adopted later
-        self._transmissionPower = -20.0 # dBm
+        self._bitrate = 100e3 # 100 Kb/s (fixed bitrate for now)
+        self._transmissionPower = 0.0 # dBm
         self._receiving = False
         self._receiveCmd = None
         self._receiveTimeout = None
@@ -352,39 +359,37 @@ class SimpleMac(StackLayer):
                 logger.debug("%s: Received a packet from RRM: %s", self, packet)
                 if header.flag == 1:
                     # we may transmit
-                    timeTotal = packet.payload.obj
+                    timeSlots = packet.payload.obj
+                    timeTotal = timeSlots*TIME_SLOT_LENGTH
                     stopTime = SimMan.now + timeTotal
                     def timeLeft():
                         return stopTime - SimMan.now
-                    logger.debug("%s: Got permission to transmit for %d time steps", self, timeTotal)
+                    logger.info("%s: Got permission to transmit for %d time slots", self, timeSlots)
 
                     timeoutEvent = SimMan.timeout(timeTotal)
                     queuedPackets = True
                     while not timeoutEvent.processed:
                         if len(self._packetQueue) == 0:
                             queuedPackets = False
-                            logger.debug("%s: Packet queue empty, nothing to transmit. Time left: %d", self, timeLeft())
+                            logger.debug("%s: Packet queue empty, nothing to transmit. Time left: %s s", self, timeLeft())
                             yield self._packetAddedEvent | timeoutEvent
                             if not timeoutEvent.processed:
                                 # new packet was added for sending
-                                logger.debug("%s: Packet queue was filled again. Time left: %d", self, timeLeft())
+                                logger.debug("%s: Packet queue was refilled. Time left: %s s", self, timeLeft())
                                 queuedPackets = True
                         if queuedPackets:
                             if not timeLeft() > self._packetQueue[0].transmissionTime(self._bitrate):
-                                logger.debug("%s: Next packet is too large to be transmitted. Idling. Time left: %d", self, timeLeft())
+                                logger.info("%s: Next packet is too large to be transmitted. Idling. Time left: %s s", self, timeLeft())
                                 yield timeoutEvent
                             else:
                                 # enough time left to transmit the next packet
-                                payload = self._packetQueue.popleft()
-                                packet = Packet(
-                                    SimpleMacHeader(self.addr, payload.header.destMAC, flag=0),
-                                    payload,
-                                    Transmittable(len(self._packetQueue)) # append queue length as a trailer (reward for RRM agent)
-                                )
+                                # TODO This has to be done before adding the
+                                # packet to the queue!
+                                packet = self._packetQueue.popleft()
                                 signal = Signal(StackSignals.SEND, {"packet": packet, "power": self._transmissionPower,
                                                                     "bitrate": self._bitrate})
                                 self.gates["phy"].output.send(signal) # make the PHY send the packet
-                                logger.debug("%s: Transmitting packet. Time left: %d", self, timeLeft())
+                                logger.debug("%s: Transmitting packet. Time left: %s", self, timeLeft())
                                 logger.debug("%s: Packet: %s", self, packet)
                                 yield signal.eProcessed # wait until the transmission has completed
             else:
@@ -416,7 +421,12 @@ class SimpleMac(StackLayer):
                 self._receiveTimeout.callbacks.append(self._receiveTimeoutCallback)
 
         elif isinstance(cmd, Packet):
-            self._packetQueue.append(cmd)
+            payload = cmd
+            packet = Packet(
+                SimpleMacHeader(self.addr, payload.header.destMAC, flag=0),
+                payload
+            )
+            self._packetQueue.append(packet)
             self._packetAddedEvent.succeed()
             self._packetAddedEvent = Event(SimMan.env)
     
@@ -453,6 +463,10 @@ class SimpleRrmMac(StackLayer):
                 :dest: The 6-byte-long MAC address of the device to be allowed to transmit
 
                 :duration: The number of time steps to assign the channel for the specified device
+    
+    The payloads of packets from other devices are outputted via the `transport`
+    gate, regardless of their destination address. This enables an interpreter
+    to extract observations and rewards for a channel assignment learning agent.
     """
 
     @GateListener.setup
@@ -463,24 +477,17 @@ class SimpleRrmMac(StackLayer):
         self.addr = bytes(6) # 6 zero bytes
         """bytes: The RRM's MAC address"""
 
-        self._announcementBitrate = 1e3 # 1 Kbps
-        self._transmissionPower = -20.0 # dBm
+        self._announcementBitrate = 100e3 # 100 Kb/s
+        self._transmissionPower = 0.0 # dBm
         self._nAnnouncementReceived = Notifier("new announcement signal received", self)
-        self._currentAssignSignal = None
-        self._currentAssignReward = float('inf')
         self._nAnnouncementReceived.subscribeProcess(self._sendAnnouncement, queued=True)
         
         logger.debug("%s: Initialization completed, MAC address: %s", self, self.addr)
     
     @GateListener("phy", Packet)
     def phyGateListener(self, packet: Packet):
-        if packet.header.sourceMAC == self._currentAssignSignal.properties["dest"]:
-            # packet was sent by the device mentioned in the current announcement
-            # Use the object wrapped in the packet's trailer Transmittable as the reward
-            reward = packet.trailer.obj
-            logger.debug("%s: Extracted reward from %s: %d", self, packet.header.sourceMAC, reward)
-            self._currentAssignReward = reward
-            
+        self.gates["transport"].output.send(packet.payload)
+    
     @GateListener("transport", Signal)
     def transportGateListener(self, signal: Signal):
         logger.debug("%s: Got new ASSIGN Signal %s.", self, signal)
@@ -492,8 +499,6 @@ class SimpleRrmMac(StackLayer):
         queued way for every assignSignal that is received on the `transport`
         gate.
         """
-        self._currentAssignSignal = assignSignal
-
         destination = assignSignal.properties["dest"]
         duration = assignSignal.properties["duration"]
         announcement = Packet(
@@ -501,13 +506,16 @@ class SimpleRrmMac(StackLayer):
             Transmittable(duration)
         )
         sendCmd = Signal(
-            StackSignals.SEND,
-            {"packet": announcement, "power": self._transmissionPower, "bitrate": self._announcementBitrate}
+            StackSignals.SEND, {
+                "packet": announcement,
+                "power": self._transmissionPower,
+                "bitrate": self._announcementBitrate
+            }
         )
         logger.debug("%s: Sending new announcement: %s", self, announcement)
         self.gates["phy"].output.send(sendCmd)
         yield sendCmd.eProcessed
-        yield SimMan.timeout(duration+1) # one extra time slot to prevent collisions
+        yield SimMan.timeout((duration+1)*TIME_SLOT_LENGTH) # one extra time slot to prevent collisions
 
-        # mark the current ASSIGN signal as processed and return the reward
-        self._currentAssignSignal.setProcessed(self._currentAssignReward)
+        # mark the current ASSIGN signal as processed
+        assignSignal.setProcessed()
