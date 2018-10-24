@@ -2,7 +2,7 @@
 Gym environments based on the Simple network devices
 """
 
-from typing import List
+from typing import Dict, List
 
 import gym
 import numpy as np
@@ -13,7 +13,7 @@ from gymwipe.envs.core import BaseEnv, Interpreter
 from gymwipe.networking.attenuation_models import FsplAttenuation
 from gymwipe.networking.devices import SimpleNetworkDevice, SimpleRrmDevice
 from gymwipe.networking.messages import (FakeTransmittable, IntTransmittable,
-                                         Packet)
+                                         Packet, Transmittable)
 from gymwipe.networking.physical import Channel
 from gymwipe.simtools import SimMan
 
@@ -65,7 +65,6 @@ class CounterTrafficEnv(BaseEnv):
 
         def __init__(self, env: "CounterTrafficEnv"):
             self._env = env
-            self._macToSenderIndexDict = {sender.mac: i for i, sender in enumerate(env.senders)}
             self.reset()
         
         def reset(self):
@@ -73,17 +72,16 @@ class CounterTrafficEnv(BaseEnv):
             self._lastRewardDifference = 0
             self.receivedValues = [0 for _ in range(len(self._env.senders))]
             self._done = False
-        
-        def onPacketReceived(self, p: Packet):
-            value = p.payload.value
-            deviceIndex = self._macToSenderIndexDict[p.header.sourceMAC]
-            self.receivedValues[deviceIndex] = value
+
+        def onPacketReceived(self, senderIndex: int, receiverIndex: int,  payload: Transmittable):
+            value = payload.value
+            self.receivedValues[senderIndex] = value
             self._latestDifference = self.receivedValues[0] - self.receivedValues[1]
             if value == self._env.COUNTER_BOUND:
                 self._done = True
     
-        def onChannelAssignment(self, duration: int, destination: bytes):
-            pass
+        def onChannelAssignment(self, deviceIndex: int, duration: int):
+            self._lastAssignDeviceIndex = deviceIndex
 
         def getReward(self):
             """
@@ -91,6 +89,8 @@ class CounterTrafficEnv(BaseEnv):
             from both devices: Positive if the difference became smaller,
             negative otherwise
             """
+            if self._lastAssignDeviceIndex == 0:
+                return 0.0
             absDifference = abs(self._latestDifference)
             reward = self._lastRewardDifference - absDifference
             self._lastRewardDifference = absDifference
@@ -114,9 +114,6 @@ class CounterTrafficEnv(BaseEnv):
         # The difference between the lastly received values from both devices
         # summed up with the COUNTER_BOUND will be the observation.
         self.observation_space = spaces.Discrete(2 * CounterTrafficEnv.COUNTER_BOUND)
-        
-        self._stepNumber = 0
-        self._lastActionString: str = None
 
         SimMan.initEnvironment()
 
@@ -124,11 +121,12 @@ class CounterTrafficEnv(BaseEnv):
             CounterTrafficEnv.SenderDevice("Sender 1", 0, 2, self.channel, 1),
             CounterTrafficEnv.SenderDevice("Sender 2", 0, -2, self.channel, 3)
         ]
+        self.deviceIndexToMacDict: Dict[int, bytes] = {i: s.mac for i, s in enumerate(self.senders)}
         self.senders[0].destinationMac = self.senders[1].mac
         self.senders[1].destinationMac = self.senders[0].mac
 
         interpreter = self.CounterTrafficInterpreter(self)
-        self.rrm = SimpleRrmDevice("RRM", 0, 0, self.channel, interpreter)
+        self.rrm = SimpleRrmDevice("RRM", 0, 0, self.channel, self.deviceIndexToMacDict, interpreter)
 
     def reset(self):
         """
@@ -147,20 +145,14 @@ class CounterTrafficEnv(BaseEnv):
         duration = action["duration"]*self.ASSIGNMENT_DURATION_FACTOR
 
         # Assign the channel
-        assignSignal = self.rrm.assignChannel(
-            self.senders[deviceIndex].mac,
-            duration
-        )
+        assignSignal = self.rrm.assignChannel(deviceIndex, duration)
 
-        self._stepNumber += 1
-        self._actionString = "Assign channel to device {} for {} time slots".format(deviceIndex, duration)
-
-        # Run the simulation until the assignment is over
+        # Run the simulation until the assignment ends
         SimMan.runSimulation(assignSignal.eProcessed)
 
         # Return (observation, reward, done, info)
         return self.rrm.interpreter.getFeedback()
 
     def render(self, mode='human', close=False):
-        print("Last Received: {}".format(self.rrm.interpreter.receivedValues))
-        print("Last action: {}".format(self._actionString))
+        values = self.rrm.interpreter.receivedValues
+        print("Last Received: {}, difference: {:6d}".format(values, values[1]-values[0]))

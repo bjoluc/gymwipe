@@ -6,7 +6,7 @@ import numpy as np
 from gym import error, spaces, utils
 from gym.utils import seeding
 
-from gymwipe.networking.messages import Packet
+from gymwipe.networking.messages import Packet, Transmittable
 from gymwipe.networking.physical import Channel
 from gymwipe.simtools import SimMan
 
@@ -84,24 +84,28 @@ class Interpreter(ABC):
     """
 
     @abstractmethod
-    def onPacketReceived(self, p: Packet):
+    def onPacketReceived(self, senderIndex: int, receiverIndex: int, payload: Transmittable):
         """
         Is invoked whenever the RRM receives a packet that is not addressed to
         it.
 
         Args:
-            p: The packet that was received
+            senderIndex: The device index of the received packet's sender (as in
+                the gym environment's action space)
+            receiverIndex: The device index of the received packet's receiver
+                (as in the gym environment's action space)
+            payload: The received packet's payload
         """
     
-    def onChannelAssignment(self, duration: int, destination: bytes):
+    def onChannelAssignment(self, deviceIndex: int, duration: int):
         """
         Is invoked whenever the RRM assigns the channel.
 
         Args:
+            deviceIndex: The index (as in the gym environment's action space) of
+                the device that the channel is assigned to.
             duration: The duration of the assignment in multiples of
                 :attr:`~gymwipe.networking.stack.TIME_SLOT_LENGTH`
-            destination: The MAC address of the device that the channel is
-                assigned to.
         """
 
     @abstractmethod

@@ -120,8 +120,13 @@ class SimpleRrmDevice(NetworkDevice):
     and rewards for a learning agent.
     """
 
-    def __init__(self, name: str, xPos: float, yPos: float, channel: Channel, interpreter: Interpreter):
+    def __init__(self, name: str, xPos: float, yPos: float, channel: Channel,
+                    deviceIndexToMacDict: Dict[int, bytes], interpreter: Interpreter):
         """
+            deviceIndexToMacDict: A dictionary mapping integer indexes to device
+                MAC addresses. This allows to pass the device index used by a
+                learning agent instead of a MAC address to
+                :meth:`assignChannel`.
             interpreter: The :class:`~gymwipe.envs.core.Interpreter` instance to
                 be used for observation and reward calculations
         """
@@ -135,6 +140,18 @@ class SimpleRrmDevice(NetworkDevice):
         calls
         """
 
+        self.deviceIndexToMacDict = deviceIndexToMacDict
+        """
+        A dictionary mapping integer indexes to device MAC addresses. This
+        allows to pass the device index used by a learning agent instead of a
+        MAC address to :meth:`assignChannel`.
+        """
+
+        self.macToDeviceIndexDict: Dict[bytes, int] = {mac: index for index, mac in self.deviceIndexToMacDict.items()}
+        """
+        The counterpart to :attr:`deviceIndexToMacDict`
+        """
+
         # Initialize PHY and MAC
         self._phy = SimplePhy("phy", self, self.channel)
         self._mac = SimpleRrmMac("mac", self)
@@ -142,7 +159,12 @@ class SimpleRrmDevice(NetworkDevice):
         self._mac.gates["phy"].biConnectWith(self._phy.gates["mac"])
 
         # Connect the "upper" mac layer output to the interpreter
-        self._mac.gates["transport"].output.nReceives.subscribeCallback(interpreter.onPacketReceived)
+        def onPacketReceived(p: Packet):
+            # Mapping MAC addresses to indexes
+            senderIndex = self.macToDeviceIndexDict[p.header.sourceMAC]
+            receiverIndex = self.macToDeviceIndexDict[p.header.destMAC]
+            self.interpreter.onPacketReceived(senderIndex, receiverIndex, p.payload)
+        self._mac.gates["transport"].output.nReceives.subscribeCallback(onPacketReceived)
     
     # merge __init__ docstrings
     __init__.__doc__ = NetworkDevice.__init__.__doc__ + __init__.__doc__
@@ -152,27 +174,29 @@ class SimpleRrmDevice(NetworkDevice):
         """bytes: The RRM's MAC address"""
         return self._mac.addr
 
-    def assignChannel(self, deviceMac: bytes, duration: int) -> Tuple[Any, float]:
+    def assignChannel(self, deviceIndex: bytes, duration: int) -> Tuple[Any, float]:
         """
         Makes the RRM assign the channel to a certain device for a certain time.
 
         Args:
-            deviceMac: The MAC address of the device to assign the channel to
+            deviceIndex: The integer id that maps to the MAC address of the device
+                to assign the channel to (see :attr:`deviceIndexToMacDict`)
             duration: The number of time units for the channel to be assigned to
                 the device
         
         Returns:
             The :class:`~gymwipe.networking.messages.Signal` object that was
-            used to make the RRM MAC layer assign the channel. Once the channel
+            used to make the RRM MAC layer assign the channel. When the channel
             assignment is over, the signal's
             :attr:`~gymwipe.networking.messages.Signal.eProcessed` event will
             succeed.
         """
+        deviceMac = self.deviceIndexToMacDict[deviceIndex]
         assignSignal = Signal(
             StackSignals.ASSIGN,
             {"duration": duration, "dest": deviceMac}
         )
-        self.interpreter.onChannelAssignment(duration, deviceMac)
+        self.interpreter.onChannelAssignment(duration, deviceIndex)
         self._mac.gates["transport"].send(assignSignal)
 
         return assignSignal
