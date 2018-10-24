@@ -2,15 +2,23 @@
 The messages module provides classes for network packet representations and
 inter-module communication.
 
+The following classes are used for transmission simulation:
+
+.. autosummary::
+
+    ~gymwipe.networking.messages.Transmittable
+    ~gymwipe.networking.messages.FakeTransmittable
+    ~gymwipe.networking.messages.IntTransmittable
+    ~gymwipe.networking.messages.Packet
+    ~gymwipe.networking.messages.SimpleMacHeader
+    ~gymwipe.networking.messages.SimpleTransportHeader
+
+The following classes are used for inter-module communication:
+
 .. autosummary::
 
     ~gymwipe.networking.messages.Signal
     ~gymwipe.networking.messages.StackSignals
-    ~gymwipe.networking.messages.Transmittable
-    ~gymwipe.networking.messages.FakeTransmittable
-    ~gymwipe.networking.messages.Packet
-    ~gymwipe.networking.messages.SimpleMacHeader
-    ~gymwipe.networking.messages.SimpleTransportHeader
 """
 from enum import Enum
 from typing import Any, Dict
@@ -45,7 +53,7 @@ class Transmittable:
             obj: The object of which the string representation will be used
         """
         self._str = str(obj)
-        self._size = len(self._str.encode("utf-8"))
+        self._byteSize = len(self._str.encode("utf-8"))
         self.obj = obj
 
     def __str__(self):
@@ -56,7 +64,7 @@ class Transmittable:
         Returns the number of bytes that are to be transmitted when the data
         represented by this object is sent via a physical channel.
         """
-        return self._size
+        return self._byteSize
     
     def bitSize(self) -> int:
         """
@@ -87,8 +95,33 @@ class FakeTransmittable(Transmittable):
             byteSize: The number of bytes that the :class:`FakeTransmittable`
                 will be long
         """
-        self._size = byteSize
-        self._str = "FakeTransmittable(byteSize={:d})".format(self._size)
+        self._byteSize = byteSize
+        self._str = "FakeTransmittable(byteSize={:d})".format(self._byteSize)
+
+class IntTransmittable(Transmittable):
+    """
+    A :class:`Transmittable` to wrap a fixed-length integer. If for instance you
+    want your payloads to be two-byte integers, initialize them like this:
+    ::
+    
+        myIntValue = 42
+        payload = IntTransmittable(2, myIntValue)
+    """
+    
+    def __init__(self, byteSize: int, value: int):
+        """
+        Args:
+            byteSize: The number of bytes that are simulated to be transmitted
+            value: The integer value to be transmitted
+        """
+        self._byteSize = byteSize
+
+        self.value = value
+        """
+        int:The integer value assigned at construction
+        """
+
+        self._str = "IntTransmittable(byteSize={:d},value={:d})".format(self._byteSize, self.value)
 
 class Packet(Transmittable):
     """
