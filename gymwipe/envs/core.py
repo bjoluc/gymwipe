@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List
+from typing import Any, Dict, List, Tuple
 
 import gym
 import numpy as np
@@ -58,11 +58,29 @@ class BaseEnv(gym.Env):
 
 class Interpreter(ABC):
     """
-    An abstract base class for interpreter implementations. An interpreter is an
-    instance that observes the system's behavior by sniffing the packets
-    received by the RRM's physical layer and infers both observations and
-    rewards for a channel assignment learning agent. It is the only component in
-    the networking system that is requires knowledge about the domain.
+    An :class:`Interpreter` is an instance that observes the system's behavior
+    by sniffing the packets received by the RRM's physical layer and infers
+    observations and rewards for a channel assignment learning agent. Thus, RRM
+    and learning agent can be used in any domain with only swapping the
+    interpreter.
+
+    This class serves as an abstract base class for all :class:`Interpreter`
+    implementations.
+
+    When implementing an interpreter, the following three methods have to be
+    overridden:
+
+        * :meth:`onPacketReceived`
+        * :meth:`getReward`
+        * :meth:`getObservation`
+
+    The following methods provide default implementations that you might also
+    want to override depending on your use case:
+
+        * :meth:`reset`
+        * :meth:`onChannelAssignment`
+        * :meth:`getDone`
+        * :meth:`getInfo`
     """
 
     @abstractmethod
@@ -93,12 +111,12 @@ class Interpreter(ABC):
         """
 
     @abstractmethod
-    def getObservation(self):
+    def getObservation(self) -> Any:
         """
         Returns an observation of the system's state.
         """
     
-    def getDone(self):
+    def getDone(self) -> bool:
         """
         Returns whether an episode has ended.
 
@@ -108,3 +126,30 @@ class Interpreter(ABC):
             implementation as it always returns ``False``.
         """
         return False
+
+    def getInfo(self) -> Dict:
+        """
+        Returns a :class:`dict` providing additional information on the
+        environment's state that may be useful for debugging but are not allowed
+        to be used by a learning agent.
+        """
+        return {}
+
+    def getFeedback(self) -> Tuple[Any, float, bool, Dict]:
+        """
+        You may want to call this at the end of a channel assignment to get
+        feedback for your learning agent. The return values are ordered like
+        they need to be returned by the :meth:`step` method of a gym
+        environment.
+
+        Returns:
+            A 4-tuple with the results of :meth:`getObservation`,
+            :meth:`getReward`, :meth:`getDone`, and :meth:`getInfo`
+        """
+        return self.getObservation(), self.getReward(), self.getDone(), self.getInfo()
+    
+    def reset(self):
+        """
+        This method is invoked when the environment is reset – override it with
+        your initialization tasks if you feel like it.
+        """
