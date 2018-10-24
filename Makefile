@@ -4,6 +4,9 @@ init:
 dev:
 	pipenv install --dev
 
+install:
+	pipenv run python setup.py install
+
 update:
 	pipenv update
 
@@ -20,4 +23,4 @@ requirements:
 	pipenv run pipenv_to_requirements
 	cat requirements.txt | grep -v "#" >> requirements-dev.txt
 
-.PHONY: init dev update test docs requirements
+.PHONY: init dev install update test docs requirements
