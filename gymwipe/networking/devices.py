@@ -1,7 +1,7 @@
 """
 :class:`~gymwipe.devices.core.Device` implementations for network devices
 """
-from typing import Any, Tuple
+from typing import Any, Dict, Tuple
 
 from gymwipe.devices import Device
 from gymwipe.envs.core import Interpreter
@@ -126,13 +126,23 @@ class SimpleRrmDevice(NetworkDevice):
                 be used for observation and reward calculations
         """
         super(SimpleRrmDevice, self).__init__(name, xPos, yPos, channel)
-        self._interpreter = interpreter
+
+        self.interpreter = interpreter
+        """
+        :class:`~gymwipe.envs.core.Interpreter`: The
+        :class:`~gymwipe.envs.core.Interpreter` instance that provides
+        domain-specific feedback on the consequences of :meth:`assignChannel`
+        calls
+        """
 
         # Initialize PHY and MAC
         self._phy = SimplePhy("phy", self, self.channel)
         self._mac = SimpleRrmMac("mac", self)
         # Connect them with each other
         self._mac.gates["phy"].biConnectWith(self._phy.gates["mac"])
+
+        # Connect the "upper" mac layer output to the interpreter
+        self._mac.gates["transport"].output.nReceives.subscribeCallback(interpreter.onPacketReceived)
     
     # merge __init__ docstrings
     __init__.__doc__ = NetworkDevice.__init__.__doc__ + __init__.__doc__
@@ -141,14 +151,6 @@ class SimpleRrmDevice(NetworkDevice):
     def mac(self) -> bytes:
         """bytes: The RRM's MAC address"""
         return self._mac.addr
-
-    @property
-    def packetReceivedNotifier(self) -> Notifier:
-        """
-        A :class:`~gymwipe.simtools.Notifier` that is triggered when the RRM
-        receives a packet that is not addressed to it.
-        """
-        return self._mac.gates["transport"].output.nReceives
 
     def assignChannel(self, deviceMac: bytes, duration: int) -> Tuple[Any, float]:
         """
@@ -170,22 +172,7 @@ class SimpleRrmDevice(NetworkDevice):
             StackSignals.ASSIGN,
             {"duration": duration, "dest": deviceMac}
         )
-        self._interpreter.onChannelAssignment(duration, deviceMac)
+        self.interpreter.onChannelAssignment(duration, deviceMac)
         self._mac.gates["transport"].send(assignSignal)
 
         return assignSignal
-
-    def getFeedback(self) -> Tuple[Any, float, bool]:
-        """
-        Call this at the end of a channel assignment to get an observation, a
-        reward. and a done flag from the
-        :class:`~gymwipe.envs.core.Interpreter`.
-
-        Returns:
-            A tuple consisting of the observation, the reward, and the done flag
-            handed out by the :class:`~gymwipe.envs.core.Interpreter`
-        """
-        observation = self._interpreter.getObservation()
-        reward = self._interpreter.getReward()
-        done = self._interpreter.getDone()
-        return observation, reward, done
