@@ -15,6 +15,7 @@ import gymwipe.devices as devices
 from gymwipe.devices import Device
 from gymwipe.networking.messages import Packet
 from gymwipe.simtools import Notifier, SimMan, SimTimePrepender
+from gymwipe.utility import strAndRepr
 
 logger = SimTimePrepender(logging.getLogger(__name__))
 
@@ -294,6 +295,12 @@ class AttenuationModel():
         if deviceA is deviceB:
             raise ValueError("An AttenuationModel cannot be created with both "
                              "deviceA and deviceB being the same device.")
+        if deviceA.position == deviceB.position:
+            if deviceA.name == deviceB.name:
+                msg = "{} and {} have the same name and the same position."           
+            else:
+                msg = "{} and {} have the same position."
+            logger.warn((msg + " Is this intended?").format(strAndRepr(deviceA), strAndRepr(deviceB)))
         self.channelSpec = channelSpec
         self.devices: Tuple[Device] = (deviceA, deviceB)
         self.attenuation: float = 0
