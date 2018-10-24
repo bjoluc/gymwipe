@@ -7,7 +7,7 @@ from typing import Any, List, Tuple
 
 from simpy import Event
 
-from gymwipe import ownerPrefix
+from gymwipe.utility import ownerPrefix
 from gymwipe.simtools import Notifier, SimTimePrepender
 
 logger = SimTimePrepender(logging.getLogger(__name__))

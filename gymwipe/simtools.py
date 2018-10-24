@@ -11,7 +11,7 @@ from typing import (Any, Callable, DefaultDict, Dict, Generator, Set, Tuple,
 from simpy import Environment
 from simpy.events import Event, Process
 
-from gymwipe import ownerPrefix
+from gymwipe.utility import ownerPrefix
 
 
 class SimulationManager:
