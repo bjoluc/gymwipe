@@ -4,9 +4,10 @@ Physical layer related components
 import functools
 import logging
 from abc import ABC, abstractmethod
+from collections import deque
 from fractions import Fraction
 from math import e, exp, log10, pi, sqrt
-from typing import Any, Dict, List, Tuple, Type, TypeVar
+from typing import Any, Deque, Dict, List, Tuple, Type, TypeVar
 
 from scipy.special import binom
 from simpy import Event
@@ -487,7 +488,8 @@ class Channel:
         #for a in args:
         #    assert isinstance(a, AttenuationModel)
         self._attenuationModelFactory = AttenuationModelFactory(self.spec, modelClasses)
-        self._transmissions: List[Transmission] = []
+
+        self._transmissions: Deque[Transmission] = deque()
         self._transmissionInReachNotifiers: Dict[Tuple[Device, float], Notifier] = {}
 
         self.nNewTransmission: Notifier = Notifier("New transmission", self)
@@ -524,8 +526,9 @@ class Channel:
         Returns:
             The :class:`Transmission` object representing the transmission
         """
+        self._removeFirstPastTransmission() # regular cleanup
         t = Transmission(sender, mcs, power, brHeader, brPayload, packet, SimMan.now)
-        self._transmissions.append((t, t.startTime, t.stopTime))
+        self._transmissions.append(t)
         logger.info("%s added to channel", t)
         # trigger notifiers after returning the transmission
         def callAfterReturn(value: Any):
@@ -537,33 +540,20 @@ class Channel:
         SimMan.timeout(0).callbacks.append(callAfterReturn)
         return t
     
-    def getTransmissions(self, fromTime: int, toTime: int) -> List[Tuple[Transmission, int, int]]:
-        """
-        Returns the transmissions that were active within the timely interval of
-        [`fromTime`,`toTime`].
-
-        Args:
-            fromTime: The number of the first time step of the interval to
-                return transmissions for
-            toTime: The number of the last time step of the interval to return
-                transmissions for
-        
-        Returns:
-            A list of tuples, one for each :class:`Transmission`, each
-            consisting of the :class:`Transmission` object, the transmission's
-            start time, and stop time.
-        """
-        return [(t, a, b) for (t, a, b) in self._transmissions
-                    if a <= fromTime <= toTime <= b
-                    or fromTime <= a <= toTime
-                    or fromTime <= b <= toTime]
+    def _removePastTransmissions(self):
+        while len(self._transmissions) > 0 and self._transmissions[0].completed:
+            self._transmissions.popleft()
+    
+    def _removeFirstPastTransmission(self):
+        if len(self._transmissions) > 0 and self._transmissions[0].completed:
+            self._transmissions.popleft()
     
     def getActiveTransmissions(self) -> List[Transmission]:
         """
         Returns a list of transmissions that are currently active.
         """
-        now = SimMan.now
-        return [t for (t, a, b) in self._transmissions if a <= now <= b]
+        self._removePastTransmissions()
+        return list(self._transmissions)
     
     def getActiveTransmissionsInReach(self, receiver: Device, radius: float) -> List[Transmission]:
         """
