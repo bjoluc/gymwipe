@@ -1,18 +1,17 @@
-gymwipe.envs package
-====================
+gymwipe.agents package
+======================
 
 Submodules
 ----------
 
 .. toctree::
 
-   gymwipe.envs.core
-   gymwipe.envs.counter_traffic
+   gymwipe.agents.dqn_counter_traffic
 
 Module contents
 ---------------
 
-.. automodule:: gymwipe.envs
+.. automodule:: gymwipe.agents
     :members:
     :undoc-members:
     :show-inheritance:

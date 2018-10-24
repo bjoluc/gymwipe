@@ -6,6 +6,7 @@ Subpackages
 
 .. toctree::
 
+    gymwipe.agents
     gymwipe.devices
     gymwipe.envs
     gymwipe.networking
@@ -17,6 +18,7 @@ Submodules
 .. toctree::
 
    gymwipe.simtools
+   gymwipe.utility
 
 Module contents
 ---------------
