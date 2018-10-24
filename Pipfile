@@ -20,6 +20,8 @@ sphinx-autodoc-typehints = "*"
 pipenv-to-requirements = "*"
 rope = "*"
 sphinxcontrib-bibtex = "*"
+keras-rl = "*"
+tensorflow = "*"
 
 [requires]
 python_version = "3.6"
