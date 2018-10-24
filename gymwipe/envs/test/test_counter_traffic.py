@@ -27,6 +27,6 @@ def test_counter_traffic_env(caplog):
     
     # Give device 1 the channel 4 times longer (it sends 3 packets per number),
     # thus one packet of the next number should have been sent then
-    observation, reward, _, _ = env.step({"device": 1, "duration": 12})
+    observation, reward, _, _ = env.step({"device": 1, "duration": 10})
     assert observation - observation_center == -1
     assert reward == 0

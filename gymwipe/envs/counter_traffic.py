@@ -46,8 +46,7 @@ class CounterTrafficEnv(BaseEnv):
                         packetMultiplicity: int):
             super(CounterTrafficEnv.SenderDevice, self).__init__(name, xPos, yPos, channel)
             self.packetMultiplicity = packetMultiplicity
-            self._counter = 1
-            self._counterBound = 2 ** (8*4)
+            self.counter = 1
             SimMan.process(self.senderProcess())
 
             self.destinationMac: bytes = None # to be set after construction
@@ -56,20 +55,23 @@ class CounterTrafficEnv(BaseEnv):
             assert self.destinationMac is not None
             while True:
                 for _ in range(self.packetMultiplicity):
-                    data = IntTransmittable(4, self._counter)
+                    data = IntTransmittable(CounterTrafficEnv.COUNTER_BYTE_LENGTH, self.counter)
                     self.send(data, self.destinationMac)
-                if self._counter < CounterTrafficEnv.COUNTER_BOUND:
-                    self._counter += 1
+                if self.counter < CounterTrafficEnv.COUNTER_BOUND:
+                    self.counter += 1
                 yield SimMan.timeout(CounterTrafficEnv.COUNTER_INTERVAL)
     
     class CounterTrafficInterpreter(Interpreter):
 
-        def __init__(self, environment: "CounterTrafficEnv"):
-            self._environment = environment
+        def __init__(self, env: "CounterTrafficEnv"):
+            self._env = env
+            self._macToSenderIndexDict = {sender.mac: i for i, sender in enumerate(env.senders)}
+            self.reset()
+        
+        def reset(self):
             self._latestDifference = 0
             self._lastRewardDifference = 0
-            self.receivedValues = [0 for _ in range(len(environment.senders))]
-            self._macToSenderIndexDict = {sender.mac: i for i, sender in enumerate(environment.senders)}
+            self.receivedValues = [0 for _ in range(len(self._env.senders))]
             self._done = False
         
         def onPacketReceived(self, p: Packet):
@@ -77,7 +79,7 @@ class CounterTrafficEnv(BaseEnv):
             deviceIndex = self._macToSenderIndexDict[p.header.sourceMAC]
             self.receivedValues[deviceIndex] = value
             self._latestDifference = self.receivedValues[0] - self.receivedValues[1]
-            if value == self._environment.COUNTER_BOUND:
+            if value == self._env.COUNTER_BOUND:
                 self._done = True
     
         def onChannelAssignment(self, duration: int, destination: bytes):
@@ -95,10 +97,15 @@ class CounterTrafficEnv(BaseEnv):
             return float(reward)
 
         def getObservation(self):
-            return self._latestDifference + self._environment.COUNTER_BOUND
+            return self._latestDifference + self._env.COUNTER_BOUND
         
         def getDone(self):
             return self._done
+        
+        def getInfo(self):
+            # DQN in keras-rl crashes when the values are iterable, thus the
+            # string below
+            return {"Latest received values": str(self.receivedValues)}
 
     def __init__(self):
         channel = Channel([FsplAttenuation])
@@ -111,14 +118,6 @@ class CounterTrafficEnv(BaseEnv):
         self._stepNumber = 0
         self._lastActionString: str = None
 
-        self.senders: List[CounterTrafficEnv.SenderDevice] = None
-        self.rrm = None
-        self.reset()
-
-    def reset(self):
-        """
-        Resets the state of the environment and returns an initial observation.
-        """
         SimMan.initEnvironment()
 
         self.senders: List[self.SenderDevice] = [
@@ -128,11 +127,19 @@ class CounterTrafficEnv(BaseEnv):
         self.senders[0].destinationMac = self.senders[1].mac
         self.senders[1].destinationMac = self.senders[0].mac
 
-        self._interpreter = self.CounterTrafficInterpreter(self)
-        self.rrm = SimpleRrmDevice("RRM", 0, 0, self.channel, self._interpreter)
-        self.rrm.packetReceivedNotifier.subscribeCallback(self._interpreter.onPacketReceived)
+        interpreter = self.CounterTrafficInterpreter(self)
+        self.rrm = SimpleRrmDevice("RRM", 0, 0, self.channel, interpreter)
 
-        return self._interpreter.getObservation()
+    def reset(self):
+        """
+        Resets the state of the environment and returns an initial observation.
+        """
+        for sender in self.senders:
+            sender.counter = 0
+        
+        self.rrm.interpreter.reset()
+        
+        return self.rrm.interpreter.getObservation()
     
     def step(self, action):
         assert self.action_space.contains(action)
@@ -151,11 +158,9 @@ class CounterTrafficEnv(BaseEnv):
         # Run the simulation until the assignment is over
         SimMan.runSimulation(assignSignal.eProcessed)
 
-        feedback = self.rrm.getFeedback()
-        # Return observation, reward, done, info
-        return (*feedback, {"Latest received values": self._interpreter.receivedValues})
+        # Return (observation, reward, done, info)
+        return self.rrm.interpreter.getFeedback()
 
     def render(self, mode='human', close=False):
-        values = self._interpreter.receivedValues
+        print("Last Received: {}".format(self.rrm.interpreter.receivedValues))
         print("Last action: {}".format(self._actionString))
-        print("Latest received values: {}".format(values))
