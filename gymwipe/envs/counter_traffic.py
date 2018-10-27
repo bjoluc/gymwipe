@@ -89,12 +89,11 @@ class CounterTrafficEnv(BaseEnv):
             from both devices: Positive if the difference became smaller,
             negative otherwise
             """
-            if self._lastAssignDeviceIndex == 0:
-                return 0.0
             absDifference = abs(self._latestDifference)
-            reward = self._lastRewardDifference - absDifference
-            self._lastRewardDifference = absDifference
-            return float(reward)
+            #reward = self._lastRewardDifference - absDifference
+            #self._lastRewardDifference = absDifference
+            #return float(reward)
+            return float(100-absDifference)
 
         def getObservation(self):
             return self._latestDifference + self._env.COUNTER_BOUND
@@ -155,4 +154,4 @@ class CounterTrafficEnv(BaseEnv):
 
     def render(self, mode='human', close=False):
         values = self.rrm.interpreter.receivedValues
-        print("Last Received: {}, difference: {:6d}".format(values, values[1]-values[0]))
+        print("Last Received: {}, difference: {:6d}".format(values, values[1]-values[0]),end='\r')

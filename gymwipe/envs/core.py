@@ -22,7 +22,7 @@ class BaseEnv(gym.Env):
     """
     metadata = {'render.modes': ['human']}
 
-    MAX_ASSIGN_DURATION = 40 # * ASSIGNMENT_DURATION_FACTOR time slots
+    MAX_ASSIGN_DURATION = 20 # * ASSIGNMENT_DURATION_FACTOR time slots
 
     ASSIGNMENT_DURATION_FACTOR = 1000
 
