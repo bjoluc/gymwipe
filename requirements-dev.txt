@@ -10,6 +10,7 @@
 # `Pipfile.lock` and then regenerate `requirements*.txt`.
 ################################################################################
 
+keras-rl
 mypy-lang
 pipenv-to-requirements
 pylint
@@ -19,6 +20,7 @@ sphinx-autobuild
 sphinx-autodoc-typehints
 sphinx-rtd-theme
 sphinxcontrib-bibtex
+tensorflow
 
 gym
 pytest-mock
