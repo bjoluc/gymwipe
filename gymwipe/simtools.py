@@ -126,33 +126,83 @@ class SimulationManager:
 
 SimMan = SimulationManager()
 """
-A globally accessible :class:`SimulationManager` instance to be used whenever a
+A globally accessible :class:`SimulationManager` instance to be used whenever the
 SimPy simulation is involved
 """
 
-class SimTimePrepender(logging.LoggerAdapter):
+class SourcePrepender(logging.LoggerAdapter):
     """
-    A :class:`~logging.LoggerAdapter` that prepends the current simulation time
-    (fetched by requesting :attr:`SimMan.now`) to any log message sent.
+    A :class:`~logging.LoggerAdapter` that prepends the string representation of
+    a provided object to log messages.
 
     Examples:
-        The following command sets up a :class:`~logging.Logger` that prepends
-        simulation time:
+        The following command sets up a :class:`~logging.Logger` that
+        prepends message sources:
         ::
 
-            logger = SimTimePrepender(logging.getLogger(__name__))
+            logger = SourcePrepender(logging.getLogger(__name__))
+
+        Assuming `self` is the object that logs a message, it could prepend `str(self)`
+        to a message like this:
+        ::
+
+            logger.info("Something happened", sender=self)
         
+        If `str(self)` is ``myObject``, this example would result in the log message
+        "myObject: Something happened".
+
+
     """
     def __init__(self, logger: logging.Logger):
         """
         Args:
             logger: The :class:`~logging.Logger` instance to be wrapped by the
-                SimTimePrepender LoggerAdapter
+                SourcePrepender :class:`~logging.LoggerAdapter`
         """
-        super(SimTimePrepender, self).__init__(logger, {})
+        super(SourcePrepender, self).__init__(logger, {})
 
     def process(self, msg, kwargs):
-        """Prepends "[Time: `x`]" to `message`, with `x` being the current simulation time."""
+        """
+        If a `sender` keyword argument is provided, prepends "`obj`: " to `msg`,
+        with `obj` being the string representation of the `sender` keyword
+        argument.
+        """
+        if "sender" in kwargs:
+            sender = kwargs.pop("sender")
+            msg = str(sender) + ": " + msg
+        return msg, kwargs
+
+class SimTimePrepender(SourcePrepender):
+    """
+    A :class:`~logging.LoggerAdapter` that prepends the current simulation time
+    (fetched by requesting :attr:`SimMan.now`) to any log message sent.
+    Additionally, the `sender` keyword argument can be used for logging calls,
+    which also prepends a sender to messages like explained in
+    :class:`SourcePrepender`.
+
+    Examples:
+        The following command sets up a :class:`~logging.Logger` that
+        prepends simulation time:
+        ::
+
+            logger = SimTimePrepender(logging.getLogger(__name__))
+
+    """
+    def __init__(self, logger: logging.Logger):
+        """
+        Args:
+            logger: The :class:`~logging.Logger` instance to be wrapped by the
+                SimTimePrepender :class:`~logging.LoggerAdapter`
+        """
+        super(SimTimePrepender, self).__init__(logger)
+
+    def process(self, msg, kwargs):
+        """
+        Prepends "[Time: `x`]" to `msg`, with `x` being the current
+        simulation time. Additionally, if a `sender` argument is provided,
+        str(`sender`) is also prepended to the simulation time.
+        """
+        msg, kwargs = super(SimTimePrepender, self).process(msg, kwargs)
         return "[Time: {:12f}] {}".format(SimMan.now, msg), kwargs
 
 logger = SimTimePrepender(logging.getLogger(__name__))
@@ -278,7 +328,7 @@ class Notifier:
         """
 
         if process in self._processExecutors:
-            logger.warn("%s: Generator function %s was already subscribed! Ignoring the call.", self, process)
+            logger.warn("Generator function %s was already subscribed! Ignoring the call.", process, sender=self)
         else:
             # creating an executor function that will be called whenever trigger is called
             def executor(value: Any) -> None:
@@ -288,15 +338,15 @@ class Notifier:
                 else:
                     if executor.running:
                         if not queued:
-                            logger.debug("{}: Notification with object '{}' did not lead "
-                                            "to the processing of {}, since a previous SimPy "
+                            logger.debug("Notification with object '%s' did not lead "
+                                            "to the processing of %s, since a previous SimPy "
                                             "process is still active, 'blocking' is 'True', and "
-                                            "'queued' is 'False'.".format(self, value, process))
+                                            "'queued' is 'False'.", value, process, sender=self)
                         else:
                             executor.queue.append(value)
-                            logger.debug("{}: Object '{}' was appended to queue for SimPy generator {}, "
+                            logger.debug("Object '%s' was appended to queue for SimPy generator %s, "
                                         "since a previous SimPy process is still active. "
-                                        "Queue length: {:d}".format(self, value, process, len(executor.queue)))
+                                        "Queue length: %d", value, process, len(executor.queue), sender=self)
                     else:
                         executor.running = True
                         processedEvent = SimMan.process(process(value))
@@ -305,13 +355,13 @@ class Notifier:
                                 # callback for running the next process from the queue
                                 if len(executor.queue) > 0:
                                     nextObject = executor.queue.popleft()
-                                    logger.debug("{}: Processing generator {} "
-                                                "with queued object {}.".format(self, process, nextObject))
+                                    logger.debug("Processing generator %s "
+                                                "with queued object %s.", process, nextObject, sender=self)
                                     event = SimMan.process(process(nextObject))
                                     event.callbacks.append(executeNext)
                                 else:
                                     executor.running = False
-                                    logger.debug("{}: All queued jobs for generator {} were executed.".format(self, process))
+                                    logger.debug("All queued jobs for generator %s were executed.", process, sender=self)
                             processedEvent.callbacks.append(executeNext)
                         else:
                             # We have to set executor.running back to False,
@@ -332,7 +382,7 @@ class Notifier:
         :attr:`event` succeed, and triggers the processing of subscribed SimPy
         generators.
         """
-        logger.debug("{}: Triggered with value {}".format(self, value))
+        logger.debug("Triggered with value %s", value, sender=self)
         for c in self._sortedCallbacks:
             c(value)
         for executor in self._processExecutors.values():
