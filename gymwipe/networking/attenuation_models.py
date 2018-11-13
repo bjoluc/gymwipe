@@ -11,12 +11,12 @@ import logging
 from math import log10, sqrt
 
 from gymwipe.devices import Device
-from gymwipe.networking.physical import BaseAttenuationModel, ChannelSpec
+from gymwipe.networking.physical import PositionalAttenuationModel, ChannelSpec
 from gymwipe.simtools import SimTimePrepender
 
 logger = SimTimePrepender(logging.getLogger(__name__))
 
-class FsplAttenuation(BaseAttenuationModel):
+class FsplAttenuation(PositionalAttenuationModel):
     """
     A free-space path loss (FSPL) :class:`AttenuationModel` implementation
     """

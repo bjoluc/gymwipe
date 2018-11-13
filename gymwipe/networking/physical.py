@@ -330,21 +330,21 @@ class AttenuationModel():
             self.attenuation = newAttenuation
             self.nAttenuationChanges.trigger(newAttenuation)
 
-class BaseAttenuationModel(AttenuationModel, ABC):
+class PositionalAttenuationModel(AttenuationModel, ABC):
     """
     An :class:`AttenuationModel` subclass that executes :meth:`_positionChanged`
     whenever one of its two devices changes its position and the distance
     between the devices does not exceed :attr:`STANDBY_THRESHOLD`.
     """
 
-    STANDBY_THRESHOLD: float = 3000000
+    STANDBY_THRESHOLD: float = 3000
     """
     float: The minimum distance in metres, that allows the
     :class:`AttenuationModel` not to react on position changes of its devices
     """
 
     def __init__(self, channelSpec: ChannelSpec, deviceA: Device, deviceB: Device):
-        super(BaseAttenuationModel, self).__init__(channelSpec, deviceA, deviceB)
+        super(PositionalAttenuationModel, self).__init__(channelSpec, deviceA, deviceB)
         
         def positionChangedCallback(p: devices.Position):
             distance = self.devices[0].position.distanceTo(self.devices[1].position)
@@ -372,7 +372,7 @@ class JoinedAttenuationModel(AttenuationModel):
     """
     An :class:`AttenuationModel` that adds the attenuation values of two or more
     given :class:`AttenuationModel` instances. If the position of one of both
-    devices is changed, it will gather the Test update notifications of its
+    devices is changed, it will gather the update notifications of its
     :class:`AttenuationModel` instances, sum them up and trigger the
     :attr:`nAttenuationChanges` notifier only once after the updates (this is
     implemented using callback priorities). When an :class:`AttenuationModel`
