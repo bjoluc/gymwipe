@@ -69,7 +69,7 @@ class CounterTrafficEnv(BaseEnv):
         
         def reset(self):
             self._latestDifference = 0
-            self._lastRewardDifference = 0
+            self._lastAbsDifference = 0
             self.receivedValues = [0 for _ in range(len(self._env.senders))]
             self._done = False
 
@@ -85,15 +85,21 @@ class CounterTrafficEnv(BaseEnv):
 
         def getReward(self):
             """
-            Reward is the change of the difference between the values received
-            from both devices: Positive if the difference became smaller,
-            negative otherwise
+            Reward depends on the change of the difference between the values
+            received from both devices: If the difference became smaller, it is
+            the positive reward difference, limited by 10. Otherwise, it is the
+            negative reward difference, limited by -10. This is a result of
+            trial and error and most likely far away from being perfect.
             """
             absDifference = abs(self._latestDifference)
-            #reward = self._lastRewardDifference - absDifference
-            #self._lastRewardDifference = absDifference
-            #return float(reward)
-            return float(100-absDifference)
+            lastAbsDifference = self._lastAbsDifference
+            self._lastAbsDifference = absDifference
+            reward = lastAbsDifference - absDifference
+            if reward > 10:
+                reward = 10
+            elif reward < -10:
+                reward = -10
+            return float(reward)
 
         def getObservation(self):
             return self._latestDifference + self._env.COUNTER_BOUND
