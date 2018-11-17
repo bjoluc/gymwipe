@@ -10,6 +10,7 @@
 # `Pipfile.lock` and then regenerate `requirements*.txt`.
 ################################################################################
 
+-e .
 keras-rl
 mypy-lang
 pipenv-to-requirements
@@ -23,7 +24,8 @@ sphinxcontrib-bibtex
 tensorflow
 
 gym
+pytest
+pytest-benchmark
 pytest-mock
-pytest==3.5.0
 scipy
 simpy

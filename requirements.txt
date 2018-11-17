@@ -11,7 +11,8 @@
 ################################################################################
 
 gym
+pytest
+pytest-benchmark
 pytest-mock
-pytest==3.5.0
 scipy
 simpy
