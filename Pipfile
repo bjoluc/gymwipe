@@ -5,21 +5,22 @@ name = "pypi"
 
 [packages]
 gym = "*"
-pytest = "==3.5.0"
 pytest-mock = "*"
 simpy = "*"
 scipy = "*"
+pytest = "*"
+pytest-benchmark = {extras = ["histogram"], version = "*"}
 
 [dev-packages]
+gymwipe = {editable = true, path = "."}
 pylint = "*"
 sphinx = "*"
 sphinx-autobuild = "*"
 sphinx-rtd-theme = "*"
-mypy-lang = "*"
 sphinx-autodoc-typehints = "*"
+sphinxcontrib-bibtex = "*"
 pipenv-to-requirements = "*"
 rope = "*"
-sphinxcontrib-bibtex = "*"
 keras-rl = "*"
 tensorflow = "*"
 
