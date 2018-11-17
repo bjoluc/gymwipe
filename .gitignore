@@ -105,3 +105,6 @@ venv.bak/
 
 # VS Code
 .vscode/
+
+# pytest logs
+pytest-logs.txt
