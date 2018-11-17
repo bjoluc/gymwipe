@@ -301,7 +301,7 @@ class AttenuationModel():
                 msg = "{} and {} have the same name and the same position."           
             else:
                 msg = "{} and {} have the same position."
-            logger.warn((msg + " Is this intended?").format(strAndRepr(deviceA), strAndRepr(deviceB)))
+            logger.warning((msg + " Is this intended?").format(strAndRepr(deviceA), strAndRepr(deviceB)))
         self.channelSpec = channelSpec
         self.devices: Tuple[Device] = (deviceA, deviceB)
         self.attenuation: float = 0
@@ -484,9 +484,6 @@ class Channel:
         :class:`ChannelSpec`: The channel's specification object
         """
 
-        # The isinstance check below would always return false - why?
-        #for a in args:
-        #    assert isinstance(a, AttenuationModel)
         self._attenuationModelFactory = AttenuationModelFactory(self.spec, modelClasses)
 
         self._transmissions: Deque[Transmission] = deque()
