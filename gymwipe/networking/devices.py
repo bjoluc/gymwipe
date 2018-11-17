@@ -4,7 +4,6 @@
 from typing import Any, Dict, Tuple
 
 from gymwipe.devices import Device
-from gymwipe.envs.core import Interpreter
 from gymwipe.networking.messages import (Packet, Signal, SimpleTransportHeader,
                                          StackSignals, Transmittable)
 from gymwipe.networking.physical import Channel
@@ -44,7 +43,7 @@ class SimpleNetworkDevice(NetworkDevice):
     consists of a SimplePHY and a SimpleMAC. It offers a method for sending a
     packet using the MAC layer, as well as a callback method that will be
     invoked when a packet is received. Also, receiving can be turned on or of by
-    setting :attr:`receive` either to ``True`` or to ``False``.
+    setting :attr:`receiving` either to ``True`` or to ``False``.
     """
 
     def __init__(self, name: str, xPos: float, yPos: float, channel: Channel):
@@ -94,7 +93,7 @@ class SimpleNetworkDevice(NetworkDevice):
             result = yield receiveCmd.eProcessed
             if result:
                 self.onReceive(result)
-        # Reset receiver process reference so one can now that the process has
+        # Reset receiver process reference so one can see that the process has
         # terminated
         self._receiverProcess = None
 
@@ -121,14 +120,16 @@ class SimpleRrmDevice(NetworkDevice):
     """
 
     def __init__(self, name: str, xPos: float, yPos: float, channel: Channel,
-                    deviceIndexToMacDict: Dict[int, bytes], interpreter: Interpreter):
+                    deviceIndexToMacDict: Dict[int, bytes], interpreter):
+        # No type definition for 'interpreter' to avoid circular dependencies
         """
             deviceIndexToMacDict: A dictionary mapping integer indexes to device
                 MAC addresses. This allows to pass the device index used by a
                 learning agent instead of a MAC address to
                 :meth:`assignChannel`.
-            interpreter: The :class:`~gymwipe.envs.core.Interpreter` instance to
-                be used for observation and reward calculations
+            interpreter(:class:`~gymwipe.envs.core.Interpreter`): The
+                :class:`~gymwipe.envs.core.Interpreter` instance to be used for
+                observation and reward calculations
         """
         super(SimpleRrmDevice, self).__init__(name, xPos, yPos, channel)
 
