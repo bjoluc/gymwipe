@@ -211,8 +211,9 @@ class SimplePhy(StackLayer):
                     now = SimMan.now
                     prevPowerDuration = now - lastLevelChange
 
-                    # Derive the number of bit errors for that duration
-                    bitErrors = round(bitErrorRate * prevPowerDuration * currentBitRate)
+                    # Derive the number of bit errors for that duration (still
+                    # as a float, rounding is done in the end)
+                    bitErrors = bitErrorRate * prevPowerDuration * currentBitRate
                     bitErrorSum += bitErrors
 
                     if not t.completed:
@@ -236,6 +237,7 @@ class SimplePhy(StackLayer):
             self._nReceivedPowerChanges.unsubscribeCallback(onReceivedPowerChange)
 
             # Alright, we have the number of bit errors in bitErrorSum now!
+            bitErrorSum = round(bitErrorSum)
             bitErrorRate = bitErrorSum / t.packet.bitSize()
             maxCorrectableBer = t.mcs.maxCorrectableBer()
             if bitErrorRate > maxCorrectableBer:
