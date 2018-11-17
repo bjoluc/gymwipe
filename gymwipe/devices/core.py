@@ -3,12 +3,12 @@ Core components for modelling physical devices
 """
 import logging
 from math import sqrt
-from typing import Any, List, Tuple
+from typing import Any, List, Tuple, Union
 
 from simpy import Event
 
-from gymwipe.utility import ownerPrefix
 from gymwipe.simtools import Notifier, SimTimePrepender
+from gymwipe.utility import ownerPrefix
 
 logger = SimTimePrepender(logging.getLogger(__name__))
 
@@ -17,15 +17,15 @@ class Position:
     A simple class for representing 2-dimensional positions, stored as two float values.
     """
 
-    def __init__(self, x: float, y: float, owner: Any = None):
+    def __init__(self, x: Union[float, int], y: Union[float, int], owner: Any = None):
         """
         Args:
             x: The distance to a fixed origin in x direction, measured in meters
             y: The distance to a fixed origin in y direction, measured in meters
             owner: The object owning (having) the position.
         """
-        self._x = x
-        self._y = y
+        self._x = float(x)
+        self._y = float(y)
         self.owner = owner
 
         self.nChange: Notifier = Notifier("changes", self)
@@ -35,7 +35,7 @@ class Position:
         """
     
     def __eq__(self, p):
-        return p.x == self._x & p.y == self._y
+        return p.x == self._x and p.y == self._y
     
     @property
     def x(self):
