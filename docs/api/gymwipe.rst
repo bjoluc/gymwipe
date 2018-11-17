@@ -6,7 +6,6 @@ Subpackages
 
 .. toctree::
 
-    gymwipe.agents
     gymwipe.devices
     gymwipe.envs
     gymwipe.networking

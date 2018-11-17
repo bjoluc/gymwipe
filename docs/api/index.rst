@@ -12,4 +12,3 @@ API Reference
    gymwipe.devices
    gymwipe.networking
    gymwipe.envs
-   gymwipe.agents
