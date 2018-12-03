@@ -211,25 +211,24 @@ class SimpleTransportHeader(Transmittable):
         return 12
         
 
-class Signal:
+class Message:
     """
-    A class used for the exchange of arbitrary signals between components.
-    Signals can be used to simulate both asynchronous and synchronous function
+    A class used for the exchange of arbitrary messages between components.
+    :class:`Message`s can be used to simulate both asynchronous and synchronous function
     calls.
 
     Attributes:
-        type(Enum): An enumeration object that defines the signal type
-        properties(Dict[str, Any]): A dictionary containing additional signal
-            properties
+        type(Enum): An enumeration object that defines the message type
+        args(Dict[str, Any]): A dictionary containing the message's arguments
         eProcessed(Event): A SimPy event that is triggered when
             :meth:`setProcessed` is called. This is useful for simulating
             synchronous function calls and also allows for return values (an
             example is provided in :meth:`setProcessed`).
     """
 
-    def __init__(self, type: Enum, properties: Dict[str, Any] = None):
+    def __init__(self, type: Enum, args: Dict[str, Any] = None):
         self.type = type
-        self.properties = properties
+        self.args = args
         self.eProcessed = Event(SimMan.env)
 
     def setProcessed(self, returnValue: Any = None):
@@ -254,12 +253,12 @@ class Signal:
         self.eProcessed.succeed(returnValue)
     
     def __str__(self):
-        return "Signal('{}', properties: {})".format(self.type.name, self.properties)
+        return "Signal('{}', args: {})".format(self.type.name, self.args)
 
-class StackSignals(Enum):
+class StackMessages(Enum):
     """
-    An enumeration of control signal types to be used for the exchange of
-    `Signal` objects between network stack layers.
+    An enumeration of control message types to be used for the exchange of
+    `Message` objects between network stack layers.
     """
     RECEIVE = 0
     SEND = 1

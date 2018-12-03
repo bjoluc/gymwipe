@@ -8,9 +8,9 @@ from pytest_mock import mocker
 from gymwipe.devices import Device
 from gymwipe.networking.attenuation_models import FsplAttenuation
 from gymwipe.networking.construction import Port
-from gymwipe.networking.messages import (FakeTransmittable, Packet, Signal,
+from gymwipe.networking.messages import (FakeTransmittable, Packet, Message,
                                          SimpleMacHeader,
-                                         SimpleTransportHeader, StackSignals,
+                                         SimpleTransportHeader, StackMessages,
                                          Transmittable)
 from gymwipe.networking.physical import FrequencyBand
 from gymwipe.networking.stack import (TIME_SLOT_LENGTH, SimpleMac, SimplePhy,
@@ -90,7 +90,7 @@ def test_simple_phy(caplog, mocker, simple_phy):
         # setup the message to the physical layer
         BITRATE = 100e3  # 100 Kb/s
         POWER = 0.0 # dBm
-        cmd = Signal(StackSignals.SEND, {"packet": packet, "power": POWER, "bitrate": BITRATE})
+        cmd = Message(StackMessages.SEND, {"packet": packet, "power": POWER, "bitrate": BITRATE})
 
         # send the message to the physical layer
         senderPhy.ports["mac"].send(cmd)
@@ -179,7 +179,7 @@ def test_simple_mac(caplog, simple_mac):
     def receiver(macLayer: SimpleMac, receivedPacketsList: List[Packet]):
         # receive forever
         while True:
-            receiveCmd = Signal(StackSignals.RECEIVE, {"duration": 10})
+            receiveCmd = Message(StackMessages.RECEIVE, {"duration": 10})
             macLayer.ports["transport"].send(receiveCmd)
             result = yield receiveCmd.eProcessed
             if result is not None:
@@ -197,7 +197,7 @@ def test_simple_mac(caplog, simple_mac):
                 dest = dev1Addr
             else:
                 dest = dev2Addr
-            cmd = Signal(StackSignals.ASSIGN, {"duration": ASSIGN_TIME/TIME_SLOT_LENGTH, "dest": dest})
+            cmd = Message(StackMessages.ASSIGN, {"duration": ASSIGN_TIME/TIME_SLOT_LENGTH, "dest": dest})
             s.rrmMac.ports["transport"].send(cmd)
             if previousCmd is not None:
                 yield previousCmd.eProcessed

@@ -4,8 +4,8 @@
 from typing import Any, Dict, Tuple
 
 from gymwipe.devices import Device
-from gymwipe.networking.messages import (Packet, Signal, SimpleTransportHeader,
-                                         StackSignals, Transmittable)
+from gymwipe.networking.messages import (Packet, Message, SimpleTransportHeader,
+                                         StackMessages, Transmittable)
 from gymwipe.networking.physical import FrequencyBand
 from gymwipe.networking.stack import SimpleMac, SimplePhy, SimpleRrmMac
 from gymwipe.simtools import Notifier, SimMan
@@ -88,7 +88,7 @@ class SimpleNetworkDevice(NetworkDevice):
     def _receiver(self):
         # A blocking receive loop
         while self._receiving:
-            receiveCmd = Signal(StackSignals.RECEIVE, {"duration": self.RECEIVE_TIMEOUT})
+            receiveCmd = Message(StackMessages.RECEIVE, {"duration": self.RECEIVE_TIMEOUT})
             self._mac.ports["transport"].send(receiveCmd)
             result = yield receiveCmd.eProcessed
             if result:
@@ -193,8 +193,8 @@ class SimpleRrmDevice(NetworkDevice):
             succeed.
         """
         deviceMac = self.deviceIndexToMacDict[deviceIndex]
-        assignSignal = Signal(
-            StackSignals.ASSIGN,
+        assignSignal = Message(
+            StackMessages.ASSIGN,
             {"duration": duration, "dest": deviceMac}
         )
         self.interpreter.onFrequencyBandAssignment(duration, deviceIndex)
