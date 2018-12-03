@@ -9,6 +9,7 @@ Subpackages
     gymwipe.devices
     gymwipe.envs
     gymwipe.networking
+    gymwipe.plants
     gymwipe.processes
 
 Submodules

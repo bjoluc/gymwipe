@@ -17,8 +17,8 @@ The following classes are used for inter-module communication:
 
 .. autosummary::
 
-    ~gymwipe.networking.messages.Signal
-    ~gymwipe.networking.messages.StackSignals
+    ~gymwipe.networking.messages.Message
+    ~gymwipe.networking.messages.StackMessages
 """
 from enum import Enum
 from typing import Any, Dict
@@ -214,7 +214,7 @@ class SimpleTransportHeader(Transmittable):
 class Message:
     """
     A class used for the exchange of arbitrary messages between components.
-    :class:`Message`s can be used to simulate both asynchronous and synchronous function
+    A :class:`Message` can be used to simulate both asynchronous and synchronous function
     calls.
 
     Attributes:
