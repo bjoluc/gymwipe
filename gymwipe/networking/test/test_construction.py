@@ -1,6 +1,6 @@
 import pytest, logging
 from pytest_mock import mocker
-from gymwipe.networking.construction import Port, Gate, Module, GateListener
+from gymwipe.networking.construction import Gate, Port, Module, PortListener
 from gymwipe.simtools import SimMan
 
 # Note: When mocking member functions of a class:
@@ -12,10 +12,10 @@ def test_ports(mocker):
     g2_receive = mocker.Mock()
 
     # Create two gates and connect them bidirectionally
-    g1 = Gate("g1", g1_receive)
+    g1 = Port("g1", g1_receive)
     assert g1.input._onSendCallables == {g1_receive}
 
-    g2 = Gate("g2", g2_receive)
+    g2 = Port("g2", g2_receive)
     assert g2.input._onSendCallables == {g2_receive}
 
     g1.connectOutputTo(g2.input)
@@ -38,12 +38,12 @@ def test_module_functions():
     m = Module('test module')
     assert m.name == 'test module'
 
-    g1, g2 = (Gate("g1"), Gate("g2"))
-    m._addGate('gate 1', g1)
-    m._addGate('gate 2', g2)
-    assert m.gates['gate 1'] == g1
-    assert m.gates['gate 2'] == g2
-    assert m.gates == {'gate 1': g1, 'gate 2': g2}
+    g1, g2 = (Port("g1"), Port("g2"))
+    m._addPort('gate 1', g1)
+    m._addPort('gate 2', g2)
+    assert m.ports['gate 1'] == g1
+    assert m.ports['gate 2'] == g2
+    assert m.ports == {'gate 1': g1, 'gate 2': g2}
 
     m1, m2 = (Module('module 1'), Module('module 2'))
     m._addSubModule('sub module 1', m1)
@@ -67,42 +67,42 @@ def test_module_simulation(caplog):
     class TestModule(Module):
         def __init__(self, name):
             super(TestModule, self).__init__(name)
-            self._addGate("a")
-            self._addGate("b")
+            self._addPort("a")
+            self._addPort("b")
             self.msgReceivedCount = {"a": 0, "b": 0}
             self.msgVal = None
             SimMan.process(self.process("a", "b"))
             SimMan.process(self.process("b", "a"))
         
-        def process(self, fromGate: str, toGate: str):
+        def process(self, fromPort: str, toPort: str):
             while(True):
-                # Listen on gate fromGate and proxy messages
-                print("TestModule " + self.name + " port " + fromGate + " waiting for message")
+                # Listen on port fromPort and proxy messages
+                print("TestModule " + self.name + " gate " + fromPort + " waiting for message")
 
-                msg = yield self.gates[fromGate].nReceives.event
+                msg = yield self.ports[fromPort].nReceives.event
 
-                print("TestModule " + self.name + " port " + fromGate + " received message " + str(msg))
+                print("TestModule " + self.name + " gate " + fromPort + " received message " + str(msg))
                 self.msgVal = msg
-                self.msgReceivedCount[fromGate] += 1
+                self.msgReceivedCount[fromPort] += 1
                 msg += 1
                 yield SimMan.env.timeout(1) # wait 1 time step before sending
 
                 # change the direction every 10 times a message has been passed
                 if msg % 10 == 0:
-                    self.gates[fromGate].output.send(msg)
+                    self.ports[fromPort].output.send(msg)
                 else:
-                    self.gates[toGate].output.send(msg)
+                    self.ports[toPort].output.send(msg)
     
     m1 = TestModule("1")
     m2 = TestModule("2")
 
-    m1.gates["b"].biConnectWith(m2.gates["b"])
-    m2.gates["a"].biConnectWith(m1.gates["a"])
+    m1.ports["b"].biConnectWith(m2.ports["b"])
+    m2.ports["a"].biConnectWith(m1.ports["a"])
 
     def simulation():
         # send the test message (a zero)
         print("sending message")
-        m1.gates["a"].input.send(1)
+        m1.ports["a"].input.send(1)
 
         # wait 40 time units
         yield SimMan.timeout(20)
@@ -119,27 +119,27 @@ def test_module_simulation(caplog):
     SimMan.runSimulation(50)
 
 class MyModule(Module):
-    @GateListener.setup
+    @PortListener.setup
     def __init__(self, name: str):
         super(MyModule, self).__init__(name)
-        self._addGate("a")
-        self._addGate("b")
+        self._addPort("a")
+        self._addPort("b")
         self.logs = [[] for _ in range(4)]
 
-    @GateListener("a", queued=False)
+    @PortListener("a", queued=False)
     def aListener(self, message):
         self.logs[0].append(message)
     
-    @GateListener("a", queued=True) # queued should have no effect here
+    @PortListener("a", queued=True) # queued should have no effect here
     def aListenerQueued(self, message):
         self.logs[1].append(message)
 
-    @GateListener("b", queued=False)
+    @PortListener("b", queued=False)
     def bListener(self, message):
         self.logs[2].append(message)
         yield SimMan.timeout(10)
     
-    @GateListener("b", queued=True)
+    @PortListener("b", queued=True)
     def bListenerQueued(self, message):
         self.logs[3].append(message)
         yield SimMan.timeout(10)
@@ -147,13 +147,13 @@ class MyModule(Module):
 def test_gate_listener_method(caplog):
     caplog.set_level(logging.DEBUG, logger='gymwipe.networking.construction')
     # Create two identical modules in order to check for side effects
-    # due to GateListener objects being used twice
+    # due to PortListener objects being used twice
     modules = MyModule("Test1"), MyModule("Test2")
 
     for i in range(3):
         for module in modules:
-            # pass a message to gate a
-            module.gates["a"].input.send("msg" + str(i))
+            # pass a message to port a
+            module.ports["a"].input.send("msg" + str(i))
             for j in range(1):
                 # All messages passed yet should have been received (and thus logged),
                 # regardless of the queued flag.
@@ -169,16 +169,16 @@ def test_gate_listener_generator(caplog):
     def main():
         for i in range(3):
             for module in modules:
-                module.gates["b"].input.send("msg" + str(i))
+                module.ports["b"].input.send("msg" + str(i))
                 yield SimMan.timeout(1)
 
     SimMan.process(main())
     SimMan.runSimulation(40)
 
     for module in modules:
-        # Non-queued GateListener should only have received the first message,
+        # Non-queued PortListener should only have received the first message,
         # since receiving takes 10 time units and the send interval is 1 time unit.
         assert module.logs[2] == ["msg0"]
         
-        # Queued GateListener should have received all messages.
+        # Queued PortListener should have received all messages.
         assert module.logs[3] == ["msg" + str(n) for n in range(3)]

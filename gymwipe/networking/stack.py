@@ -10,7 +10,7 @@ import numpy as np
 from simpy.events import Event
 
 from gymwipe.devices import Device
-from gymwipe.networking.construction import Gate, GateListener, Module
+from gymwipe.networking.construction import Port, PortListener, Module
 from gymwipe.networking.messages import (Packet, Signal, SimpleMacHeader,
                                          StackSignals, Transmittable)
 from gymwipe.networking.physical import (AttenuationModel, BpskMcs, FrequencyBand,
@@ -39,14 +39,14 @@ class StackLayer(Module):
 class SimplePhy(StackLayer):
     """
     A phy layer implementation that does not take propagation delays into
-    account. It provides a gate called `mac` to be connected to the mac layer.
+    account. It provides a port called `mac` to be connected to the mac layer.
     Slotted time is used, with the size of a time slot being defined by
     :attr:`~gymwipe.simtools.SimulationManager.timeSlotSize`.
     
     During simulation the frequency band is sensed and every successfully received
     packet is sent via the `mac` gate.
 
-    The `mac` gate accepts :class:`~gymwipe.networking.messages.Signal` objects
+    The `mac` port accepts :class:`~gymwipe.networking.messages.Signal` objects
     of the following types:
 
     * :attr:`~gymwipe.networking.messages.StackSignals.SEND`
@@ -64,12 +64,12 @@ class SimplePhy(StackLayer):
     NOISE_POWER_DENSITY = temperatureToNoisePowerDensity(20.0)
     """float: The receiver's noise power density in Watts/Hertz"""
 
-    @GateListener.setup
+    @PortListener.setup
     def __init__(self, name: str, device: Device, frequencyBand: FrequencyBand, mcs: Mcs = BpskMcs()):
         super(SimplePhy, self).__init__(name, device)
         self.frequencyBand = frequencyBand
         self.mcs = mcs
-        self._addGate("mac")
+        self._addPort("mac")
 
         # Attributes related to sending
         self._currentTransmission = None
@@ -160,8 +160,8 @@ class SimplePhy(StackLayer):
     
     # SimPy generators
 
-    @GateListener("mac", Signal, queued=True)
-    def macGateListener(self, cmd):
+    @PortListener("mac", Signal, queued=True)
+    def macPortListener(self, cmd):
         p = cmd.properties
 
         if cmd.type is StackSignals.SEND:
@@ -249,7 +249,7 @@ class SimplePhy(StackLayer):
                              "rate: {:.3%})".format(self, bitErrorRate))
                 packet = t.packet
                 # sending the packet via the mac gate
-                self.gates["mac"].output.send(packet)
+                self.ports["mac"].output.send(packet)
 
 class SimpleMac(StackLayer):
     """
@@ -280,7 +280,7 @@ class SimpleMac(StackLayer):
         *   Every other packet sent has a :class:`~gymwipe.networking.messages.SimpleMacHeader`
             with :attr:`~gymwipe.networking.messages.SimpleMacHeader.flag` ``0``.
 
-    The `transport` gate accepts objects of the following types:
+    The `transport` port accepts objects of the following types:
 
         * :class:`~gymwipe.networking.messages.Signal`
 
@@ -304,14 +304,14 @@ class SimpleMac(StackLayer):
 
             Send a given packet (with a :attr:`~gymwipe.networking.messages.SimpleTransportHeader`) to the MAC address defined in the header.
 
-    The `phy` gate accepts objects of the following types:
+    The `phy` port accepts objects of the following types:
 
         * :attr:`~gymwipe.networking.messages.Packet`
 
             A packet received by the physical layer
     """
 
-    @GateListener.setup
+    @PortListener.setup
     def __init__(self, name: str, device: Device, addr: bytes):
         """
         Args:
@@ -320,8 +320,8 @@ class SimpleMac(StackLayer):
             addr: The 6-byte-long MAC address to be assigned to this MAC layer
         """
         super(SimpleMac, self).__init__(name, device)
-        self._addGate("phy")
-        self._addGate("transport")
+        self._addPort("phy")
+        self._addPort("transport")
         self.addr = addr
         self._packetQueue = deque(maxlen=100) # allow 100 packets to be queued
         self._packetAddedEvent = Event(SimMan.env)
@@ -348,8 +348,8 @@ class SimpleMac(StackLayer):
         addr[5] = cls._macCounter
         return bytes(addr)
     
-    @GateListener("phy", Packet)
-    def phyGateListener(self, packet):
+    @PortListener("phy", Packet)
+    def phyPortListener(self, packet):
         header = packet.header
         if not isinstance(header, SimpleMacHeader):
             raise ValueError("{}: Can only deal with header of type SimpleMacHeader. Got {}.".format(self, type(header)))
@@ -390,7 +390,7 @@ class SimpleMac(StackLayer):
                                 packet = self._packetQueue.popleft()
                                 signal = Signal(StackSignals.SEND, {"packet": packet, "power": self._transmissionPower,
                                                                     "bitrate": self._bitrate})
-                                self.gates["phy"].output.send(signal) # make the PHY send the packet
+                                self.ports["phy"].output.send(signal) # make the PHY send the packet
                                 logger.debug("%s: Transmitting packet. Time left: %s", self, timeLeft())
                                 logger.debug("%s: Packet: %s", self, packet)
                                 yield signal.eProcessed # wait until the transmission has completed
@@ -409,8 +409,8 @@ class SimpleMac(StackLayer):
             # packet from RRM to all devices
             pass
     
-    @GateListener("transport", (Signal, Packet))
-    def transportGateListener(self, cmd):
+    @PortListener("transport", (Signal, Packet))
+    def transportPortListener(self, cmd):
 
         if isinstance(cmd, Signal):
             if cmd.type is StackSignals.RECEIVE:
@@ -449,7 +449,7 @@ class SimpleRrmMac(StackLayer):
     """
     The RRM implementation of the protocol described in :class:`SimpleMac`
 
-    The `transport` gate accepts objects of the following types:
+    The `transport` port accepts objects of the following types:
 
         * :class:`~gymwipe.networking.messages.Signal`
 
@@ -471,11 +471,11 @@ class SimpleRrmMac(StackLayer):
     to extract observations and rewards for a frequency band assignment learning agent.
     """
 
-    @GateListener.setup
+    @PortListener.setup
     def __init__(self, name: str, device: Device):
         super(SimpleRrmMac, self).__init__(name, device)
-        self._addGate("phy")
-        self._addGate("transport")
+        self._addPort("phy")
+        self._addPort("transport")
         self.addr = bytes(6) # 6 zero bytes
         """bytes: The RRM's MAC address"""
 
@@ -486,12 +486,12 @@ class SimpleRrmMac(StackLayer):
         
         logger.debug("%s: Initialization completed, MAC address: %s", self, self.addr)
     
-    @GateListener("phy", Packet)
-    def phyGateListener(self, packet: Packet):
-        self.gates["transport"].output.send(packet.payload)
+    @PortListener("phy", Packet)
+    def phyPortListener(self, packet: Packet):
+        self.ports["transport"].output.send(packet.payload)
     
-    @GateListener("transport", Signal)
-    def transportGateListener(self, signal: Signal):
+    @PortListener("transport", Signal)
+    def transportPortListener(self, signal: Signal):
         logger.debug("%s: Got new ASSIGN Signal %s.", self, signal)
         self._nAnnouncementReceived.trigger(signal)
     
@@ -515,7 +515,7 @@ class SimpleRrmMac(StackLayer):
             }
         )
         logger.debug("%s: Sending new announcement: %s", self, announcement)
-        self.gates["phy"].output.send(sendCmd)
+        self.ports["phy"].output.send(sendCmd)
         yield sendCmd.eProcessed
         yield SimMan.timeout((duration+1)*TIME_SLOT_LENGTH) # one extra time slot to prevent collisions
 

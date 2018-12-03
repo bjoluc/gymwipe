@@ -7,7 +7,7 @@ from pytest_mock import mocker
 
 from gymwipe.devices import Device
 from gymwipe.networking.attenuation_models import FsplAttenuation
-from gymwipe.networking.construction import Gate
+from gymwipe.networking.construction import Port
 from gymwipe.networking.messages import (FakeTransmittable, Packet, Signal,
                                          SimpleMacHeader,
                                          SimpleTransportHeader, StackSignals,
@@ -24,10 +24,10 @@ class dotdict(dict):
     __setattr__ = dict.__setitem__
     __delattr__ = dict.__delitem__
 
-class CollectorGate(Gate):
-    """A subclass of Gate that stores received and sent objects in lists"""
+class CollectorPort(Port):
+    """A subclass of Port that stores received and sent objects in lists"""
     def __init__(self, name: str):
-        super(CollectorGate, self).__init__(name)
+        super(CollectorPort, self).__init__(name)
         self.inputHistory = []
         self.outputHistory = []
         self.input.addCallback(self.inputSaver)
@@ -75,10 +75,10 @@ def test_simple_phy(caplog, mocker, simple_phy):
     senderPhy = setup.device1Phy
     receiverPhy = setup.device2Phy
 
-    # create a mocked gate for capturing receiver Phy output
+    # create a mocked port for capturing receiver Phy output
     receiverCallbackMock = mocker.Mock()
-    receiverGate = Gate("Receiver Stack", receiverCallbackMock)
-    receiverPhy.gates["mac"].connectOutputTo(receiverGate.input)
+    receiverPort = Port("Receiver Stack", receiverCallbackMock)
+    receiverPhy.ports["mac"].connectOutputTo(receiverPort.input)
 
     # create something transmittable
     packet = Packet(FakeTransmittable(8), FakeTransmittable(128))
@@ -93,7 +93,7 @@ def test_simple_phy(caplog, mocker, simple_phy):
         cmd = Signal(StackSignals.SEND, {"packet": packet, "power": POWER, "bitrate": BITRATE})
 
         # send the message to the physical layer
-        senderPhy.gates["mac"].send(cmd)
+        senderPhy.ports["mac"].send(cmd)
 
         # wait 8 bits
         yield SimMan.timeout(8/BITRATE)
@@ -141,19 +141,19 @@ def simple_mac(simple_phy):
     s.device2Mac = SimpleMac("Mac", s.device2, SimpleMac.newMacAddress())
 
     # inter-layer connections
-    # put collector gates as proxies between each device's Phy and Mac layer
-    s.dev1PhyProxy = CollectorGate("Dev1PhyProxy")
-    s.dev2PhyProxy = CollectorGate("Dev2PhyProxy")
+    # put collector ports as proxies between each device's Phy and Mac layer
+    s.dev1PhyProxy = CollectorPort("Dev1PhyProxy")
+    s.dev2PhyProxy = CollectorPort("Dev2PhyProxy")
 
     # mac <-> phyProxy
-    s.device1Phy.gates["mac"].biConnectProxy(s.dev1PhyProxy)
-    s.device2Phy.gates["mac"].biConnectProxy(s.dev2PhyProxy)
+    s.device1Phy.ports["mac"].biConnectProxy(s.dev1PhyProxy)
+    s.device2Phy.ports["mac"].biConnectProxy(s.dev2PhyProxy)
 
     # phyProxy <-> phy
-    s.dev1PhyProxy.biConnectWith(s.device1Mac.gates["phy"])
-    s.dev2PhyProxy.biConnectWith(s.device2Mac.gates["phy"])
+    s.dev1PhyProxy.biConnectWith(s.device1Mac.ports["phy"])
+    s.dev2PhyProxy.biConnectWith(s.device2Mac.ports["phy"])
 
-    s.rrmMac.gates["phy"].biConnectWith(s.rrmPhy.gates["mac"])
+    s.rrmMac.ports["phy"].biConnectWith(s.rrmPhy.ports["mac"])
 
     return s
 
@@ -173,14 +173,14 @@ def test_simple_mac(caplog, simple_mac):
         # send a bunch of packets from `fromMacLayer` to `toMacLayer`
         for p in payloads:
             packet = Packet(SimpleTransportHeader(fromMacLayer.addr, toMacLayer.addr), p)
-            fromMacLayer.gates["transport"].send(packet)
+            fromMacLayer.ports["transport"].send(packet)
             yield SimMan.timeout(1e-4)
 
     def receiver(macLayer: SimpleMac, receivedPacketsList: List[Packet]):
         # receive forever
         while True:
             receiveCmd = Signal(StackSignals.RECEIVE, {"duration": 10})
-            macLayer.gates["transport"].send(receiveCmd)
+            macLayer.ports["transport"].send(receiveCmd)
             result = yield receiveCmd.eProcessed
             if result is not None:
                 receivedPacketsList.append(result)
@@ -198,7 +198,7 @@ def test_simple_mac(caplog, simple_mac):
             else:
                 dest = dev2Addr
             cmd = Signal(StackSignals.ASSIGN, {"duration": ASSIGN_TIME/TIME_SLOT_LENGTH, "dest": dest})
-            s.rrmMac.gates["transport"].send(cmd)
+            s.rrmMac.ports["transport"].send(cmd)
             if previousCmd is not None:
                 yield previousCmd.eProcessed
             previousCmd = cmd

@@ -58,7 +58,7 @@ class SimpleNetworkDevice(NetworkDevice):
         self._phy = SimplePhy("phy", self, self.frequencyBand)
         self._mac = SimpleMac("mac", self, self.mac)
         # Connect them with each other
-        self._mac.gates["phy"].biConnectWith(self._phy.gates["mac"])
+        self._mac.ports["phy"].biConnectWith(self._phy.ports["mac"])
     
     # inherit __init__ docstring
     __init__.__doc__ = NetworkDevice.__init__.__doc__
@@ -83,13 +83,13 @@ class SimpleNetworkDevice(NetworkDevice):
 
     def send(self, data: Transmittable, destinationMacAddr: bytes):
         p = Packet(SimpleTransportHeader(self.mac, destinationMacAddr), data)
-        self._mac.gates["transport"].send(p)
+        self._mac.ports["transport"].send(p)
 
     def _receiver(self):
         # A blocking receive loop
         while self._receiving:
             receiveCmd = Signal(StackSignals.RECEIVE, {"duration": self.RECEIVE_TIMEOUT})
-            self._mac.gates["transport"].send(receiveCmd)
+            self._mac.ports["transport"].send(receiveCmd)
             result = yield receiveCmd.eProcessed
             if result:
                 self.onReceive(result)
@@ -157,7 +157,7 @@ class SimpleRrmDevice(NetworkDevice):
         self._phy = SimplePhy("phy", self, self.frequencyBand)
         self._mac = SimpleRrmMac("mac", self)
         # Connect them with each other
-        self._mac.gates["phy"].biConnectWith(self._phy.gates["mac"])
+        self._mac.ports["phy"].biConnectWith(self._phy.ports["mac"])
 
         # Connect the "upper" mac layer output to the interpreter
         def onPacketReceived(p: Packet):
@@ -165,7 +165,7 @@ class SimpleRrmDevice(NetworkDevice):
             senderIndex = self.macToDeviceIndexDict[p.header.sourceMAC]
             receiverIndex = self.macToDeviceIndexDict[p.header.destMAC]
             self.interpreter.onPacketReceived(senderIndex, receiverIndex, p.payload)
-        self._mac.gates["transport"].output.nReceives.subscribeCallback(onPacketReceived)
+        self._mac.ports["transport"].output.nReceives.subscribeCallback(onPacketReceived)
     
     # merge __init__ docstrings
     __init__.__doc__ = NetworkDevice.__init__.__doc__ + __init__.__doc__
@@ -198,6 +198,6 @@ class SimpleRrmDevice(NetworkDevice):
             {"duration": duration, "dest": deviceMac}
         )
         self.interpreter.onFrequencyBandAssignment(duration, deviceIndex)
-        self._mac.gates["transport"].send(assignSignal)
+        self._mac.ports["transport"].send(assignSignal)
 
         return assignSignal
