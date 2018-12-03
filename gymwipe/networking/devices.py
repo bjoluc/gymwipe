@@ -6,7 +6,7 @@ from typing import Any, Dict, Tuple
 from gymwipe.devices import Device
 from gymwipe.networking.messages import (Packet, Signal, SimpleTransportHeader,
                                          StackSignals, Transmittable)
-from gymwipe.networking.physical import Channel
+from gymwipe.networking.physical import FrequencyBand
 from gymwipe.networking.stack import SimpleMac, SimplePhy, SimpleRrmMac
 from gymwipe.simtools import Notifier, SimMan
 
@@ -14,26 +14,26 @@ from gymwipe.simtools import Notifier, SimMan
 class NetworkDevice(Device):
     """
     A subclass of :class:`~gymwipe.devices.core.Device` that extends the
-    constructor's parameter list by a channel argument. The provided
-    :class:`~gymwipe.networking.physical.Channel` object will be stored in the
-    :attr:`channel` attribute.
+    constructor's parameter list by a `frequencyBand` argument. The provided
+    :class:`~gymwipe.networking.physical.FrequencyBand` object will be stored in the
+    :attr:`frequencyBand` attribute.
     """
 
-    def __init__(self, name: str, xPos: float, yPos: float, channel: Channel):
+    def __init__(self, name: str, xPos: float, yPos: float, frequencyBand: FrequencyBand):
         """
         Args:
             name: The device name
             xPos: The device's physical x position
             yPos: The device's physical y position
-            channel: The :class:`~gymwipe.networking.physical.Channel` instance
+            frequency band: The :class:`~gymwipe.networking.physical.FrequencyBand` instance
                 that will be used for transmissions
         """
         super(NetworkDevice, self).__init__(name, xPos, yPos)
 
-        self.channel: Channel = channel
+        self.frequencyBand: FrequencyBand = frequencyBand
         """
-        :class:`~gymwipe.networking.physical.Channel`: The
-            :class:`~gymwipe.networking.physical.Channel` instance that
+        :class:`~gymwipe.networking.physical.FrequencyBand`: The
+            :class:`~gymwipe.networking.physical.FrequencyBand` instance that
             is used for transmissions
         """
 
@@ -46,8 +46,8 @@ class SimpleNetworkDevice(NetworkDevice):
     setting :attr:`receiving` either to ``True`` or to ``False``.
     """
 
-    def __init__(self, name: str, xPos: float, yPos: float, channel: Channel):
-        super(SimpleNetworkDevice, self).__init__(name, xPos, yPos, channel)
+    def __init__(self, name: str, xPos: float, yPos: float, frequencyBand: FrequencyBand):
+        super(SimpleNetworkDevice, self).__init__(name, xPos, yPos, frequencyBand)
         self._receiving = False
         self._receiverProcess = None # a SimPy receiver process
 
@@ -55,7 +55,7 @@ class SimpleNetworkDevice(NetworkDevice):
         """bytes: The address that is used by the MAC layer to identify this device"""
 
         # Initialize PHY and MAC
-        self._phy = SimplePhy("phy", self, self.channel)
+        self._phy = SimplePhy("phy", self, self.frequencyBand)
         self._mac = SimpleMac("mac", self, self.mac)
         # Connect them with each other
         self._mac.gates["phy"].biConnectWith(self._phy.gates["mac"])
@@ -114,30 +114,30 @@ class SimpleRrmDevice(NetworkDevice):
     """
     A Radio Resource Management :class:`NetworkDevice` implementation. It runs a
     network stack consisting of a SimplePHY and a SimpleRrmMAC. It offers a
-    method for channel assignment and operates an
+    method for frequency band assignment and operates an
     :class:`~gymwipe.envs.core.Interpreter` instance that provides observations
     and rewards for a learning agent.
     """
 
-    def __init__(self, name: str, xPos: float, yPos: float, channel: Channel,
+    def __init__(self, name: str, xPos: float, yPos: float, frequencyBand: FrequencyBand,
                     deviceIndexToMacDict: Dict[int, bytes], interpreter):
         # No type definition for 'interpreter' to avoid circular dependencies
         """
             deviceIndexToMacDict: A dictionary mapping integer indexes to device
                 MAC addresses. This allows to pass the device index used by a
                 learning agent instead of a MAC address to
-                :meth:`assignChannel`.
+                :meth:`assignFrequencyBand`.
             interpreter(:class:`~gymwipe.envs.core.Interpreter`): The
                 :class:`~gymwipe.envs.core.Interpreter` instance to be used for
                 observation and reward calculations
         """
-        super(SimpleRrmDevice, self).__init__(name, xPos, yPos, channel)
+        super(SimpleRrmDevice, self).__init__(name, xPos, yPos, frequencyBand)
 
         self.interpreter = interpreter
         """
         :class:`~gymwipe.envs.core.Interpreter`: The
         :class:`~gymwipe.envs.core.Interpreter` instance that provides
-        domain-specific feedback on the consequences of :meth:`assignChannel`
+        domain-specific feedback on the consequences of :meth:`assignFrequencyBand`
         calls
         """
 
@@ -145,7 +145,7 @@ class SimpleRrmDevice(NetworkDevice):
         """
         A dictionary mapping integer indexes to device MAC addresses. This
         allows to pass the device index used by a learning agent instead of a
-        MAC address to :meth:`assignChannel`.
+        MAC address to :meth:`assignFrequencyBand`.
         """
 
         self.macToDeviceIndexDict: Dict[bytes, int] = {mac: index for index, mac in self.deviceIndexToMacDict.items()}
@@ -154,7 +154,7 @@ class SimpleRrmDevice(NetworkDevice):
         """
 
         # Initialize PHY and MAC
-        self._phy = SimplePhy("phy", self, self.channel)
+        self._phy = SimplePhy("phy", self, self.frequencyBand)
         self._mac = SimpleRrmMac("mac", self)
         # Connect them with each other
         self._mac.gates["phy"].biConnectWith(self._phy.gates["mac"])
@@ -175,19 +175,19 @@ class SimpleRrmDevice(NetworkDevice):
         """bytes: The RRM's MAC address"""
         return self._mac.addr
 
-    def assignChannel(self, deviceIndex: bytes, duration: int) -> Tuple[Any, float]:
+    def assignFrequencyBand(self, deviceIndex: bytes, duration: int) -> Tuple[Any, float]:
         """
-        Makes the RRM assign the channel to a certain device for a certain time.
+        Makes the RRM assign the frequency band to a certain device for a certain time.
 
         Args:
             deviceIndex: The integer id that maps to the MAC address of the device
-                to assign the channel to (see :attr:`deviceIndexToMacDict`)
-            duration: The number of time units for the channel to be assigned to
+                to assign the frequency band to (see :attr:`deviceIndexToMacDict`)
+            duration: The number of time units for the frequency band to be assigned to
                 the device
         
         Returns:
             The :class:`~gymwipe.networking.messages.Signal` object that was
-            used to make the RRM MAC layer assign the channel. When the channel
+            used to make the RRM MAC layer assign the frequency band. When the frequency band
             assignment is over, the signal's
             :attr:`~gymwipe.networking.messages.Signal.eProcessed` event will
             succeed.
@@ -197,7 +197,7 @@ class SimpleRrmDevice(NetworkDevice):
             StackSignals.ASSIGN,
             {"duration": duration, "dest": deviceMac}
         )
-        self.interpreter.onChannelAssignment(duration, deviceIndex)
+        self.interpreter.onFrequencyBandAssignment(duration, deviceIndex)
         self._mac.gates["transport"].send(assignSignal)
 
         return assignSignal

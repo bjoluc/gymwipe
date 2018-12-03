@@ -12,7 +12,7 @@ from gymwipe.networking.messages import (FakeTransmittable, Packet, Signal,
                                          SimpleMacHeader,
                                          SimpleTransportHeader, StackSignals,
                                          Transmittable)
-from gymwipe.networking.physical import Channel
+from gymwipe.networking.physical import FrequencyBand
 from gymwipe.networking.stack import (TIME_SLOT_LENGTH, SimpleMac, SimplePhy,
                                       SimpleRrmMac)
 from gymwipe.simtools import SimMan
@@ -44,19 +44,19 @@ def simple_phy():
     # initialize SimPy environment
     SimMan.initEnvironment()
 
-    # create a wireless channel with FSPL attenuation
-    channel = Channel([FsplAttenuation])
+    # create a wireless frequency band with FSPL attenuation
+    frequencyBand = FrequencyBand([FsplAttenuation])
 
     # create two network devices
     device1 = Device("1", 0, 0)
     device2 = Device("2", 1, 1)
 
     # create the SimplePhy network stack layers
-    device1Phy = SimplePhy("Phy", device1, channel)
-    device2Phy = SimplePhy("Phy", device2, channel)
+    device1Phy = SimplePhy("Phy", device1, frequencyBand)
+    device2Phy = SimplePhy("Phy", device2, frequencyBand)
     
     setup = dotdict()
-    setup.channel = channel
+    setup.frequencyBand = frequencyBand
     setup.device1 = device1
     setup.device2 = device2
     setup.device1Phy = device1Phy
@@ -71,7 +71,7 @@ def test_simple_phy(caplog, mocker, simple_phy):
     caplog.set_level(logging.INFO, logger='gymwipe.simtools')
 
     setup = simple_phy
-    channel = setup.channel
+    frequencyBand = setup.frequencyBand
     senderPhy = setup.device1Phy
     receiverPhy = setup.device2Phy
 
@@ -84,8 +84,8 @@ def test_simple_phy(caplog, mocker, simple_phy):
     packet = Packet(FakeTransmittable(8), FakeTransmittable(128))
 
     def sending():
-        # the channel should be unused yet
-        assert len(channel.getActiveTransmissions()) == 0
+        # the frequency band should be unused yet
+        assert len(frequencyBand.getActiveTransmissions()) == 0
 
         # setup the message to the physical layer
         BITRATE = 100e3  # 100 Kb/s
@@ -99,7 +99,7 @@ def test_simple_phy(caplog, mocker, simple_phy):
         yield SimMan.timeout(8/BITRATE)
 
         # assertions for the transmission
-        transmissions = channel.getActiveTransmissions()
+        transmissions = frequencyBand.getActiveTransmissions()
         assert len(transmissions) == 1
         t = transmissions[0]
         # check the correctness of the transmission created
@@ -121,7 +121,7 @@ def test_simple_phy(caplog, mocker, simple_phy):
         assert receiverPhy._receivedPower < power
 
         yield SimMan.timeout(1)
-        assert len(channel.getActiveTransmissions()) == 0
+        assert len(frequencyBand.getActiveTransmissions()) == 0
     
     def receiving():
         yield SimMan.timeout(4)
@@ -135,7 +135,7 @@ def test_simple_phy(caplog, mocker, simple_phy):
 def simple_mac(simple_phy):
     s = simple_phy
     s.rrm = Device("RRM", 2, 2)
-    s.rrmPhy = SimplePhy("RrmPhy", s.rrm, s.channel)
+    s.rrmPhy = SimplePhy("RrmPhy", s.rrm, s.frequencyBand)
     s.rrmMac = SimpleRrmMac("RrmMac", s.rrm)
     s.device1Mac = SimpleMac("Mac", s.device1, SimpleMac.newMacAddress())
     s.device2Mac = SimpleMac("Mac", s.device2, SimpleMac.newMacAddress())
@@ -190,7 +190,7 @@ def test_simple_mac(caplog, simple_mac):
     # 13 bytes header + log10(ASSIGN_TIME/TIME_SLOT_LENGTH) bytes payload
 
     def resourceManagement():
-        # Assign the channel 5 times for each device
+        # Assign the frequency band 5 times for each device
         previousCmd = None
         for i in range(10):
             if i % 2 == 0:

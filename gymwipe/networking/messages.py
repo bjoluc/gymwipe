@@ -31,9 +31,9 @@ from gymwipe.simtools import SimMan
 class Transmittable:
     """
     The :class:`Transmittable` class provides a :meth:`byteSize` method allowing
-    objects of it to be nested in packets and sent via a channel. Unless for
-    representing simple objects such as strings, it should be subclassed and
-    both :meth:`byteSize` and :meth:`__str__` should be overridden.
+    objects of it to be sent via a frequency band. Unless for representing
+    simple objects such as strings, it should be subclassed and both
+    :meth:`byteSize` and :meth:`__str__` should be overridden.
 
     Attributes:
         obj(Any): The object that has been provided to the constructor
@@ -62,7 +62,7 @@ class Transmittable:
     def byteSize(self) -> int:
         """
         Returns the number of bytes that are to be transmitted when the data
-        represented by this object is sent via a physical channel.
+        represented by this object is sent via a frequency band.
         """
         return self._byteSize
     

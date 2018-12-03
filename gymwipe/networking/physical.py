@@ -100,7 +100,7 @@ def dbmToMilliwatts(milliwatts: float):
 class Mcs(ABC):
     """
     The :class:`Mcs` class represents a Modulation and Coding Scheme. As the MCS
-    (beside channel characteristics) determines the relation between
+    (beside frequency band characteristics) determines the relation between
     Signal-to-Noise Ratio (SNR) and the resulting Bit Error Rate (BER), it
     offers a :meth:`getBitErrorRateBySnr` method that is used by receiving PHY
     layer instances.
@@ -181,11 +181,11 @@ class BpskMcs(Mcs):
 class Transmission:
     """
     A :class:`Transmission` models the process of a device sending a specific
-    packet via a communication channel.
+    packet via a communication frequency band.
 
     Note:
         The proper way to instantiate :class:`Transmission` objects is via
-        :meth:`Channel.transmit`.
+        :meth:`FrequencyBand.transmit`.
     """
 
     def __init__(self, sender: Device, mcs: Mcs, power: float, bitrateHeader: float, bitratePayload: float, packet: Packet, startTime: float):
@@ -259,16 +259,16 @@ class Transmission:
         return SimMan.now >= self.stopTime
 
 
-class ChannelSpec:
+class FrequencyBandSpec:
     """
-    A channel specification stores a channel's frequency and its bandwidth.
+    A frequency band specification stores a :class:`FrequencyBand`'s frequency and its bandwidth.
     """
 
     def __init__(self, frequency: float = 2.4e9, bandwidth: float = 22e6):
         """
         Args:
-            frequency: The channel's frequency in Hz. Defaults to 2.4 GHz.
-            bandwidth: The channel's bandwidth in Hz. Defaults to 22 MHz (as in
+            frequency: The frequency band's frequency in Hz. Defaults to 2.4 GHz.
+            bandwidth: The frequency band's bandwidth in Hz. Defaults to 22 MHz (as in
                 IEEE 802.11)
         """
         self.frequency = frequency
@@ -283,10 +283,10 @@ class AttenuationModel():
     :attr:`attenuationChanged` event succeeds.
     """
 
-    def __init__(self, channelSpec: ChannelSpec, deviceA: Device, deviceB: Device):
+    def __init__(self, frequencyBandSpec: FrequencyBandSpec, deviceA: Device, deviceB: Device):
         """
         Args:
-            channelSpec: The channel specification of the corresponding channel
+            frequencyBandSpec: The frequency band specification of the corresponding :class:`FrequencyBand`
             deviceA: Network device a
             deviceB: Network device b
 
@@ -302,7 +302,7 @@ class AttenuationModel():
             else:
                 msg = "{} and {} have the same position."
             logger.warning((msg + " Is this intended?").format(strAndRepr(deviceA), strAndRepr(deviceB)))
-        self.channelSpec = channelSpec
+        self.frequencyBandSpec = frequencyBandSpec
         self.devices: Tuple[Device] = (deviceA, deviceB)
         self.attenuation: float = 0
         """
@@ -343,8 +343,8 @@ class PositionalAttenuationModel(AttenuationModel, ABC):
     :class:`AttenuationModel` not to react on position changes of its devices
     """
 
-    def __init__(self, channelSpec: ChannelSpec, deviceA: Device, deviceB: Device):
-        super(PositionalAttenuationModel, self).__init__(channelSpec, deviceA, deviceB)
+    def __init__(self, frequencyBandSpec: FrequencyBandSpec, deviceA: Device, deviceB: Device):
+        super(PositionalAttenuationModel, self).__init__(frequencyBandSpec, deviceA, deviceB)
         
         def positionChangedCallback(p: devices.Position):
             distance = self.devices[0].position.distanceTo(self.devices[1].position)
@@ -381,17 +381,18 @@ class JoinedAttenuationModel(AttenuationModel):
     will be triggered as a direct consequence.
     """
 
-    def __init__(self, channelSpec: ChannelSpec, deviceA: Device, deviceB: Device, models: List[Type[AttenuationModelClass]]):
+    def __init__(self, frequencyBandSpec: FrequencyBandSpec, deviceA: Device, deviceB: Device, models: List[Type[AttenuationModelClass]]):
         """
         Args:
-            channelSpec: The channel specification of the corresponding channel
+            frequencyBandSpec: The frequency band specification of the
+                corresponding :class:`FrequencyBand`
             deviceA: Network device a
             deviceB: Network device b
             models: A non-empty list of the :class:`AttenuationModel` subclasses
                 to create a :class:`JoinedAttenuationModel` instance of
         """
         # instantiate models
-        self._models = [model(channelSpec, deviceA, deviceB) for model in models]
+        self._models = [model(frequencyBandSpec, deviceA, deviceB) for model in models]
         self._modelAttenuations = {}
 
         for model in self._models:
@@ -429,14 +430,15 @@ class AttenuationModelFactory():
     A factory for :class:`AttenuationModel` instances.
     """
 
-    def __init__(self, channelSpec: "ChannelSpec", models: List[AttenuationModelClass]):
+    def __init__(self, frequencyBandSpec: "FrequencyBandSpec", models: List[AttenuationModelClass]):
         """
         Args:
-            channelSpec: The channel specification of the corresponding channel
+            frequencyBandSpec: The frequency band specification of the
+                corresponding :class:`FrequencyBand`
             models: A non-empty list of :class:`AttenuationModel` subclasses
                 that will be used for instantiating attenuation models.
         """
-        self._channelSpec = channelSpec
+        self._frequencyBandSpec = frequencyBandSpec
         self._models = models
         self._instances = {}
     
@@ -454,18 +456,18 @@ class AttenuationModelFactory():
         else:
             # initializing a new instance
             if len(self._models) == 1:
-                instance = self._models[0](self._channelSpec, deviceA, deviceB)
+                instance = self._models[0](self._frequencyBandSpec, deviceA, deviceB)
             else:
-                instance = JoinedAttenuationModel(self._channelSpec, deviceA, deviceB, self._models)
+                instance = JoinedAttenuationModel(self._frequencyBandSpec, deviceA, deviceB, self._models)
             self._instances[key] = instance
             return instance
 
-class Channel:
+class FrequencyBand:
     """
-    The Channel class serves as a manager for transmission objects and
-    represents a physical channel. It also offers the
-    :meth:`getAttenuationModel` method that returns an AttenuationModel for any
-    pair of devices.
+    The :class:`FrequencyBand` class serves as a manager for transmission
+    objects and represents a wireless frequency band. It also offers a
+    :meth:`getAttenuationModel` method that returns a frequency-band-specific
+    AttenuationModel for any pair of devices.
     """
 
     def __init__(self, modelClasses: List[AttenuationModelClass], frequency: float = 2.4e9, bandwidth: float = 22e6):
@@ -473,15 +475,15 @@ class Channel:
         Args:
             modelClasses: A non-empty list :class:`AttenuationModel` subclasses
                 that will be used for attenuation calculations regarding this
-                channel.
-            frequency: The channel's frequency in Hz. Defaults to 2.4 GHz.
-            bandwidth: The channel's bandwidth in Hz. Defaults to 22 MHz (as in
+                frequency band.
+            frequency: The frequency band's frequency in Hz. Defaults to 2.4 GHz.
+            bandwidth: The frequency band's bandwidth in Hz. Defaults to 22 MHz (as in
                 IEEE 802.11)
         """
 
-        self.spec = ChannelSpec(frequency, bandwidth)
+        self.spec = FrequencyBandSpec(frequency, bandwidth)
         """
-        :class:`ChannelSpec`: The channel's specification object
+        :class:`FrequencyBandSpec`: The frequency band's specification object
         """
 
         self._attenuationModelFactory = AttenuationModelFactory(self.spec, modelClasses)
@@ -508,7 +510,7 @@ class Channel:
         Simulates the transmission of `packet` with the given properties. This
         is achieved by creating a :class:`Transmission` object with the values
         passed and triggering the :attr:`transmissionStarted` event of the
-        :class:`Channel`.
+        :class:`FrequencyBand`.
 
         Args:
             sender: The device that transmits
@@ -526,7 +528,7 @@ class Channel:
         self._removeFirstPastTransmission() # regular cleanup
         t = Transmission(sender, mcs, power, brHeader, brPayload, packet, SimMan.now)
         self._transmissions.append(t)
-        logger.info("%s added to channel", t)
+        logger.info("%s added to FrequencyBand", t)
         # trigger notifiers after returning the transmission
         def callAfterReturn(value: Any):
             self.nNewTransmission.trigger(t)

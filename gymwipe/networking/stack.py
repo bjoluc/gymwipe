@@ -13,7 +13,7 @@ from gymwipe.devices import Device
 from gymwipe.networking.construction import Gate, GateListener, Module
 from gymwipe.networking.messages import (Packet, Signal, SimpleMacHeader,
                                          StackSignals, Transmittable)
-from gymwipe.networking.physical import (AttenuationModel, BpskMcs, Channel,
+from gymwipe.networking.physical import (AttenuationModel, BpskMcs, FrequencyBand,
                                          Mcs, Transmission, dbmToMilliwatts,
                                          milliwattsToDbm,
                                          temperatureToNoisePowerDensity,
@@ -43,7 +43,7 @@ class SimplePhy(StackLayer):
     Slotted time is used, with the size of a time slot being defined by
     :attr:`~gymwipe.simtools.SimulationManager.timeSlotSize`.
     
-    During simulation the channel is sensed and every successfully received
+    During simulation the frequency band is sensed and every successfully received
     packet is sent via the `mac` gate.
 
     The `mac` gate accepts :class:`~gymwipe.networking.messages.Signal` objects
@@ -51,7 +51,7 @@ class SimplePhy(StackLayer):
 
     * :attr:`~gymwipe.networking.messages.StackSignals.SEND`
 
-        Send a specified packet via the channel.
+        Send a specified packet via the frequency band.
 
         :class:`~gymwipe.networking.messages.Signal` properties:
 
@@ -65,9 +65,9 @@ class SimplePhy(StackLayer):
     """float: The receiver's noise power density in Watts/Hertz"""
 
     @GateListener.setup
-    def __init__(self, name: str, device: Device, channel: Channel, mcs: Mcs = BpskMcs()):
+    def __init__(self, name: str, device: Device, frequencyBand: FrequencyBand, mcs: Mcs = BpskMcs()):
         super(SimplePhy, self).__init__(name, device)
-        self.channel = channel
+        self.frequencyBand = frequencyBand
         self.mcs = mcs
         self._addGate("mac")
 
@@ -77,7 +77,7 @@ class SimplePhy(StackLayer):
 
         # Attributes related to receiving
         # thermal noise power in mW
-        self._thermalNoisePower = self.NOISE_POWER_DENSITY * channel.spec.bandwidth * 1000
+        self._thermalNoisePower = self.NOISE_POWER_DENSITY * frequencyBand.spec.bandwidth * 1000
         self._transmissionToReceivedPowerDict: Dict[Transmission, float] = {}
         self._transmissionToAttenuationChangedCallbackDict = {}
         self._receivedPower = self._thermalNoisePower
@@ -88,8 +88,8 @@ class SimplePhy(StackLayer):
         self._nReceivedPowerChanges = Notifier("Received power changes", self)
         self._nReceivedPowerChanges.subscribeCallback(updateReceivedPower, priority=1)
 
-        self.channel.nNewTransmission.subscribeCallback(self._onNewTransmission)
-        self.channel.nNewTransmission.subscribeProcess(self._receive)
+        self.frequencyBand.nNewTransmission.subscribeCallback(self._onNewTransmission)
+        self.frequencyBand.nNewTransmission.subscribeProcess(self._receive)
         logger.info("Initialized %s with noise power %s dBm", self, milliwattsToDbm(self._thermalNoisePower))
 
     def _getAttenuationModelByTransmission(self, t: Transmission) -> AttenuationModel:
@@ -97,7 +97,7 @@ class SimplePhy(StackLayer):
         Returns the attenuation model for this device and the sender of the
         transmission `t`.
         """
-        return self.channel.getAttenuationModel(self.device, t.sender)
+        return self.frequencyBand.getAttenuationModel(self.device, t.sender)
 
     def _calculateReceivedPower(self, t: Transmission, attenuation = None) -> float:
         """
@@ -170,7 +170,7 @@ class SimplePhy(StackLayer):
             yield SimMan.nextTimeSlot(TIME_SLOT_LENGTH)
             # simulate transmitting
             self._transmitting = True
-            t = self.channel.transmit(self.device, self.mcs, p["power"], p["bitrate"], p["bitrate"], p["packet"])
+            t = self.frequencyBand.transmit(self.device, self.mcs, p["power"], p["bitrate"], p["bitrate"], p["packet"])
             self._currentTransmission = t
             # wait for the transmission to finish
             yield t.eCompletes
@@ -179,7 +179,7 @@ class SimplePhy(StackLayer):
             cmd.setProcessed()
     
     def _receive(self, t: Transmission):
-        # Simulates receiving via the channel
+        # Simulates receiving via the frequency band
         if not self._transmitting:
             logger.info("%s: Sensed a transmission.", self)
 
@@ -264,7 +264,7 @@ class SimpleMac(StackLayer):
         *   The RRM uses those frames to send a short *announcement*,
             containing a destination MAC address and the frame length (number of time slots
             **n**) of the following frame.
-            By doing so it allows the specified device to use the channel for the
+            By doing so it allows the specified device to use the frequency band for the
             next frame.
             *Announcements* are packets with a :class:`~gymwipe.networking.messages.SimpleMacHeader`
             having the following attributes:
@@ -457,18 +457,18 @@ class SimpleRrmMac(StackLayer):
 
             * :attr:`~gymwipe.networking.messages.StackSignals.ASSIGN`
 
-                Send a channel assignment announcement that permits a device
+                Send a frequency band assignment announcement that permits a device
                 to transmit for a certain time.
 
                 :class:`~gymwipe.networking.messages.Signal` properties:
 
                 :dest: The 6-byte-long MAC address of the device to be allowed to transmit
 
-                :duration: The number of time steps to assign the channel for the specified device
+                :duration: The number of time steps to assign the frequency band for the specified device
     
     The payloads of packets from other devices are outputted via the `transport`
     gate, regardless of their destination address. This enables an interpreter
-    to extract observations and rewards for a channel assignment learning agent.
+    to extract observations and rewards for a frequency band assignment learning agent.
     """
 
     @GateListener.setup
