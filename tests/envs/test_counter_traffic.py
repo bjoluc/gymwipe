@@ -3,6 +3,8 @@ import logging
 import gym
 import numpy as np
 
+import gymwipe.envs
+
 
 def test_counter_traffic_env(caplog):
     caplog.set_level(logging.INFO, logger='gymwipe.networking.construction')
