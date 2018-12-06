@@ -23,6 +23,8 @@ pipenv-to-requirements = "*"
 rope = "*"
 keras-rl = "*"
 tensorflow = "*"
+pympler = "*"
+objgraph = "*"
 
 [requires]
 python_version = "3.6"
