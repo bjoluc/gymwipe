@@ -10,11 +10,12 @@ import numpy as np
 from simpy.events import Event
 
 from gymwipe.devices import Device
-from gymwipe.networking.construction import Port, PortListener, Module
-from gymwipe.networking.messages import (Packet, Message, SimpleMacHeader,
+from gymwipe.networking.construction import Module, Port, PortListener
+from gymwipe.networking.messages import (Message, Packet, SimpleMacHeader,
                                          StackMessages, Transmittable)
-from gymwipe.networking.physical import (AttenuationModel, BpskMcs, FrequencyBand,
-                                         Mcs, Transmission, dbmToMilliwatts,
+from gymwipe.networking.physical import (AttenuationModel, BpskMcs,
+                                         FrequencyBand, FrequencyBandSpec, Mcs,
+                                         Transmission, dbmToMilliwatts,
                                          milliwattsToDbm,
                                          temperatureToNoisePowerDensity,
                                          wattsToDbm)
@@ -58,17 +59,16 @@ class SimplePhy(StackLayer):
         :packet: The :class:`~gymwipe.networking.messages.Packet` object
             representing the packet to be sent
         :power: The transmission power in dBm
-        :bitrate: The bitrate of the transmission in bps
+        :mcs: The :class:`Mcs` object representing the MCS for the transmission
     """
 
     NOISE_POWER_DENSITY = temperatureToNoisePowerDensity(20.0)
     """float: The receiver's noise power density in Watts/Hertz"""
 
     @PortListener.setup
-    def __init__(self, name: str, device: Device, frequencyBand: FrequencyBand, mcs: Mcs = BpskMcs()):
+    def __init__(self, name: str, device: Device, frequencyBand: FrequencyBand):
         super(SimplePhy, self).__init__(name, device)
         self.frequencyBand = frequencyBand
-        self.mcs = mcs
         self._addPort("mac")
 
         # Attributes related to sending
@@ -165,12 +165,12 @@ class SimplePhy(StackLayer):
         p = cmd.args
 
         if cmd.type is StackMessages.SEND:
-            logger.info("%s: Received SEND command", self)
+            logger.info("Received SEND command", sender=self)
             # wait for the beginning of the next time slot
             yield SimMan.nextTimeSlot(TIME_SLOT_LENGTH)
             # simulate transmitting
             self._transmitting = True
-            t = self.frequencyBand.transmit(self.device, self.mcs, p["power"], p["bitrate"], p["bitrate"], p["packet"])
+            t = self.frequencyBand.transmit(self.device, p["power"],  p["packet"], p["mcs"], p["mcs"])
             self._currentTransmission = t
             # wait for the transmission to finish
             yield t.eCompletes
@@ -181,40 +181,45 @@ class SimplePhy(StackLayer):
     def _receive(self, t: Transmission):
         # Simulates receiving via the frequency band
         if not self._transmitting:
-            logger.info("%s: Sensed a transmission.", self)
+            logger.info("Sensed a transmission.", sender=self)
 
-            currentBitRate = t.bitrateHeader
+            currentMcs = t.mcsHeader
             bitErrorSum = 0
-            bitErrorRate = 0.0
-            lastLevelChange = SimMan.now
+            currentBitErrorRate = 0.0
+            lastErrorCountTime = SimMan.now
 
             def updateBitErrorRate():
                 """
                 Sets `bitErrorRate` to the current bit error rate for the
                 transmission `t` if t has not yet completed.
                 """
-                nonlocal bitErrorRate
+                nonlocal currentBitErrorRate
                 signalPower = self._transmissionToReceivedPowerDict[t]
                 noisePower = self._receivedPower - signalPower
                 assert signalPower >= 0
                 assert noisePower >= 0
                 signalPowerDbm = milliwattsToDbm(signalPower)
                 noisePowerDbm = milliwattsToDbm(noisePower)
-                bitErrorRate = t.mcs.calculateBitErrorRate(signalPowerDbm, noisePowerDbm, currentBitRate)
+                currentBitErrorRate = currentMcs.calculateBitErrorRate(signalPowerDbm, noisePowerDbm)
+                logger.debug("Currently simulated bit error rate: " + str(currentBitErrorRate), sender=self)
+            
+            def countBitErrors():
+                nonlocal bitErrorSum
+                # Calculate the duration since last time that we counted errors
+                now = SimMan.now
+                duration = now - lastErrorCountTime
+
+                # Derive the number of bit errors for that duration (still
+                # as a float, rounding is done in the end)
+                bitErrors = currentBitErrorRate * duration * currentMcs.bitRate
+                bitErrorSum += bitErrors
 
             # Callback for reacting to changes of the received power
             def onReceivedPowerChange(delta: float):
                 nonlocal bitErrorSum
                 if delta != 0:
-                    # Calculate the duration for that the previous power was
-                    # "constant"
-                    now = SimMan.now
-                    prevPowerDuration = now - lastLevelChange
-
-                    # Derive the number of bit errors for that duration (still
-                    # as a float, rounding is done in the end)
-                    bitErrors = bitErrorRate * prevPowerDuration * currentBitRate
-                    bitErrorSum += bitErrors
+                    # Count bit errors for the duration in which the power was "constant"
+                    countBitErrors()
 
                     if not t.completed:
                         # Update the bit error rate accordingly
@@ -222,32 +227,50 @@ class SimplePhy(StackLayer):
             
             self._nReceivedPowerChanges.subscribeCallback(onReceivedPowerChange)
 
-            updateBitErrorRate() # calculate initial bitErrorRate
+            updateBitErrorRate() # Calculate initial bitErrorRate
             
             # Wait for the header to be transmitted
             yield t.eHeaderCompletes
 
-            # Update the bitrate for the payload
-            currentBitRate = t.bitratePayload
+            countBitErrors() # count errors since the last time that the received power has changed
 
-            # Wait for the payload to be transmitted
-            yield t.eCompletes
-            self._nReceivedPowerChanges.unsubscribeCallback(onReceivedPowerChange)
+            # Decide whether the header could be received
+            if self._decide(bitErrorSum, t.headerBits, t.mcsHeader, logSubject="Header"):
+                # Possibly switch MCS
+                currentMcs = t.mcsPayload
+                bitErrorSum = 0
 
-            # Alright, we have the number of bit errors in bitErrorSum now!
-            bitErrorSum = round(bitErrorSum)
-            bitErrorRate = bitErrorSum / t.packet.bitSize()
-            maxCorrectableBer = t.mcs.maxCorrectableBer()
-            if bitErrorRate > maxCorrectableBer:
-                logger.info("{}: Packet received with uncorectable errors "
-                             "(bit error rate: {:.3%}, maximum correctable "
-                             "bit error rate: {:.3%})!".format(self, bitErrorRate, maxCorrectableBer))
-            else:
-                logger.info("{}: Packet successfully received (bit error "
-                             "rate: {:.3%})".format(self, bitErrorRate))
-                packet = t.packet
-                # sending the packet via the mac gate
-                self.ports["mac"].output.send(packet)
+                # Wait for the payload to be transmitted
+                yield t.eCompletes
+                self._nReceivedPowerChanges.unsubscribeCallback(onReceivedPowerChange)
+
+                countBitErrors()
+                # Decide whether the payload could be received
+                logger.debug("{:.3} of {:.3} payload bits were errors.".format(bitErrorSum, t.payloadBits), sender=self)
+                if self._decide(bitErrorSum, t.payloadBits, t.mcsPayload, logSubject="Payload"):
+                    # sending the packet via the mac gate
+                    self.ports["mac"].output.send(t.packet)
+                else:
+                    logger.info("Receiving transmission payload failed for %s", t, sender=self)
+                
+    def _decide(self, bitErrorSum, totalBits, mcs, logSubject = "Data") -> bool:
+        """
+        Returns ``True`` if `bitErrorSum` errors can be corrected for
+        `totalBits` transmitted bits when applying `mcs`
+        """
+        bitErrorSum = round(bitErrorSum)
+        bitErrorRate = bitErrorSum / totalBits
+        maxCorrectableBer = mcs.maxCorrectableBer()
+        if bitErrorRate <= maxCorrectableBer:
+            logger.info("Decider: {} successfully received "
+                            "(bit error rate: {:.3%})".format(logSubject, bitErrorRate), sender=self)
+            return True
+        else:
+            logger.info("Decider: Data received with uncorectable errors "
+                            "(bit error rate: {:.3%}, max. correctable "
+                            "bit error rate: {:.3%})!".format(bitErrorRate, maxCorrectableBer), sender=self)
+            return False
+        
 
 class SimpleMac(StackLayer):
     """
@@ -310,7 +333,7 @@ class SimpleMac(StackLayer):
     """
 
     @PortListener.setup
-    def __init__(self, name: str, device: Device, addr: bytes):
+    def __init__(self, name: str, device: Device, frequencyBandSpec: FrequencyBandSpec, addr: bytes):
         """
         Args:
             name: The layer's name
@@ -323,13 +346,13 @@ class SimpleMac(StackLayer):
         self.addr = addr
         self._packetQueue = deque(maxlen=100) # allow 100 packets to be queued
         self._packetAddedEvent = Event(SimMan.env)
-        self._bitrate = 100e3 # 100 Kb/s (fixed bitrate for now)
+        self._mcs = BpskMcs(frequencyBandSpec)
         self._transmissionPower = 0.0 # dBm
         self._receiving = False
         self._receiveCmd = None
         self._receiveTimeout = None
         
-        logger.debug("%s: Initialization completed, MAC address: %s", self, self.addr)
+        logger.debug("Initialization completed, MAC address: %s", self.addr, sender=self)
     
     rrmAddr = bytes(6)
     """bytes: The 6 bytes long RRM MAC address"""
@@ -350,13 +373,13 @@ class SimpleMac(StackLayer):
     def phyPortListener(self, packet):
         header = packet.header
         if not isinstance(header, SimpleMacHeader):
-            raise ValueError("{}: Can only deal with header of type SimpleMacHeader. Got {}.".format(self, type(header)))
+            raise ValueError("Can only deal with header of type SimpleMacHeader. Got %s.", type(header), sender=self)
         
         if header.destMAC == self.addr:
             # packet for us
             if header.sourceMAC == self.rrmAddr:
                 # RRM sent the packet
-                logger.debug("%s: Received a packet from RRM: %s", self, packet)
+                logger.debug("Received a packet from RRM: %s", packet, sender=self)
                 if header.flag == 1:
                     # we may transmit
                     timeSlots = packet.payload.obj
@@ -364,44 +387,47 @@ class SimpleMac(StackLayer):
                     stopTime = SimMan.now + timeTotal
                     def timeLeft():
                         return stopTime - SimMan.now
-                    logger.info("%s: Got permission to transmit for %d time slots", self, timeSlots)
+                    logger.info("Got permission to transmit for %d time slots", timeSlots, sender=self)
 
                     timeoutEvent = SimMan.timeout(timeTotal)
                     queuedPackets = True
                     while not timeoutEvent.processed:
                         if len(self._packetQueue) == 0:
                             queuedPackets = False
-                            logger.debug("%s: Packet queue empty, nothing to transmit. Time left: %s s", self, timeLeft())
+                            logger.debug("Packet queue empty, nothing to transmit. Time left: %s s", timeLeft(), sender=self)
                             yield self._packetAddedEvent | timeoutEvent
                             if not timeoutEvent.processed:
                                 # new packet was added for sending
-                                logger.debug("%s: Packet queue was refilled. Time left: %s s", self, timeLeft())
+                                logger.debug("Packet queue was refilled. Time left: %s s", timeLeft(), sender=self)
                                 queuedPackets = True
                         if queuedPackets:
-                            if not timeLeft() > self._packetQueue[0].transmissionTime(self._bitrate):
-                                logger.info("%s: Next packet is too large to be transmitted. Idling. Time left: %s s", self, timeLeft())
+                            if not timeLeft() > self._packetQueue[0].transmissionTime(self._mcs.dataRate):
+                                logger.info("Next packet is too large to be transmitted. Idling. Time left: %s s", timeLeft(), sender=self)
                                 yield timeoutEvent
                             else:
                                 # enough time left to transmit the next packet
                                 # TODO This has to be done before adding the
                                 # packet to the queue!
                                 packet = self._packetQueue.popleft()
-                                message = Message(StackMessages.SEND, {"packet": packet, "power": self._transmissionPower,
-                                                                    "bitrate": self._bitrate})
+                                message = Message(StackMessages.SEND, {
+                                    "packet": packet,
+                                    "power": self._transmissionPower,
+                                    "mcs": self._mcs
+                                })
                                 self.ports["phy"].output.send(message) # make the PHY send the packet
-                                logger.debug("%s: Transmitting packet. Time left: %s", self, timeLeft())
-                                logger.debug("%s: Packet: %s", self, packet)
+                                logger.debug("Transmitting packet. Time left: %s", timeLeft(), sender=self)
+                                logger.debug("Packet: %s", packet, sender=self)
                                 yield message.eProcessed # wait until the transmission has completed
             else:
                 # packet from any other device
                 if self._receiving:
-                    logger.info("%s: Received Packet.", self)
-                    logger.debug("%s: Packet: %s", self, packet.payload)
+                    logger.info("Received Packet.", sender=self)
+                    logger.debug("Packet: %s", packet.payload, sender=self)
                     # return the packet's payload to the transport layer
                     self._receiveCmd.setProcessed(packet.payload)
                     self._stopReceiving()
                 else:
-                    logger.debug("%s: Received Packet from Phy, but not in receiving mode. Packet ignored.", self)
+                    logger.debug("Received Packet from Phy, but not in receiving mode. Packet ignored.", sender=self)
 
         elif header.destMAC == self.rrmAddr:
             # packet from RRM to all devices
@@ -470,14 +496,14 @@ class SimpleRrmMac(StackLayer):
     """
 
     @PortListener.setup
-    def __init__(self, name: str, device: Device):
+    def __init__(self, name: str, device: Device, frequencyBandSpec: FrequencyBandSpec):
         super(SimpleRrmMac, self).__init__(name, device)
         self._addPort("phy")
         self._addPort("transport")
         self.addr = bytes(6) # 6 zero bytes
         """bytes: The RRM's MAC address"""
 
-        self._announcementBitrate = 100e3 # 100 Kb/s
+        self._announcementMcs = BpskMcs(frequencyBandSpec)
         self._transmissionPower = 0.0 # dBm
         self._nAnnouncementReceived = Notifier("new announcement message received", self)
         self._nAnnouncementReceived.subscribeProcess(self._sendAnnouncement, queued=True)
@@ -509,7 +535,7 @@ class SimpleRrmMac(StackLayer):
             StackMessages.SEND, {
                 "packet": announcement,
                 "power": self._transmissionPower,
-                "bitrate": self._announcementBitrate
+                "mcs": self._announcementMcs
             }
         )
         logger.debug("%s: Sending new announcement: %s", self, announcement)

@@ -56,7 +56,7 @@ class SimpleNetworkDevice(NetworkDevice):
 
         # Initialize PHY and MAC
         self._phy = SimplePhy("phy", self, self.frequencyBand)
-        self._mac = SimpleMac("mac", self, self.mac)
+        self._mac = SimpleMac("mac", self, self.frequencyBand.spec, self.mac)
         # Connect them with each other
         self._mac.ports["phy"].biConnectWith(self._phy.ports["mac"])
     
@@ -155,7 +155,7 @@ class SimpleRrmDevice(NetworkDevice):
 
         # Initialize PHY and MAC
         self._phy = SimplePhy("phy", self, self.frequencyBand)
-        self._mac = SimpleRrmMac("mac", self)
+        self._mac = SimpleRrmMac("mac", self, self.frequencyBand.spec)
         # Connect them with each other
         self._mac.ports["phy"].biConnectWith(self._phy.ports["mac"])
 

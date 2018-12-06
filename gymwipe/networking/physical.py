@@ -104,12 +104,29 @@ class Mcs(ABC):
     Signal-to-Noise Ratio (SNR) and the resulting Bit Error Rate (BER), it
     offers a :meth:`getBitErrorRateBySnr` method that is used by receiving PHY
     layer instances.
+    :class:`Mcs` objects also provide a :attr:`bitRate` and a
+    :attr:`dataRate` attribute, which specify the physical bit rate and the
+    effective data rate of transmissions with the corresponding :class:`Mcs`.
 
     Currently, only BPSK modulation is implemented (see :class:`BpskMcs` for details).
     Subclass :class:`Mcs` if you need something more advanced.
     """
 
     _codeRateToMaxCorrectableBer = {}
+
+    def __init__(self, frequencyBandSpec: "FrequencyBandSpec", codeRate: Fraction):
+
+        self.frequencyBandSpec = frequencyBandSpec
+        """
+        The frequency band specification that determines the bandwidth for which
+        the MCS is operated
+        """
+
+        self.codeRate = codeRate
+        """
+        Fraction: The relative amount of transmitted bits that are not used for
+        forward error correction
+        """
 
     @abstractmethod
     def calculateBitErrorRate(self, signalPower: float, noisePower: float, bitRate: float) -> float:
@@ -127,10 +144,17 @@ class Mcs(ABC):
     
     @property
     @abstractmethod
-    def codeRate(self) -> Fraction:
+    def bitRate(self) -> float:
         """
-        Fraction: The relative amount of transmitted bits that are not used for
-        forward error correction
+        float: The physical bit rate in bps that results from the use of this MCS
+        """
+    
+    @property
+    @abstractmethod
+    def dataRate(self) -> float:
+        """
+        float: The effective data rate in bps that results from the use of this MCS
+        (considers coding overhead)
         """
 
     def maxCorrectableBer(self) -> float:
@@ -165,17 +189,26 @@ class BpskMcs(Mcs):
     A Binary Phase-Shift-Keying MCS
     """
 
-    def __init__(self, codeRate: Fraction = Fraction(3,4)):
-        self._codeRate = codeRate
+    def __init__(self, frequencyBandSpec: "FrequencyBandSpec", codeRate: Fraction = Fraction(3,4)):
+        super(BpskMcs, self).__init__(frequencyBandSpec, codeRate)
+
+        # fixed bit rates for now
+        self._bitRate = 133.33333e3 # 100 Kb/s data rate at 3/4 code rate
+        self._dataRate = float(codeRate) * self._bitRate
+        
     
     @property
-    def codeRate(self) -> Fraction:
-        return self._codeRate
+    def bitRate(self) -> float:
+        return self._bitRate
+    
+    @property
+    def dataRate(self) -> float:
+        return self._dataRate
 
-    def calculateBitErrorRate(self, signalPower: float, noisePower: float, bitRate: float) -> float:
+    def calculateBitErrorRate(self, signalPower: float, noisePower: float) -> float:
         if signalPower <= noisePower:
             return 0.5
-        ratio = calculateEbToN0Ratio(signalPower, noisePower, bitRate)
+        ratio = calculateEbToN0Ratio(signalPower, noisePower, self._bitRate)
         return approxQFunction(sqrt(2*ratio))
 
 class Transmission:
@@ -188,12 +221,7 @@ class Transmission:
         :meth:`FrequencyBand.transmit`.
     """
 
-    def __init__(self, sender: Device, mcs: Mcs, power: float, bitrateHeader: float, bitratePayload: float, packet: Packet, startTime: float):
-        bitTimeHeader = 1 / bitrateHeader
-        if bitrateHeader == bitratePayload:
-            bitTimePayload = bitTimeHeader
-        else:
-            bitTimePayload = 1 / bitratePayload
+    def __init__(self, sender: Device, power: float, packet: Packet, mcsHeader: Mcs, mcsPayload: Mcs, startTime: float):
         
         self.sender: Device = sender
         """Device: The device that initiated the transmission"""
@@ -201,14 +229,11 @@ class Transmission:
         self.power: float = power
         """float: The tramsmission power in dBm"""
 
-        self.mcs: Mcs = mcs
-        """Mcs: The modulation and coding scheme used for the transmission"""
+        self.mcsHeader: Mcs = mcsHeader
+        """Mcs: The modulation and coding scheme used for the transmitted packet's header"""
 
-        self.bitrateHeader: float = bitrateHeader
-        """float: The header's bitrate in bps"""
-
-        self.bitratePayload: float = bitratePayload
-        """float: The payload's bitrate in bps"""
+        self.mcsPayload: Mcs = mcsPayload
+        """Mcs: The modulation and coding scheme used for the transmitted packet's payload"""
 
         self.packet: Packet = packet
         """Packet: The packet sent in the transmission"""
@@ -216,10 +241,10 @@ class Transmission:
         self.startTime: float = startTime
         """float: The simulated time at which the transmission started"""
 
-        self.headerDuration = packet.header.bitSize() * bitTimeHeader
+        self.headerDuration = packet.header.bitSize() / mcsHeader.dataRate
         """float: The time in seconds taken by the transmission of the packet's header"""
 
-        self.payloadDuration = packet.payload.bitSize() * bitTimePayload
+        self.payloadDuration = packet.payload.bitSize() / mcsPayload.dataRate
         """float: The time in seconds taken by the transmission of the packet's payload"""
 
         self.duration = self.headerDuration + self.payloadDuration
@@ -230,6 +255,12 @@ class Transmission:
         float: The moment in simulated time right after the transmission has
         completed
         """
+
+        self.headerBits = packet.header.bitSize() * float(2 - mcsHeader.codeRate)
+        """Transmitted bits for the packet's header (including coding overhead)"""
+
+        self.payloadBits = packet.payload.bitSize() * float(2 - mcsPayload.codeRate)
+        """Transmitted bits for the packet's payload (including coding overhead)"""
 
         # SimPy events
         headerStopTime = self.startTime + self.headerDuration
@@ -539,7 +570,7 @@ class FrequencyBand:
         """
         return self._attenuationModelFactory.getInstance(deviceA, deviceB)
 
-    def transmit(self, sender: Device, mcs: Mcs, power: float, brHeader: float, brPayload: float, packet: Packet) -> Transmission:
+    def transmit(self, sender: Device, power: float, packet: Packet, mcsHeader: Mcs, mcsPayload: Mcs) -> Transmission:
         """
         Simulates the transmission of `packet` with the given properties. This
         is achieved by creating a :class:`Transmission` object with the values
@@ -560,7 +591,7 @@ class FrequencyBand:
             The :class:`Transmission` object representing the transmission
         """
         self._removeFirstPastTransmission() # regular cleanup
-        t = Transmission(sender, mcs, power, brHeader, brPayload, packet, SimMan.now)
+        t = Transmission(sender, power, packet, mcsHeader, mcsPayload, SimMan.now)
         self._transmissions.append(t)
         logger.info("%s added to FrequencyBand", t)
         # trigger notifiers after returning the transmission
