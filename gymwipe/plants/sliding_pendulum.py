@@ -89,9 +89,9 @@ class SlidingPendulum(OdePlant):
         pendulumPos = self._toPixelCoordinate(self._pendulum.getPosition())
         wagonPos = self._toPixelCoordinate(self._wagon.getPosition())
 
-        pygame.draw.circle(surface, (55,0,200), pendulumPos, 20, 0)
+        pygame.draw.circle(surface, (0,0,0), pendulumPos, 20, 0)
         pygame.draw.circle(surface, (0,0,0), wagonPos, 20, 0)
-        pygame.draw.line(surface, (55,0,200), pendulumPos, wagonPos, 2)
+        pygame.draw.line(surface, (0,0,0), pendulumPos, wagonPos, 2)
 
         pygame.display.flip()
 
