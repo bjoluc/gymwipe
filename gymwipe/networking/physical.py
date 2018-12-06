@@ -7,7 +7,7 @@ from abc import ABC, abstractmethod
 from collections import deque
 from fractions import Fraction
 from math import e, exp, log10, pi, sqrt
-from typing import Any, Deque, Dict, List, Tuple, Type, TypeVar
+from typing import Any, Deque, Dict, FrozenSet, List, Tuple, Type, TypeVar
 
 from scipy.special import binom
 from simpy import Event
@@ -441,6 +441,30 @@ class AttenuationModelFactory():
         self._frequencyBandSpec = frequencyBandSpec
         self._models = models
         self._instances = {}
+        self._customModels: Dict[FrozenSet, List[AttenuationModelClass]] = {}
+    
+    def setCustomModels(self, deviceA: Device, deviceB: Device, models: List[AttenuationModelClass]):
+        """
+        Sets the :class:`AttenuationModel` subclasses for signals sent from
+        `deviceA` to `deviceB` and vice versa.
+
+        Note:
+
+            In order for this method to work, it has to be invoked before an
+            :class:`AttenuationModel` instance is requested for the first time for
+            the specified pair of devices.
+
+        Args:
+            deviceA: One device
+            deviceB: Another device
+            models: A non-empty list of :class:`AttenuationModel` subclasses
+                that will be used for instantiating attenuation models for signals
+                sent from `deviceA` to `deviceB` and vice versa
+        """
+        devicePair = frozenset((deviceA, deviceB))
+        assert devicePair not in self._customModels
+        assert devicePair not in self._instances
+        self._customModels[devicePair] = models
     
     def getInstance(self, deviceA: Device, deviceB: Device) -> AttenuationModel:
         """
@@ -450,16 +474,26 @@ class AttenuationModelFactory():
         initialized with multiple :class:`AttenuationModel` subclasses, a
         :class:`JoinedAttenuationModel` will be handed out.
         """
-        key = frozenset((deviceA, deviceB))
-        if key in self._instances:
-            return self._instances.get(key)
+        devicePair = frozenset((deviceA, deviceB))
+        
+        if devicePair in self._instances:
+            return self._instances[devicePair]
         else:
-            # initializing a new instance
-            if len(self._models) == 1:
-                instance = self._models[0](self._frequencyBandSpec, deviceA, deviceB)
+            if devicePair in self._customModels:
+                models = self._customModels[devicePair]
             else:
-                instance = JoinedAttenuationModel(self._frequencyBandSpec, deviceA, deviceB, self._models)
-            self._instances[key] = instance
+                models = self._models
+            return self._initInstance(models, devicePair)
+    
+    def _initInstance(self, modelClasses: List[AttenuationModelClass], devicePair: FrozenSet[Device]):
+            """
+            Initializes a new AttenuationModel instance from the provided class(es)
+            """
+            if len(modelClasses) == 1:
+                instance = modelClasses[0](self._frequencyBandSpec, *devicePair)
+            else:
+                instance = JoinedAttenuationModel(self._frequencyBandSpec, *devicePair, modelClasses)
+            self._instances[devicePair] = instance
             return instance
 
 class FrequencyBand:
