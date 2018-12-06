@@ -111,7 +111,7 @@ class Interpreter(ABC):
     @abstractmethod
     def getReward(self) -> float:
         """
-        Returns a reward that ideally depends on the last channel assignment.
+        Returns a reward that depends on the last channel assignment.
         """
 
     @abstractmethod
@@ -134,7 +134,7 @@ class Interpreter(ABC):
     def getInfo(self) -> Dict:
         """
         Returns a :class:`dict` providing additional information on the
-        environment's state that may be useful for debugging but are not allowed
+        environment's state that may be useful for debugging but is not allowed
         to be used by a learning agent.
         """
         return {}
