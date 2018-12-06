@@ -12,9 +12,12 @@
 
 -e .
 keras-rl
-mypy-lang
+objgraph
 pipenv-to-requirements
+py3ode
+pygame
 pylint
+pympler
 rope
 sphinx
 sphinx-autobuild
