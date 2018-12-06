@@ -50,7 +50,7 @@ deviceCounts = range(0, 101, 5)
 #deviceCounts = [20]
 
 @pytest.fixture(params=deviceCounts)
-def device_block(request):
+def device_grid(request):
     """
     A parametrized device fixture that sets up SendingDevices in a block
     arrangement with 1 m distance between adjacent devices.
@@ -69,7 +69,7 @@ def device_block(request):
     return devices
 
 @pytest.fixture
-def moving_device_block(device_block):
+def mobile_device_grid(device_grid):
     def mover(d: NetworkDevice):
         yield SimMan.timeout(random.uniform(0, MOVE_INTERVAL))
         initialPos = d.position
@@ -79,12 +79,11 @@ def moving_device_block(device_block):
             d.position.set(initialPos.x + xOffset, initialPos.y + yOffset)
             yield SimMan.timeout(MOVE_INTERVAL)
     
-    for device in device_block:
+    for device in device_grid:
         SimMan.process(mover(device))
 
-#def benchmark_simulation_block(benchmark, device_block):
-#    benchmark(SimMan.runSimulation, 1)
-
+# def benchmark_simulation_grid(benchmark, device_grid):
+#     benchmark(SimMan.runSimulation, 1)
 
 # from pympler import tracker
 # tr = tracker.SummaryTracker()
@@ -95,11 +94,12 @@ def moving_device_block(device_block):
 #     output = repr(x)[:1000]
 #     return textwrap.fill(output,40)
 
-def benchmark_simulation_block_moving(benchmark, moving_device_block):
+def benchmark_simulation_mobile_grid(benchmark, mobile_device_grid):
 
     #tr.print_diff()
 
     benchmark(SimMan.runSimulation, 1)
+
     #SimMan.runSimulation(1)
     #objgraph.show_refs(SimMan.env)
     #objgraph.show_backrefs(random.choice(objgraph.by_type("Notifier")), extra_info=extrinfo)
