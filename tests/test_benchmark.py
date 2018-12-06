@@ -8,9 +8,9 @@ import pytest
 
 from gymwipe.networking.attenuation_models import FsplAttenuation
 from gymwipe.networking.devices import NetworkDevice
-from gymwipe.networking.messages import (Packet, Signal, SimpleMacHeader,
-                                         StackSignals, Transmittable)
-from gymwipe.networking.physical import Channel
+from gymwipe.networking.messages import (Packet, Message, SimpleMacHeader,
+                                         StackMessages, Transmittable)
+from gymwipe.networking.physical import FrequencyBand
 from gymwipe.networking.stack import SimplePhy
 from gymwipe.simtools import SimMan
 
@@ -22,11 +22,11 @@ class SendingDevice(NetworkDevice):
     A device that sends packets to a non-existent mac address.
     """
 
-    def __init__(self, id, xPos, yPos, channel, sendInterval, initialDelay):
-        super(SendingDevice, self).__init__("Device" + str(id), xPos, yPos, channel)
+    def __init__(self, id, xPos, yPos, frequencyBand, sendInterval, initialDelay):
+        super(SendingDevice, self).__init__("Device" + str(id), xPos, yPos, frequencyBand)
 
         # initialize a physical layer only
-        self._phy = SimplePhy("phy", self, channel)
+        self._phy = SimplePhy("phy", self, frequencyBand)
         
         def sender():
             yield SimMan.timeout(initialDelay)
@@ -41,8 +41,8 @@ class SendingDevice(NetworkDevice):
                     ),
                     Transmittable("A message to all my homies")
                 )
-                signal = Signal(StackSignals.SEND, {"packet": packet, "power": 40.0, "bitrate": 1e6})
-                self._phy.gates["mac"].send(signal)
+                signal = Message(StackMessages.SEND, {"packet": packet, "power": 40.0, "bitrate": 1e6})
+                self._phy.ports["mac"].send(signal)
 
         SimMan.process(sender())
 
@@ -58,13 +58,13 @@ def device_block(request):
     """
     n = request.param # number of devices to be created
     SimMan.initEnvironment()
-    channel = Channel([FsplAttenuation])
+    frequencyBand = FrequencyBand([FsplAttenuation])
 
     devices = []
     cols = int(sqrt(n))
     for i in range(n):
         initialDelay = random.uniform(0, SEND_INTERVAL)
-        devices.append(SendingDevice(i, i / cols, i % cols, channel, SEND_INTERVAL, initialDelay))
+        devices.append(SendingDevice(i, i / cols, i % cols, frequencyBand, SEND_INTERVAL, initialDelay))
     
     return devices
 

@@ -14,7 +14,7 @@ from gymwipe.networking.attenuation_models import FsplAttenuation
 from gymwipe.networking.devices import SimpleNetworkDevice, SimpleRrmDevice
 from gymwipe.networking.messages import (FakeTransmittable, IntTransmittable,
                                          Packet, Transmittable)
-from gymwipe.networking.physical import Channel
+from gymwipe.networking.physical import FrequencyBand
 from gymwipe.simtools import SimMan
 
 
@@ -42,9 +42,9 @@ class CounterTrafficEnv(BaseEnv):
         integer is sent `packetMultiplicity` times.
         """
         
-        def __init__(self, name: str, xPos: float, yPos: float, channel: Channel,
+        def __init__(self, name: str, xPos: float, yPos: float, frequencyBand: FrequencyBand,
                         packetMultiplicity: int):
-            super(CounterTrafficEnv.SenderDevice, self).__init__(name, xPos, yPos, channel)
+            super(CounterTrafficEnv.SenderDevice, self).__init__(name, xPos, yPos, frequencyBand)
             self.packetMultiplicity = packetMultiplicity
             self.counter = 1
             SimMan.process(self.senderProcess())
@@ -80,7 +80,7 @@ class CounterTrafficEnv(BaseEnv):
             if value == self._env.COUNTER_BOUND:
                 self._done = True
     
-        def onChannelAssignment(self, deviceIndex: int, duration: int):
+        def onFrequencyBandAssignment(self, deviceIndex: int, duration: int):
             self._lastAssignDeviceIndex = deviceIndex
 
         def getReward(self):
@@ -113,8 +113,8 @@ class CounterTrafficEnv(BaseEnv):
             return {"Latest received values": str(self.receivedValues)}
 
     def __init__(self):
-        channel = Channel([FsplAttenuation])
-        super(CounterTrafficEnv, self).__init__(channel, deviceCount=2)
+        frequencyBand = FrequencyBand([FsplAttenuation])
+        super(CounterTrafficEnv, self).__init__(frequencyBand, deviceCount=2)
 
         # The difference between the lastly received values from both devices
         # summed up with the COUNTER_BOUND will be the observation.
@@ -123,15 +123,15 @@ class CounterTrafficEnv(BaseEnv):
         SimMan.initEnvironment()
 
         self.senders: List[self.SenderDevice] = [
-            CounterTrafficEnv.SenderDevice("Sender 1", 0, 2, self.channel, 1),
-            CounterTrafficEnv.SenderDevice("Sender 2", 0, -2, self.channel, 3)
+            CounterTrafficEnv.SenderDevice("Sender 1", 0, 2, self.frequencyBand, 1),
+            CounterTrafficEnv.SenderDevice("Sender 2", 0, -2, self.frequencyBand, 3)
         ]
         self.deviceIndexToMacDict: Dict[int, bytes] = {i: s.mac for i, s in enumerate(self.senders)}
         self.senders[0].destinationMac = self.senders[1].mac
         self.senders[1].destinationMac = self.senders[0].mac
 
         interpreter = self.CounterTrafficInterpreter(self)
-        self.rrm = SimpleRrmDevice("RRM", 0, 0, self.channel, self.deviceIndexToMacDict, interpreter)
+        self.rrm = SimpleRrmDevice("RRM", 0, 0, self.frequencyBand, self.deviceIndexToMacDict, interpreter)
 
     def reset(self):
         """
@@ -149,8 +149,8 @@ class CounterTrafficEnv(BaseEnv):
         deviceIndex = action["device"]
         duration = action["duration"]*self.ASSIGNMENT_DURATION_FACTOR
 
-        # Assign the channel
-        assignSignal = self.rrm.assignChannel(deviceIndex, duration)
+        # Assign the frequency band
+        assignSignal = self.rrm.assignFrequencyBand(deviceIndex, duration)
 
         # Run the simulation until the assignment ends
         SimMan.runSimulation(assignSignal.eProcessed)

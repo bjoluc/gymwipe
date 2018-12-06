@@ -7,15 +7,15 @@ from gym import error, spaces, utils
 from gym.utils import seeding
 
 from gymwipe.networking.messages import Packet, Transmittable
-from gymwipe.networking.physical import Channel
+from gymwipe.networking.physical import FrequencyBand
 from gymwipe.simtools import SimMan
 
 
 class BaseEnv(gym.Env):
     """
     A subclass of the OpenAI gym environment that models the Radio Resource
-    Manager channel assignment problem. It sets a channel and an action space
-    (depending on the number of devices to be used for channel assignment).
+    Manager frequency band assignment problem. It sets a frequency band and an action space
+    (depending on the number of devices to be used for frequency band assignment).
 
     The action space is a dict space of two discrete spaces: The device number
     and the assignment duration.
@@ -26,14 +26,14 @@ class BaseEnv(gym.Env):
 
     ASSIGNMENT_DURATION_FACTOR = 1000
 
-    def __init__(self, channel: Channel, deviceCount: int):
+    def __init__(self, frequencyBand: FrequencyBand, deviceCount: int):
         """
         Args:
-            channel: The physical channel to be used for the simulation
+            frequency band: The physical frequency band to be used for the simulation
             deviceCount: The number of devices to be included in the
                 environment's action space
         """
-        self.channel = channel
+        self.frequencyBand = frequencyBand
 
         self.deviceCount = deviceCount
         self.action_space = spaces.Dict({
@@ -60,7 +60,7 @@ class Interpreter(ABC):
     """
     An :class:`Interpreter` is an instance that observes the system's behavior
     by sniffing the packets received by the RRM's physical layer and infers
-    observations and rewards for a channel assignment learning agent. Thus, RRM
+    observations and rewards for a frequency band assignment learning agent. Thus, RRM
     and learning agent can be used in any domain with only swapping the
     interpreter.
 
@@ -78,7 +78,7 @@ class Interpreter(ABC):
     want to override depending on your use case:
 
         * :meth:`reset`
-        * :meth:`onChannelAssignment`
+        * :meth:`onFrequencyBandAssignment`
         * :meth:`getDone`
         * :meth:`getInfo`
     """
@@ -97,13 +97,13 @@ class Interpreter(ABC):
             payload: The received packet's payload
         """
     
-    def onChannelAssignment(self, deviceIndex: int, duration: int):
+    def onFrequencyBandAssignment(self, deviceIndex: int, duration: int):
         """
-        Is invoked whenever the RRM assigns the channel.
+        Is invoked whenever the RRM assigns the frequency band.
 
         Args:
             deviceIndex: The index (as in the gym environment's action space) of
-                the device that the channel is assigned to.
+                the device that the frequency band is assigned to.
             duration: The duration of the assignment in multiples of
                 :attr:`~gymwipe.networking.stack.TIME_SLOT_LENGTH`
         """
@@ -141,7 +141,7 @@ class Interpreter(ABC):
 
     def getFeedback(self) -> Tuple[Any, float, bool, Dict]:
         """
-        You may want to call this at the end of a channel assignment to get
+        You may want to call this at the end of a frequency band assignment to get
         feedback for your learning agent. The return values are ordered like
         they need to be returned by the :meth:`step` method of a gym
         environment.

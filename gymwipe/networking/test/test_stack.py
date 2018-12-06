@@ -7,12 +7,12 @@ from pytest_mock import mocker
 
 from gymwipe.devices import Device
 from gymwipe.networking.attenuation_models import FsplAttenuation
-from gymwipe.networking.construction import Gate
-from gymwipe.networking.messages import (FakeTransmittable, Packet, Signal,
+from gymwipe.networking.construction import Port
+from gymwipe.networking.messages import (FakeTransmittable, Packet, Message,
                                          SimpleMacHeader,
-                                         SimpleTransportHeader, StackSignals,
+                                         SimpleTransportHeader, StackMessages,
                                          Transmittable)
-from gymwipe.networking.physical import Channel
+from gymwipe.networking.physical import FrequencyBand
 from gymwipe.networking.stack import (TIME_SLOT_LENGTH, SimpleMac, SimplePhy,
                                       SimpleRrmMac)
 from gymwipe.simtools import SimMan
@@ -24,10 +24,10 @@ class dotdict(dict):
     __setattr__ = dict.__setitem__
     __delattr__ = dict.__delitem__
 
-class CollectorGate(Gate):
-    """A subclass of Gate that stores received and sent objects in lists"""
+class CollectorPort(Port):
+    """A subclass of Port that stores received and sent objects in lists"""
     def __init__(self, name: str):
-        super(CollectorGate, self).__init__(name)
+        super(CollectorPort, self).__init__(name)
         self.inputHistory = []
         self.outputHistory = []
         self.input.addCallback(self.inputSaver)
@@ -44,19 +44,19 @@ def simple_phy():
     # initialize SimPy environment
     SimMan.initEnvironment()
 
-    # create a wireless channel with FSPL attenuation
-    channel = Channel([FsplAttenuation])
+    # create a wireless frequency band with FSPL attenuation
+    frequencyBand = FrequencyBand([FsplAttenuation])
 
     # create two network devices
     device1 = Device("1", 0, 0)
     device2 = Device("2", 1, 1)
 
     # create the SimplePhy network stack layers
-    device1Phy = SimplePhy("Phy", device1, channel)
-    device2Phy = SimplePhy("Phy", device2, channel)
+    device1Phy = SimplePhy("Phy", device1, frequencyBand)
+    device2Phy = SimplePhy("Phy", device2, frequencyBand)
     
     setup = dotdict()
-    setup.channel = channel
+    setup.frequencyBand = frequencyBand
     setup.device1 = device1
     setup.device2 = device2
     setup.device1Phy = device1Phy
@@ -71,35 +71,35 @@ def test_simple_phy(caplog, mocker, simple_phy):
     caplog.set_level(logging.INFO, logger='gymwipe.simtools')
 
     setup = simple_phy
-    channel = setup.channel
+    frequencyBand = setup.frequencyBand
     senderPhy = setup.device1Phy
     receiverPhy = setup.device2Phy
 
-    # create a mocked gate for capturing receiver Phy output
+    # create a mocked port for capturing receiver Phy output
     receiverCallbackMock = mocker.Mock()
-    receiverGate = Gate("Receiver Stack", receiverCallbackMock)
-    receiverPhy.gates["mac"].connectOutputTo(receiverGate.input)
+    receiverPort = Port("Receiver Stack", receiverCallbackMock)
+    receiverPhy.ports["mac"].connectOutputTo(receiverPort.input)
 
     # create something transmittable
     packet = Packet(FakeTransmittable(8), FakeTransmittable(128))
 
     def sending():
-        # the channel should be unused yet
-        assert len(channel.getActiveTransmissions()) == 0
+        # the frequency band should be unused yet
+        assert len(frequencyBand.getActiveTransmissions()) == 0
 
         # setup the message to the physical layer
         BITRATE = 100e3  # 100 Kb/s
         POWER = 0.0 # dBm
-        cmd = Signal(StackSignals.SEND, {"packet": packet, "power": POWER, "bitrate": BITRATE})
+        cmd = Message(StackMessages.SEND, {"packet": packet, "power": POWER, "bitrate": BITRATE})
 
         # send the message to the physical layer
-        senderPhy.gates["mac"].send(cmd)
+        senderPhy.ports["mac"].send(cmd)
 
         # wait 8 bits
         yield SimMan.timeout(8/BITRATE)
 
         # assertions for the transmission
-        transmissions = channel.getActiveTransmissions()
+        transmissions = frequencyBand.getActiveTransmissions()
         assert len(transmissions) == 1
         t = transmissions[0]
         # check the correctness of the transmission created
@@ -121,7 +121,7 @@ def test_simple_phy(caplog, mocker, simple_phy):
         assert receiverPhy._receivedPower < power
 
         yield SimMan.timeout(1)
-        assert len(channel.getActiveTransmissions()) == 0
+        assert len(frequencyBand.getActiveTransmissions()) == 0
     
     def receiving():
         yield SimMan.timeout(4)
@@ -135,25 +135,25 @@ def test_simple_phy(caplog, mocker, simple_phy):
 def simple_mac(simple_phy):
     s = simple_phy
     s.rrm = Device("RRM", 2, 2)
-    s.rrmPhy = SimplePhy("RrmPhy", s.rrm, s.channel)
+    s.rrmPhy = SimplePhy("RrmPhy", s.rrm, s.frequencyBand)
     s.rrmMac = SimpleRrmMac("RrmMac", s.rrm)
     s.device1Mac = SimpleMac("Mac", s.device1, SimpleMac.newMacAddress())
     s.device2Mac = SimpleMac("Mac", s.device2, SimpleMac.newMacAddress())
 
     # inter-layer connections
-    # put collector gates as proxies between each device's Phy and Mac layer
-    s.dev1PhyProxy = CollectorGate("Dev1PhyProxy")
-    s.dev2PhyProxy = CollectorGate("Dev2PhyProxy")
+    # put collector ports as proxies between each device's Phy and Mac layer
+    s.dev1PhyProxy = CollectorPort("Dev1PhyProxy")
+    s.dev2PhyProxy = CollectorPort("Dev2PhyProxy")
 
     # mac <-> phyProxy
-    s.device1Phy.gates["mac"].biConnectProxy(s.dev1PhyProxy)
-    s.device2Phy.gates["mac"].biConnectProxy(s.dev2PhyProxy)
+    s.device1Phy.ports["mac"].biConnectProxy(s.dev1PhyProxy)
+    s.device2Phy.ports["mac"].biConnectProxy(s.dev2PhyProxy)
 
     # phyProxy <-> phy
-    s.dev1PhyProxy.biConnectWith(s.device1Mac.gates["phy"])
-    s.dev2PhyProxy.biConnectWith(s.device2Mac.gates["phy"])
+    s.dev1PhyProxy.biConnectWith(s.device1Mac.ports["phy"])
+    s.dev2PhyProxy.biConnectWith(s.device2Mac.ports["phy"])
 
-    s.rrmMac.gates["phy"].biConnectWith(s.rrmPhy.gates["mac"])
+    s.rrmMac.ports["phy"].biConnectWith(s.rrmPhy.ports["mac"])
 
     return s
 
@@ -173,14 +173,14 @@ def test_simple_mac(caplog, simple_mac):
         # send a bunch of packets from `fromMacLayer` to `toMacLayer`
         for p in payloads:
             packet = Packet(SimpleTransportHeader(fromMacLayer.addr, toMacLayer.addr), p)
-            fromMacLayer.gates["transport"].send(packet)
+            fromMacLayer.ports["transport"].send(packet)
             yield SimMan.timeout(1e-4)
 
     def receiver(macLayer: SimpleMac, receivedPacketsList: List[Packet]):
         # receive forever
         while True:
-            receiveCmd = Signal(StackSignals.RECEIVE, {"duration": 10})
-            macLayer.gates["transport"].send(receiveCmd)
+            receiveCmd = Message(StackMessages.RECEIVE, {"duration": 10})
+            macLayer.ports["transport"].send(receiveCmd)
             result = yield receiveCmd.eProcessed
             if result is not None:
                 receivedPacketsList.append(result)
@@ -190,15 +190,15 @@ def test_simple_mac(caplog, simple_mac):
     # 13 bytes header + log10(ASSIGN_TIME/TIME_SLOT_LENGTH) bytes payload
 
     def resourceManagement():
-        # Assign the channel 5 times for each device
+        # Assign the frequency band 5 times for each device
         previousCmd = None
         for i in range(10):
             if i % 2 == 0:
                 dest = dev1Addr
             else:
                 dest = dev2Addr
-            cmd = Signal(StackSignals.ASSIGN, {"duration": ASSIGN_TIME/TIME_SLOT_LENGTH, "dest": dest})
-            s.rrmMac.gates["transport"].send(cmd)
+            cmd = Message(StackMessages.ASSIGN, {"duration": ASSIGN_TIME/TIME_SLOT_LENGTH, "dest": dest})
+            s.rrmMac.ports["transport"].send(cmd)
             if previousCmd is not None:
                 yield previousCmd.eProcessed
             previousCmd = cmd
