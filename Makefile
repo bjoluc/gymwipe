@@ -6,11 +6,9 @@ test:
 
 benchmark:
 	pipenv run py.test -v --benchmark-only \
-		--benchmark-disable-gc \
-		--benchmark-min-rounds=50 \
+		--benchmark-min-rounds=1 \
 		--benchmark-sort=min \
-		--benchmark-name=short \
-		--benchmark-histogram=benchmark-results
+		--benchmark-json=benchmark_grid_mobile_10s.json
 
 docs:
 	pipenv run sphinx-apidoc --force --separate -o docs/api gymwipe gymwipe/test gymwipe/*/test
@@ -22,4 +20,7 @@ requirements:
 	pipenv run pipenv_to_requirements
 	cat requirements.txt | grep -v "#" >> requirements-dev.txt
 
-.PHONY: update test benchmark docs requirements
+ode:
+	pipenv run pip install py3ode pygame
+
+.PHONY: update test benchmark docs requirements ode
