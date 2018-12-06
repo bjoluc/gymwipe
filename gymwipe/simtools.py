@@ -9,6 +9,7 @@ from typing import (Any, Callable, DefaultDict, Dict, Generator, Set, Tuple,
                     Union)
 
 from simpy import Environment
+from simpy.rt import RealtimeEnvironment
 from simpy.events import Event, Process
 
 from gymwipe.utility import ownerPrefix
@@ -85,12 +86,20 @@ class SimulationManager:
     
     def initEnvironment(self) -> None:
         """
-        Destroys the existing SimPy :class:`~simpy.core.Environment` (if there
-        is one) and creates a new one. The next :meth:`runSimulation` call will
-        start a new simulation.
+        Creates a new :class:`~simpy.core.Environment`.
         """
-        self._env = Environment()
-        logger.debug("SimulationManager: Initialized environment")
+        self.setEnvironment()
+    
+    def setEnvironment(self, environment: Environment = None):
+        """
+        Sets the wrapped SimPy environment. If no environment instance is
+        provided, a new :class:`simpy.core.Environment` will be created.
+        """
+        if environment is None:
+            self._env = Environment()
+        else:
+            self._env = environment
+        logger.debug("SimulationManager: Environment was set")
     
     def timeout(self, duration: float, value: Any = None) -> Event:
         """
@@ -343,6 +352,9 @@ class Notifier:
                                             "process is still active, 'blocking' is 'True', and "
                                             "'queued' is 'False'.", value, process, sender=self)
                         else:
+                            if len(executor.queue) == 10000:
+                                    logger.critical("Queue of subscribed SimPy generator %s reached a "
+                                                    "size of 10000. Is this intended?", process, sender=self)
                             executor.queue.append(value)
                             logger.debug("Object '%s' was appended to queue for SimPy generator %s, "
                                         "since a previous SimPy process is still active. "
