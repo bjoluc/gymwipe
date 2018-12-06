@@ -14,8 +14,8 @@ from gymwipe.networking.physical import Channel
 from gymwipe.networking.stack import SimplePhy
 from gymwipe.simtools import SimMan
 
-SEND_INTERVAL = 1e-6 # seconds
-MOVE_INTERVAL = 1e-5 # seconds
+SEND_INTERVAL = 1e-3 # seconds
+MOVE_INTERVAL = 1e-3 # seconds
 
 class SendingDevice(NetworkDevice):
     """
@@ -47,6 +47,7 @@ class SendingDevice(NetworkDevice):
         SimMan.process(sender())
 
 deviceCounts = range(0, 101, 5)
+#deviceCounts = [20]
 
 @pytest.fixture(params=deviceCounts)
 def device_block(request):
@@ -81,8 +82,29 @@ def moving_device_block(device_block):
     for device in device_block:
         SimMan.process(mover(device))
 
-def benchmark_simulation_block(benchmark, device_block):
-    benchmark(SimMan.runSimulation, SEND_INTERVAL * 100)
+#def benchmark_simulation_block(benchmark, device_block):
+#    benchmark(SimMan.runSimulation, 1)
+
+
+# from pympler import tracker
+# tr = tracker.SummaryTracker()
+
+# import objgraph
+# import textwrap
+# def extrinfo(x):
+#     output = repr(x)[:1000]
+#     return textwrap.fill(output,40)
 
 def benchmark_simulation_block_moving(benchmark, moving_device_block):
-    benchmark(SimMan.runSimulation, SEND_INTERVAL * 100)
+
+    #tr.print_diff()
+
+    benchmark(SimMan.runSimulation, 1)
+    #SimMan.runSimulation(1)
+    #objgraph.show_refs(SimMan.env)
+    #objgraph.show_backrefs(random.choice(objgraph.by_type("Notifier")), extra_info=extrinfo)
+
+    #tr.print_diff()
+
+    #cb = refbrowser.ConsoleBrowser(SimMan.env, maxdepth=3, str_func=output_function)
+    #cb.print_tree()
