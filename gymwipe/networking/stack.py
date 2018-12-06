@@ -155,7 +155,7 @@ class SimplePhy(StackLayer):
         self._transmissionToReceivedPowerDict.pop(t)
         self._nReceivedPowerChanges.trigger(-receivedPower)
         # Unsubscribe from changes of attenuation for the transmission
-        callback = self._transmissionToAttenuationChangedCallbackDict[t]
+        callback = self._transmissionToAttenuationChangedCallbackDict.pop(t)
         self._getAttenuationModelByTransmission(t).nAttenuationChanges.unsubscribeCallback(callback)
     
     # SimPy generators
@@ -218,8 +218,6 @@ class SimplePhy(StackLayer):
 
                     if not t.completed:
                         # Update the bit error rate accordingly
-                        print(t.stopTime)
-                        print(SimMan.now)
                         updateBitErrorRate()
             
             self._nReceivedPowerChanges.subscribeCallback(onReceivedPowerChange)
