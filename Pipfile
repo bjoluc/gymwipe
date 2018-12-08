@@ -9,7 +9,7 @@ pytest-mock = "*"
 simpy = "*"
 scipy = "*"
 pytest = "*"
-pytest-benchmark = {extras = ["histogram"], version = "*"}
+pytest-benchmark = "*"
 
 [dev-packages]
 gymwipe = {editable = true, path = "."}

@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "0422206984fbe074e69a210a2cc77b3f550f9d5d2779a2d095dc2e327824b9de"
+            "sha256": "8331eb8ae9e273cdbf5dec44e3a98ff0f84da339e7fb9b53efa8406b2fbd97f3"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -125,20 +125,6 @@
             ],
             "version": "==4.0.0"
         },
-        "pygal": {
-            "hashes": [
-                "sha256:27abab93cbc31e21f3c6bdecc05bda6cd3570cbdbd8297b7caa6904051b50d72",
-                "sha256:9204f05380b02a8a32f9bf99d310b51aa2a932cba5b369f7a4dc3705f0a4ce83"
-            ],
-            "version": "==2.4.0"
-        },
-        "pygaljs": {
-            "hashes": [
-                "sha256:bd778749bc387a71520dde99f36a75ea776b3dcde5f3b59b4bd079c5723b1eb8",
-                "sha256:be757bc75f52b46669472f6cc7eac95935092495bef153b8810a46c0c59f88a1"
-            ],
-            "version": "==1.0.1"
-        },
         "pyglet": {
             "hashes": [
                 "sha256:8b07aea16f34ac861cffd06a0c17723ca944d172e577b57b21859b7990709a66",
@@ -155,9 +141,6 @@
             "version": "==4.0.1"
         },
         "pytest-benchmark": {
-            "extras": [
-                "histogram"
-            ],
             "hashes": [
                 "sha256:185526b10b7cf1804cb0f32ac0653561ef2f233c6e50a9b3d8066a9757e36480",
                 "sha256:3549545f1a051a789d956a4a9b176583cd6b847e621b788471e6c04b7d8d0e3c"
