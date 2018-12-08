@@ -34,15 +34,15 @@ class StackLayer(Module):
         super(StackLayer, self).__init__(name)
         self.device = device
     
-    def __str__(self):
-        return "{}.{}('{}')".format(self.device, self.__class__.__name__, self._name)
+    def __repr__(self):
+        return "{}.{}('{}')".format(repr(self.device), self.__class__.__name__, self._name)
 
 class SimplePhy(StackLayer):
     """
     A phy layer implementation that does not take propagation delays into
-    account. It provides a port called `mac` to be connected to the mac layer.
-    Slotted time is used, with the size of a time slot being defined by
-    :attr:`~gymwipe.simtools.SimulationManager.timeSlotSize`.
+    account. It provides a port called `mac` to be connected to a mac layer.
+    Slotted time is used, with the length of a time slot being defined by
+    :attr:`TIME_SLOT_LENGTH`.
     
     During simulation the frequency band is sensed and every successfully received
     packet is sent via the `mac` gate.
@@ -52,7 +52,7 @@ class SimplePhy(StackLayer):
 
     * :attr:`~gymwipe.networking.messages.StackMessages.SEND`
 
-        Send a specified packet via the frequency band.
+        Send a specified packet on the frequency band.
 
         :class:`~gymwipe.networking.messages.Message` args:
 
@@ -282,7 +282,7 @@ class SimpleMac(StackLayer):
         *   Time slots are grouped into frames.
         *   Every second frame is reserved for the RRM and has a fixed length
             (number of time slots).
-        *   The RRM uses those frames to send a short *announcement*,
+        *   The RRM uses those frames to send a short *announcement*
             containing a destination MAC address and the frame length (number of time slots
             **n**) of the following frame.
             By doing so it allows the specified device to use the frequency band for the

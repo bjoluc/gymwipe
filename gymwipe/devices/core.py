@@ -26,12 +26,13 @@ class Position:
         """
         self._x = float(x)
         self._y = float(y)
-        self.owner = owner
+        self._owner = owner
 
         self.nChange: Notifier = Notifier("changes", self)
         """
-        :class:`~gymwipe.simtools.Notifier`: A notifier that is triggered when one or both of :attr:`x`
-            and :attr:`y` is changed, providing the triggering position object.
+        :class:`~gymwipe.simtools.Notifier`: A notifier that is triggered when
+            one or both of :attr:`x` and :attr:`y` is changed, providing the
+            triggering position object.
         """
     
     def __eq__(self, p):
@@ -44,14 +45,14 @@ class Position:
 
         Note:
             When setting both :attr:`x` and :attr:`y`, please use
-            the :meth:`set` method.
+            the :meth:`set` method to trigger :attr:`nChange` only once.
         """
         return self._x
     
     @x.setter
     def x(self, x):
         if x != self._x:
-            logger.debug("%s: Changing x to %s", self, x)
+            logger.debug("Changing x to %s", x, sender=self)
             self._x = x
             self.nChange.trigger(self)
     
@@ -62,24 +63,24 @@ class Position:
 
         Note:
             When setting both :attr:`x` and :attr:`y`, please use
-            the :meth:`set` method.
+            the :meth:`set` method to trigger :attr:`nChange` only once.
         """
         return self._y
     
     @y.setter
     def y(self, y):
         if y != self._y:
-            logger.debug("%s: Changing y to %s", self, y)
+            logger.debug("Changing y to %s", y, sender=self)
             self._y = y
             self.nChange.trigger(self)
     
     def set(self, x: float, y:float):
         """
-        Sets both the x and the y value while triggering the
-        :attr:`nChange` notifier only once.
+        Sets the x and the y value triggering the :attr:`nChange` notifier only
+        once.
         """
         if x != self._x or y != self._y:
-            logger.debug("%s: Setting x, y = %s, %s", self, x, y)
+            logger.debug("Setting x, y = %s, %s", x, y, sender=self)
             self._x = x
             self._y = y
             self.nChange.trigger(self)
@@ -94,7 +95,7 @@ class Position:
         return sqrt((self.x - p.x)**2 + (self.y - p.y)**2)
     
     def __str__(self):
-        return "{}Position({},{})".format(ownerPrefix(self.owner), self.x, self.y)
+        return "{}Position({},{})".format(ownerPrefix(self._owner), self.x, self.y)
 
 class Device:
     """
@@ -108,18 +109,15 @@ class Device:
             xPos: The device's physical x position
             yPos: The device's physical y position
         """
-        self._name: str = name
+        self.name: str = name
+        """str: The device name (for debugging and plotting)"""
+
         self._position: Position = Position(xPos, yPos, self)
     
-    def __str__(self):
+    def __repr__(self):
         return "Device('{}')".format(self.name)
     
     @property
     def position(self):
         """:class:`Position`: The device's physical position"""
         return self._position
-    
-    @property
-    def name(self) -> str:
-        """str: The device name (for debugging and plotting)"""
-        return self._name

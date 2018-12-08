@@ -1,5 +1,5 @@
 """
-Physical layer related components
+Physical-layer-related components
 """
 import functools
 import logging
@@ -377,13 +377,13 @@ class PositionalAttenuationModel(AttenuationModel, ABC):
     def __init__(self, frequencyBandSpec: FrequencyBandSpec, deviceA: Device, deviceB: Device):
         super(PositionalAttenuationModel, self).__init__(frequencyBandSpec, deviceA, deviceB)
         
-        def positionChangedCallback(p: devices.Position):
+        for device in self.devices:
+            device.position.nChange.subscribeCallback(self._positionChangedCallback, additionalArgs=[device])
+    
+    def _positionChangedCallback(self, position: devices.Position, device: devices.Device):
             distance = self.devices[0].position.distanceTo(self.devices[1].position)
             if distance < self.STANDBY_THRESHOLD:
-                self._positionChanged(p.owner)
-
-        for device in self.devices:
-            device.position.nChange.subscribeCallback(positionChangedCallback)
+                self._positionChanged(device)
     
     @abstractmethod
     def _positionChanged(self, device: Device):

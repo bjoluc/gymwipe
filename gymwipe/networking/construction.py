@@ -10,6 +10,7 @@ from typing import Any, Callable, Dict, Tuple, Union
 from simpy.events import Event
 
 from gymwipe.simtools import Notifier, SimMan, SimTimePrepender, ensureType
+from gymwipe.utility import ownerPrefix
 
 logger = SimTimePrepender(logging.getLogger(__name__))
 
@@ -20,8 +21,9 @@ class Gate:
 
     """
 
-    def __init__(self, name: str = None, buffered: bool = True):
+    def __init__(self, name: str = None, owner = None):
         self._name = name
+        self._owner = owner
         self._onSendCallables = set()
 
         # Notifiers
@@ -31,8 +33,8 @@ class Gate:
         :meth:`send` is called, providing the value passed to :meth:`send`
         """
 
-    def __str__(self):
-        return "Gate('{}')".format(self._name)
+    def __repr__(self):
+        return "{}Gate('{}')".format(ownerPrefix(self._owner), self._name)
 
     def addCallback(self, callback: Callable[[Any], None]) -> None:
         """
@@ -62,7 +64,7 @@ class Gate:
         Sends the object provided to all connected ports and registered callback
         functions (if any).
         """
-        logger.debug("%s received message %s", self, object)
+        logger.debug("Received object: %s", object, sender=self)
         for send in self._onSendCallables:
             send(object)
         self.nReceives.trigger(object)
@@ -75,7 +77,7 @@ class Port:
 
     """
 
-    def __init__(self, name: str, inputCallback: Callable[[Any], None] = None):
+    def __init__(self, name: str, inputCallback: Callable[[Any], None] = None, owner = None):
         """
         Args:
             inputCallback: A callback function that will be invoked when an object
@@ -83,13 +85,14 @@ class Port:
         """
         
         self._name = name
-        self.input: Gate = Gate(name + ".input")
-        if callable(inputCallback):
+        self._owner = owner
+        self.input: Gate = Gate("in", owner=self)
+        if inputCallback is not None:
             self.input.addCallback(inputCallback)
-        self.output: Gate = Gate(name + ".output")
-    
-    def __str__(self):
-        return "Port('{}')".format(self._name)
+        self.output: Gate = Gate("out", owner=self)
+
+    def __repr__(self):
+        return "{}Port('{}')".format(ownerPrefix(self._owner), self._name)
 
     # Connecting Ports
 
@@ -170,13 +173,14 @@ class Module:
         subModules(Dict[str, Module]): The Module's nested Modules
     """
 
-    def __init__(self, name: str):
+    def __init__(self, name: str, owner = None):
         self._name = name
+        self._owner = owner
         self.ports: Dict[str, Port]  = {}
         self.subModules: Dict[str, Module] = {}
     
-    def __str__(self):
-        return "{} '{}'".format(self.__class__.__name__, self._name)
+    def __repr__(self):
+        return "{}{}('{}')".format(ownerPrefix(self._owner), self.__class__.__name__, self._name)
     
     def _addPort(self, name: str, port: Port = None) -> None:
         """
@@ -192,7 +196,7 @@ class Module:
         if name in self.ports:
             raise ValueError("A port indexed by '{}' already exists.".format(name))
         if port is None:
-            port = Port("({}).{}".format(self, name))
+            port = Port(name, owner=self)
         self.ports[name] = port
     
     def _addSubModule(self, name: str, module: 'Module') -> None:
