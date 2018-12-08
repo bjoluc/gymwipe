@@ -53,5 +53,5 @@ The pytest testsuite can be executed via ```make test```.
 ### Further steps
 
 Yet, this project is missing usage examples and tutorials.
-For now, you can have a look at the API documentation at [](https://gymwipe.read-the-docs-io).
+For now, you can have a look at the API documentation at https://gymwipe.read-the-docs-io.
 
