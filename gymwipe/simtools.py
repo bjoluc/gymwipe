@@ -5,12 +5,12 @@ import itertools
 import logging
 from collections import defaultdict, deque
 from numbers import Number
-from typing import (Any, Callable, DefaultDict, Dict, Generator, Set, Tuple,
-                    Union)
+from typing import (Any, Callable, DefaultDict, Dict, Generator, List, Set,
+                    Tuple, Union)
 
 from simpy import Environment
-from simpy.rt import RealtimeEnvironment
 from simpy.events import Event, Process
+from simpy.rt import RealtimeEnvironment
 
 from gymwipe.utility import ownerPrefix
 
@@ -54,15 +54,15 @@ class SimulationManager:
             self.initEnvironment()
         return self._env
 
-    def process(self, process: Generator[Event, None, None]) -> Process:
+    def process(self, generator: Generator[Event, None, None]) -> Process:
         """
-        Registers a SimPy process (generator yielding SimPy events) at the SimPy
-        environment and returns it.
+        Registers a SimPy process generator (a generator yielding SimPy events)
+        at the SimPy environment and returns it.
 
         Args:
-            process: The generator function to be registered as a process
+            process: The generator to be registered as a process
         """
-        return self.env.process(process)
+        return self.env.process(generator)
 
     def event(self):
         """
@@ -253,19 +253,20 @@ class Notifier:
             owner: The object that provides the :class:`Notifier` instance
         """
         self._name = name
-        self.owner = owner
+        self._owner = owner
         self._event = None
 
         # Callbacks
         # A priority -> Set[Callable] defaultdict for callbacks:
-        self._priorityToCallbacksDict: DefaultDict[int, Set[Callable[[Any], None]]] = defaultdict(set)
-        self._callbackToPriorityDict: Dict[Callable[[Any], None], int] = {}
+        self._priorityToCallbacks: DefaultDict[int, Set[Callable[[Any], None]]] = defaultdict(set)
+        self._callbackToPriority: Dict[Callable[[Any], None], int] = {}
+        self._callbackToAdditionalArgs: Dict[Callable[[Any], None], Any] = {}
         self._sortedCallbacks = [] # List of callbacks sorted by their priority
 
         # SimPy generators
         self._processExecutors = {}
-    
-    def subscribeCallback(self, callback: Callable[[Any], None], priority: int = 0) -> None:
+
+    def subscribeCallback(self, callback: Callable[[Any], None], priority: int = 0, additionalArgs: List[Any] = None) -> None:
         """
         Adds the passed callable to the set of callback functions. Thus, when
         the :class:`Notifier` gets triggered, the callable will be invoked
@@ -280,16 +281,19 @@ class Notifier:
                 after every callback with a higher priority value has been executed.
                 Callbacks added without a priority value are assumed to have
                 priority `0`.
+            additionalArgs: A list of arguments that are passed as further
+                arguments when the callback function is invoked
         """
         # Every callback is only allowed to be added once
-        assert callback not in self._callbackToPriorityDict
+        assert callback not in self._callbackToPriority
+        assert callback not in self._callbackToAdditionalArgs
 
-        self._callbackToPriorityDict[callback] = priority
+        self._callbackToPriority[callback] = priority
+        if additionalArgs is not None:
+            self._callbackToAdditionalArgs[callback] = additionalArgs
 
         # Add the callback to the set belonging to its priority
-        priorityCallbacks = self._priorityToCallbacksDict[priority]
-        priorityCallbacks.add(callback)
-
+        self._priorityToCallbacks[priority].add(callback)
         self._updateSortedCallbacks()
     
     def unsubscribeCallback(self, callback: Callable[[Any], None]):
@@ -300,19 +304,24 @@ class Notifier:
         Args:
             callback: The callable to be removed
         """
-        if callback in self._callbackToPriorityDict:
-            priority = self._callbackToPriorityDict.pop(callback)
-            self._priorityToCallbacksDict[priority].remove(callback)
+        # The given callback has to be subscribed
+        assert callback in self._callbackToPriority
+
+        priority = self._callbackToPriority.pop(callback)
+        self._priorityToCallbacks[priority].remove(callback)
         self._updateSortedCallbacks()
+
+        if callback in self._callbackToAdditionalArgs:
+            self._callbackToAdditionalArgs.pop(callback)
     
     def _updateSortedCallbacks(self):
         """
         Rebuilds the sortedCallbacks list
         """
-        sortedPriorities = sorted(self._priorityToCallbacksDict.keys(), reverse=True)
+        sortedPriorities = sorted(self._priorityToCallbacks.keys(), reverse=True)
         self._sortedCallbacks = list(
             itertools.chain(
-                *[self._priorityToCallbacksDict[p] for p in sortedPriorities]
+                *[self._priorityToCallbacks[p] for p in sortedPriorities]
             )
         )
 
@@ -395,8 +404,13 @@ class Notifier:
         generators.
         """
         logger.debug("Triggered with value %s", value, sender=self)
-        for c in self._sortedCallbacks:
-            c(value)
+        for callback in self._sortedCallbacks:
+            if callback in self._callbackToAdditionalArgs:
+                args = self._callbackToAdditionalArgs[callback]
+                callback(value, *args)
+            else:
+                callback(value)
+            
         for executor in self._processExecutors.values():
             executor(value)
         if self._event is not None:
@@ -421,4 +435,4 @@ class Notifier:
         return self._name
     
     def __str__(self):
-        return "{}Notifier('{}')".format(ownerPrefix(self.owner), self.name)
+        return "{}Notifier('{}')".format(ownerPrefix(self._owner), self.name)
