@@ -24,7 +24,6 @@ class Gate:
     def __init__(self, name: str = None, owner = None):
         self._name = name
         self._owner = owner
-        self._onSendCallables = set()
 
         # Notifiers
         self.nReceives: Notifier = Notifier('Receives', self)
@@ -42,7 +41,7 @@ class Gate:
             callback: A callback function that will be invoked whenever
                 :meth:`send` is called, providing the object passed to :meth:`send`
         """
-        self._onSendCallables.add(callback)
+        self.nReceives.subscribeCallback(callback)
     
     # connecting Gates with each other
 
@@ -65,8 +64,6 @@ class Gate:
         functions (if any).
         """
         logger.debug("Received object: %s", object, sender=self)
-        for send in self._onSendCallables:
-            send(object)
         self.nReceives.trigger(object)
 
 

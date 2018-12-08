@@ -4,35 +4,30 @@ from gymwipe.networking.construction import Gate, Port, Module, PortListener
 from gymwipe.simtools import SimMan
 
 # Note: When mocking member functions of a class:
-# Disable pylint warnings due to dynamically added member functions (assert_called_with) by # pylint: disable=E1101
+# Disable pylint warnings due to dynamically added member functions
+# (assert_called_with) by # pylint: disable=E1101
 
 def test_ports(mocker):
     # Create mocking functions for message transfer testing
-    g1_receive = mocker.Mock()
-    g2_receive = mocker.Mock()
+    p1_receive = mocker.Mock()
+    p2_receive = mocker.Mock()
 
-    # Create two gates and connect them bidirectionally
-    g1 = Port("g1", g1_receive)
-    assert g1.input._onSendCallables == {g1_receive}
+    # Create two ports and connect them bidirectionally
+    p1 = Port("1", p1_receive)
+    p2 = Port("2", p2_receive)
 
-    g2 = Port("g2", g2_receive)
-    assert g2.input._onSendCallables == {g2_receive}
-
-    g1.connectOutputTo(g2.input)
-    assert g1.output._onSendCallables == {g2.input.send}
-
-    g2.connectOutputTo(g1.input)
-    assert g2.output._onSendCallables == {g1.input.send}
+    p1.connectOutputTo(p2.input)
+    p2.connectOutputTo(p1.input)
 
     # Test message sending
     msg1 = 'test message 1'
     msg2 = 'test message 2'
 
-    g1.output.send(msg1)
-    g2_receive.assert_called_with(msg1)
+    p1.output.send(msg1)
+    p2_receive.assert_called_with(msg1)
 
-    g2.output.send(msg2)
-    g1_receive.assert_called_with(msg2)
+    p2.output.send(msg2)
+    p1_receive.assert_called_with(msg2)
 
 def test_module_functions():
     m = Module('test module')
