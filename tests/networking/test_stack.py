@@ -42,7 +42,7 @@ class CollectorPort(Port):
 @pytest.fixture
 def simple_phy():
     # initialize SimPy environment
-    SimMan.initEnvironment()
+    SimMan.init()
 
     # create a wireless frequency band with FSPL attenuation
     frequencyBand = FrequencyBand([FsplAttenuation])

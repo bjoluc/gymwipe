@@ -57,7 +57,7 @@ def device_grid(request):
     Tests using this fixture will be run with every specified parameter.
     """
     n = request.param # number of devices to be created
-    SimMan.initEnvironment()
+    SimMan.init()
     frequencyBand = FrequencyBand([FsplAttenuation])
 
     devices = []

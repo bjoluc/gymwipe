@@ -28,6 +28,19 @@ class SimulationManager:
     def __init__(self):
         self._env = None
     
+    @property
+    def env(self):
+        """
+        The SimPy :class:`~simpy.core.Environment` object belonging to the
+        current simulation
+        """
+        return self._env
+    
+    @env.setter
+    def env(self, environment):
+        logger.debug("SimulationManager: Setting environment")
+        self.env = environment
+    
     def nextTimeSlot(self, timeSlotLength: float) -> Event:
         """
         Returns a SimPy timeout event that is scheduled for the beginning of the
@@ -43,16 +56,6 @@ class SimulationManager:
     def now(self):
         """int: The current simulation time step"""
         return self.env.now
-    
-    @property
-    def env(self):
-        """
-        simpy.core.Environment: The SimPy :class:`~simpy.core.Environment`
-        object belonging to the current simulation
-        """
-        if self._env is None:
-            self.initEnvironment()
-        return self._env
 
     def process(self, generator: Generator[Event, None, None]) -> Process:
         """
@@ -84,22 +87,12 @@ class SimulationManager:
             until = self.now + until
         self.env.run(until)
     
-    def initEnvironment(self) -> None:
+    def init(self) -> None:
         """
         Creates a new :class:`~simpy.core.Environment`.
         """
-        self.setEnvironment()
-    
-    def setEnvironment(self, environment: Environment = None):
-        """
-        Sets the wrapped SimPy environment. If no environment instance is
-        provided, a new :class:`simpy.core.Environment` will be created.
-        """
-        if environment is None:
-            self._env = Environment()
-        else:
-            self._env = environment
-        logger.debug("SimulationManager: Environment was set")
+        logger.debug("SimulationManager: Initializing environment")
+        self._env = Environment()
     
     def timeout(self, duration: float, value: Any = None) -> Event:
         """
@@ -109,11 +102,12 @@ class SimulationManager:
     
     def timeoutUntil(self, triggerTime: float, value: Any = None) -> Event:
         """
-        Returns a SimPy :class:`~simpy.events.EventEvent` that succeeds at the simulated
-        time specified by `triggerTime`.
+        Returns a SimPy :class:`~simpy.events.EventEvent` that succeeds at the
+        simulated time specified by `triggerTime`.
 
-        Args: triggerTime: When to trigger the :class:`~simpy.events.Event` value: The
-            value to call :meth:`~simpy.events.Event.succeed` with
+        Args:
+            triggerTime: When to trigger the :class:`~simpy.events.Event`
+            value: The value to call :meth:`~simpy.events.Event.succeed` with
         """
         now = self.now
         if triggerTime > now:
@@ -123,9 +117,9 @@ class SimulationManager:
     
     def triggerAfterTimeout(self, event: Event, timeout: float, value: Any = None) -> None:
         """
-        Calls :meth:`~simpy.events.Event.succeed` on the `event` after the simulated
-        time specified in `timeout` has passed. If the event has already been
-        triggered by then, no action is taken.
+        Calls :meth:`~simpy.events.Event.succeed` on the `event` after the
+        simulated time specified in `timeout` has passed. If the event has
+        already been triggered by then, no action is taken.
         """
         def callback(caller):
             if not event.triggered:

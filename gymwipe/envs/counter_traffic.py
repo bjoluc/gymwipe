@@ -120,7 +120,7 @@ class CounterTrafficEnv(BaseEnv):
         # summed up with the COUNTER_BOUND will be the observation.
         self.observation_space = spaces.Discrete(2 * CounterTrafficEnv.COUNTER_BOUND)
 
-        SimMan.initEnvironment()
+        SimMan.init()
 
         self.senders: List[self.SenderDevice] = [
             CounterTrafficEnv.SenderDevice("Sender 1", 0, 2, self.frequencyBand, 1),

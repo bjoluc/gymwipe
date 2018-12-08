@@ -57,7 +57,7 @@ def test_module_simulation(caplog):
     #      <----------------->
 
     caplog.set_level(logging.DEBUG, logger='gymwipe.networking.construction')
-    SimMan.initEnvironment()
+    SimMan.init()
 
     class TestModule(Module):
         def __init__(self, name):
@@ -156,7 +156,7 @@ def test_gate_listener_method(caplog):
 
 def test_gate_listener_generator(caplog):
     caplog.set_level(logging.DEBUG, logger='gymwipe.networking.construction')
-    SimMan.initEnvironment()
+    SimMan.init()
 
     # Checking side effects by using two identical modules again
     modules = MyModule("Test1"), MyModule("Test2")
