@@ -6,9 +6,9 @@ test:
 
 benchmark:
 	pipenv run py.test -v --benchmark-only \
-		--benchmark-min-rounds=1 \
+		--benchmark-min-rounds=5 \
 		--benchmark-sort=min \
-		--benchmark-json=benchmark_grid_mobile_10s.json
+		--benchmark-json=benchmark_results.json
 
 docs:
 	pipenv run sphinx-apidoc --force --separate -o docs/api gymwipe gymwipe/test gymwipe/*/test
