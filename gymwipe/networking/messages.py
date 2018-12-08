@@ -252,8 +252,8 @@ class Message:
         """
         self.eProcessed.succeed(returnValue)
     
-    def __str__(self):
-        return "Signal('{}', args: {})".format(self.type.name, self.args)
+    def __repr__(self):
+        return "Message(type: '{}', args: {})".format(self.type.name, self.args)
 
 class StackMessages(Enum):
     """

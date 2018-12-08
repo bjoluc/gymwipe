@@ -94,7 +94,7 @@ class Position:
         """
         return sqrt((self.x - p.x)**2 + (self.y - p.y)**2)
     
-    def __str__(self):
+    def __repr__(self):
         return "{}Position({},{})".format(ownerPrefix(self._owner), self.x, self.y)
 
 class Device:

@@ -278,7 +278,7 @@ class Transmission:
         :attr:`stopTime`, providing the transmission object as the value.
         """
         
-    def __str__(self):
+    def __repr__(self):
         return "Transmission(sender: {}, power: {} dBm, duration: {} s)".format(self.sender, self.power, self.duration)
 
     @property
@@ -348,7 +348,7 @@ class AttenuationModel():
         the attenuation value changes, providing the new attenuation value.
         """
     
-    def __str__(self):
+    def __repr__(self):
         return "{}({}, {})".format(self.__class__.__name__, *self.devices)
     
     def _setAttenuation(self, newAttenuation: float):

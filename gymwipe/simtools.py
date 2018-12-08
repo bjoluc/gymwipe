@@ -428,5 +428,5 @@ class Notifier:
         """
         return self._name
     
-    def __str__(self):
+    def __repr__(self):
         return "{}Notifier('{}')".format(ownerPrefix(self._owner), self.name)
