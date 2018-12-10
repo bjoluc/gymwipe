@@ -177,7 +177,7 @@ man_pages = [
 #  dir menu entry, description, category)
 texinfo_documents = [
     (master_doc, 'gymwipe', 'Gym-WiPE Documentation',
-     author, 'Gym-WiPE', 'An OpenAI Gym environment for frequency band assignment in the simulation of wireless networked feedback control loops',
+     author, 'Gym-WiPE', 'An OpenAI Gym environment for frequency band assignments in the simulation of wireless networked feedback control loops',
      'Miscellaneous'),
 ]
 

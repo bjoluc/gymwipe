@@ -4,7 +4,7 @@
 from typing import Any, Dict, Tuple
 
 from gymwipe.devices import Device
-from gymwipe.networking.messages import (Packet, Message, SimpleTransportHeader,
+from gymwipe.networking.messages import (Packet, Message, SimpleNetworkHeader,
                                          StackMessages, Transmittable)
 from gymwipe.networking.physical import FrequencyBand
 from gymwipe.networking.stack import SimpleMac, SimplePhy, SimpleRrmMac
@@ -82,7 +82,7 @@ class SimpleNetworkDevice(NetworkDevice):
             self._receiving = receiving
 
     def send(self, data: Transmittable, destinationMacAddr: bytes):
-        p = Packet(SimpleTransportHeader(self.mac, destinationMacAddr), data)
+        p = Packet(SimpleNetworkHeader(self.mac, destinationMacAddr), data)
         self._mac.ports["transport"].send(p)
 
     def _receiver(self):

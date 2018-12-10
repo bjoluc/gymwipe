@@ -10,7 +10,7 @@ from gymwipe.networking.attenuation_models import FsplAttenuation
 from gymwipe.networking.construction import Port
 from gymwipe.networking.messages import (FakeTransmittable, Message, Packet,
                                          SimpleMacHeader,
-                                         SimpleTransportHeader, StackMessages,
+                                         SimpleNetworkHeader, StackMessages,
                                          Transmittable)
 from gymwipe.networking.physical import BpskMcs, FrequencyBand
 from gymwipe.networking.stack import (TIME_SLOT_LENGTH, SimpleMac, SimplePhy,
@@ -173,7 +173,7 @@ def do_not_test_simple_mac_then(caplog, simple_mac):
     def sender(fromMacLayer: SimpleMac, toMacLayer: SimpleMac, payloads: Iterable):
         # send a bunch of packets from `fromMacLayer` to `toMacLayer`
         for p in payloads:
-            packet = Packet(SimpleTransportHeader(fromMacLayer.addr, toMacLayer.addr), p)
+            packet = Packet(SimpleNetworkHeader(fromMacLayer.addr, toMacLayer.addr), p)
             fromMacLayer.ports["transport"].send(packet)
             yield SimMan.timeout(1e-4)
 

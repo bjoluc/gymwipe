@@ -323,7 +323,7 @@ class SimpleMac(StackLayer):
 
         * :attr:`~gymwipe.networking.messages.Packet`
 
-            Send a given packet (with a :attr:`~gymwipe.networking.messages.SimpleTransportHeader`) to the MAC address defined in the header.
+            Send a given packet (with a :attr:`~gymwipe.networking.messages.SimpleNetworkHeader`) to the MAC address defined in the header.
 
     The `phy` port accepts objects of the following types:
 

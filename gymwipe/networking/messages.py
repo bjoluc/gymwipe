@@ -11,7 +11,7 @@ The following classes are used for transmission simulation:
     ~gymwipe.networking.messages.IntTransmittable
     ~gymwipe.networking.messages.Packet
     ~gymwipe.networking.messages.SimpleMacHeader
-    ~gymwipe.networking.messages.SimpleTransportHeader
+    ~gymwipe.networking.messages.SimpleNetworkHeader
 
 The following classes are used for inter-module communication:
 
@@ -183,13 +183,13 @@ class SimpleMacHeader(Transmittable):
     def byteSize(self):
         return 13
 
-class SimpleTransportHeader(Transmittable):
+class SimpleNetworkHeader(Transmittable):
     """
-    Since IP is not implemented in gymwipe, there is a need for some interim way
-    to specify source and destination addresses in packets that are passed to
-    the :class:`SimpleMAC` layer. Therefore, a :class:`SimpleTransportHeader`
-    holds a source and a destination MAC address. The destination address will
-    be used by the :class:`SimpleMAC` layer.
+    Since no network protocol is implemented in gymwipe, there is a need for
+    some interim way to specify source and destination addresses in packets that
+    are passed to the :class:`SimpleMAC` layer. Therefore, a
+    :class:`SimpleNetworkHeader` holds a source and a destination MAC address.
+    The destination address is used by the :class:`SimpleMAC` layer.
 
     Attributes:
         sourceMAC(bytes): The 6-byte-long source MAC address
@@ -205,7 +205,7 @@ class SimpleTransportHeader(Transmittable):
         self.destMAC = destMAC
 
     def __str__(self):
-        return "(SimpleTransportHeader: source: {}, dest: {})".format(self.sourceMAC, self.destMAC)
+        return "(SimpleNetworkHeader: source: {}, dest: {})".format(self.sourceMAC, self.destMAC)
 
     def byteSize(self):
         return 12
