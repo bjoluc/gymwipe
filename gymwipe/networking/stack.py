@@ -35,7 +35,7 @@ class StackLayer(Module):
         self.device = device
     
     def __repr__(self):
-        return "{}.{}('{}')".format(repr(self.device), self.__class__.__name__, self._name)
+        return "{}.{}('{}')".format(repr(self.device), self.__class__.__name__, self.name)
 
 class SimplePhy(StackLayer):
     """

@@ -6,12 +6,14 @@ from pytest_mock import mocker
 
 from gymwipe.simtools import Notifier, SimMan
 
+from .fixtures import simman
+
 
 def getMockList(mocker, length: int):
     """ Returns a list of Mock callables """
     return [mocker.Mock() for _ in range(length)]
 
-def test_notifier_callback(caplog, mocker):
+def test_notifier_callback(caplog, mocker, simman):
     caplog.set_level(logging.DEBUG, logger='gymwipe.simtools')
 
     n = Notifier('myNotifier')
@@ -55,7 +57,7 @@ def makeLoggingProcess(timeoutLength: int):
     loggingProcess.instanceCounter = 0
     return loggingProcess
 
-def test_notifier_simpy(caplog):
+def test_notifier_simpy(caplog, simman):
     caplog.set_level(logging.DEBUG, logger='gymwipe.simtools')
 
     n = Notifier("notifier")

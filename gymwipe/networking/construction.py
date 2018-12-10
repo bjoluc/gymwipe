@@ -19,10 +19,12 @@ class Gate:
     Todo:
         * documentation
 
+    Attributes:
+        name(str): The Gate's name
     """
 
     def __init__(self, name: str = None, owner = None):
-        self._name = name
+        self.name = name
         self._owner = owner
 
         # Notifiers
@@ -33,7 +35,7 @@ class Gate:
         """
 
     def __repr__(self):
-        return "{}Gate('{}')".format(ownerPrefix(self._owner), self._name)
+        return "{}Gate('{}')".format(ownerPrefix(self._owner), self.name)
 
     def addCallback(self, callback: Callable[[Any], None]) -> None:
         """
@@ -72,6 +74,8 @@ class Port:
     Todo:
         * documentation
 
+    Attributes:
+        name(str): The Port's name
     """
 
     def __init__(self, name: str, inputCallback: Callable[[Any], None] = None, owner = None):
@@ -81,7 +85,7 @@ class Port:
                 is sent to the :attr:`input` Gate.
         """
         
-        self._name = name
+        self.name = name
         self._owner = owner
         self.input: Gate = Gate("in", owner=self)
         if inputCallback is not None:
@@ -89,7 +93,7 @@ class Port:
         self.output: Gate = Gate("out", owner=self)
 
     def __repr__(self):
-        return "{}Port('{}')".format(ownerPrefix(self._owner), self._name)
+        return "{}Port('{}')".format(ownerPrefix(self._owner), self.name)
 
     # Connecting Ports
 
@@ -166,45 +170,62 @@ class Port:
 class Module:
     """
     Attributes:
-        gates(Dict[str, Port]): The Module's outer Ports
+        name(str): The Module's name
+        ports(Dict[str, Port]): The Module's outer Ports
+        gates(Dict[str, Port]): The Module's outer Gates
         subModules(Dict[str, Module]): The Module's nested Modules
     """
 
     def __init__(self, name: str, owner = None):
-        self._name = name
+        self.name = name
         self._owner = owner
+
         self.ports: Dict[str, Port]  = {}
+        self.gates: Dict[str, Gate] = {}
         self.subModules: Dict[str, Module] = {}
     
     def __repr__(self):
-        return "{}{}('{}')".format(ownerPrefix(self._owner), self.__class__.__name__, self._name)
+        return "{}{}('{}')".format(ownerPrefix(self._owner), self.__class__.__name__, self.name)
     
-    def _addPort(self, name: str, port: Port = None) -> None:
+    def _addPort(self, name: str) -> None:
         """
-        Adds a new :class:`Port` to the :attr:`gates` dictionary, indexed by the name
-        passed.
-        
+        Adds a new :class:`Port` to the :attr:`ports` dictionary, indexed by the
+        name passed. Since a :class:`Port` holds two :class:`Gate` objects, a
+        call of this method also adds two entries to the :attr:`gates`
+        dictionary, namely "`name`In" and "`name`Out".
+
         Args:
-            name: The name for the :class:`Port` to be accessed by
-            po_rt: The :class:`Port` object to be added. If not provided, a new
-                :class:`Port` will be instantiated using a combination of the
-                Module's name property and `name` as its name.
+            name: The name for the :class:`Port` to be indexed with
         """
         if name in self.ports:
             raise ValueError("A port indexed by '{}' already exists.".format(name))
-        if port is None:
-            port = Port(name, owner=self)
+        port = Port(name, owner=self)
         self.ports[name] = port
+        self.gates[name + "In"] = port.input
+        self.gates[name + "Out"] = port.output
+    
+    def _addGate(self, name: str) -> None:
+        """
+        Adds a new :class:`Gate` to the :attr:`gates` dictionary, indexed by the
+        name passed.
+
+        Note:
+            
+            Single :class:`Gate` objects are only needed for unidirectional
+            connections. Bidirectional connections can rely on :class:`Port`
+            objects.
+        
+        Args:
+            name: The name for the :class:`Gate` to be indexed with
+        """
+        if name in self.gates:
+            raise ValueError("A gate indexed by '{}' already exists.".format(name))
+        self.gates[name] = Gate(name, owner=self)
     
     def _addSubModule(self, name: str, module: 'Module') -> None:
         if name in self.subModules:
-            raise ValueError("A sub module named '%s' already exists." % str)
+            raise ValueError("A sub module named '{}' already exists.".format(name))
         self.subModules[name] = module
-    
-    @property
-    def name(self):
-        """str: The Module's name"""
-        return self._name
 
 class PortListener:
     """
@@ -229,14 +250,14 @@ class PortListener:
                 yield SimMan.timeout(1)
     """
 
-    def __init__(self, gateName: str, validTypes: Union[type, Tuple[type]]=None, blocking=True, queued=False):
+    def __init__(self, portName: str, validTypes: Union[type, Tuple[type]]=None, blocking=True, queued=False):
         """
         Args:
-            gateName: The index of the module's :class:`Port` to listen on
+            portName: The index of the module's :class:`Port` to listen on
             validTypes: If this argument is provided, a :class:`TypeError` will
                 be raised when an object received via the specified :class:`Port` is
                 not of the :class:`type` / one of the types specified.
-            blocking: Set this to false if you decorate a SimPy generator and
+            blocking: Set this to false if you decorate a SimPy process and
                 want it to be processed for each received object, regardless of
                 whether an instance of the generator is still being processed or
                 not. By default, only one instance of the decorated generator method
@@ -250,7 +271,7 @@ class PortListener:
                 received at the same simulated time, while still only having one
                 generator processed at a time.
         """
-        self._portName = gateName
+        self._portName = portName
         self._validTypes = validTypes
         self._blocking = blocking
         self._queued = queued

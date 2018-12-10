@@ -33,19 +33,27 @@ def test_module_functions():
     m = Module('test module')
     assert m.name == 'test module'
 
-    g1, g2 = (Port("g1"), Port("g2"))
-    m._addPort('gate 1', g1)
-    m._addPort('gate 2', g2)
-    assert m.ports['gate 1'] == g1
-    assert m.ports['gate 2'] == g2
-    assert m.ports == {'gate 1': g1, 'gate 2': g2}
+    m._addPort('port1')
+    m._addPort('port2')
+    assert m.ports['port1'].name == 'port1'
+    assert m.ports['port2'].name == 'port2'
+    assert m.gates['port1In'] is m.ports['port1'].input
+    assert m.gates['port1Out'] is m.ports['port1'].output
+    assert m.gates['port2In'] is m.ports['port2'].input
+    assert m.gates['port2Out'] is m.ports['port2'].output
 
-    m1, m2 = (Module('module 1'), Module('module 2'))
-    m._addSubModule('sub module 1', m1)
-    m._addSubModule('sub module 2', m2)
-    assert m.subModules['sub module 1'] == m1
-    assert m.subModules['sub module 2'] == m2
-    assert m.subModules == {'sub module 1': m1, 'sub module 2': m2}
+    m._addGate('gate1')
+    m._addGate('gate2')
+    assert m.gates['gate1'].name == 'gate1'
+    assert m.gates['gate2'].name == 'gate2'
+
+    m1 = Module('module1')
+    m2 = Module('module2')
+    m._addSubModule('sub1', m1)
+    m._addSubModule('sub2', m2)
+    assert m.subModules['sub1'] is m1
+    assert m.subModules['sub2'] is m2
+    assert m.subModules == {'sub1': m1, 'sub2': m2}
 
 def test_module_simulation(caplog):
     # Connect two modules in a bidirectional cycle and let them pass around a message object in both directions
