@@ -34,6 +34,12 @@ class Gate:
         :meth:`send` is called, providing the value passed to :meth:`send`
         """
 
+        self.nConnectsTo: Notifier = Notifier('Connects to', self)
+        """
+        :class:`~gymwipe.simtools.Notifier`: A notifier that is triggered when
+        :meth:`connectTo` is called, providing the gate passed to :meth:`connectTo`
+        """
+
     def __repr__(self):
         return "{}Gate('{}')".format(ownerPrefix(self._owner), self.name)
 
@@ -57,6 +63,7 @@ class Gate:
             gate: The :class:`Gate` for the connection to be established to
         """
         self.addCallback(gate.send)
+        self.nConnectsTo.trigger(gate)
 
     # sending objects
 
