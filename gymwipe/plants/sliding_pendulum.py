@@ -3,7 +3,7 @@ from pygame import Surface
 
 import ode
 from gymwipe.networking.devices import SimpleNetworkDevice
-from gymwipe.networking.messages import Transmittable, Packet
+from gymwipe.networking.messages import Packet, Transmittable
 from gymwipe.networking.physical import FrequencyBand
 from gymwipe.plants.core import OdePlant
 from gymwipe.simtools import SimMan

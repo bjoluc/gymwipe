@@ -9,9 +9,8 @@ from gymwipe.devices import Device
 from gymwipe.networking.attenuation_models import FsplAttenuation
 from gymwipe.networking.construction import Port
 from gymwipe.networking.messages import (FakeTransmittable, Message, Packet,
-                                         SimpleMacHeader,
-                                         SimpleNetworkHeader, StackMessages,
-                                         Transmittable)
+                                         SimpleMacHeader, SimpleNetworkHeader,
+                                         StackMessages, Transmittable)
 from gymwipe.networking.physical import BpskMcs, FrequencyBand
 from gymwipe.networking.stack import (TIME_SLOT_LENGTH, SimpleMac, SimplePhy,
                                       SimpleRrmMac)

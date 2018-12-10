@@ -2,6 +2,7 @@ import pytest
 
 from gymwipe.networking.messages import Packet, Transmittable
 
+
 def test_packets():
     header = Transmittable("header")
     payload = Transmittable("payload")

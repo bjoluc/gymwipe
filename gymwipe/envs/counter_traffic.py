@@ -12,8 +12,8 @@ from gym.utils import seeding
 from gymwipe.envs.core import BaseEnv, Interpreter
 from gymwipe.networking.attenuation_models import FsplAttenuation
 from gymwipe.networking.devices import SimpleNetworkDevice, SimpleRrmDevice
-from gymwipe.networking.messages import (FakeTransmittable, Transmittable,
-                                         Packet, Transmittable)
+from gymwipe.networking.messages import (FakeTransmittable, Packet,
+                                         Transmittable)
 from gymwipe.networking.physical import FrequencyBand
 from gymwipe.simtools import SimMan
 
