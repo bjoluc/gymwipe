@@ -241,10 +241,10 @@ class Transmission:
         self.startTime: float = startTime
         """float: The simulated time at which the transmission started"""
 
-        self.headerDuration = packet.header.bitSize() / mcsHeader.dataRate
+        self.headerDuration = packet.header.bitSize / mcsHeader.dataRate
         """float: The time in seconds taken by the transmission of the packet's header"""
 
-        self.payloadDuration = packet.payload.bitSize() / mcsPayload.dataRate
+        self.payloadDuration = packet.payload.bitSize / mcsPayload.dataRate
         """float: The time in seconds taken by the transmission of the packet's payload"""
 
         self.duration = self.headerDuration + self.payloadDuration
@@ -256,10 +256,10 @@ class Transmission:
         completed
         """
 
-        self.headerBits = packet.header.bitSize() * float(2 - mcsHeader.codeRate)
+        self.headerBits = packet.header.bitSize * float(2 - mcsHeader.codeRate)
         """Transmitted bits for the packet's header (including coding overhead)"""
 
-        self.payloadBits = packet.payload.bitSize() * float(2 - mcsPayload.codeRate)
+        self.payloadBits = packet.payload.bitSize * float(2 - mcsPayload.codeRate)
         """Transmitted bits for the packet's payload (including coding overhead)"""
 
         # SimPy events

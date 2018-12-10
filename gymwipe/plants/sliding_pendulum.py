@@ -3,7 +3,7 @@ from pygame import Surface
 
 import ode
 from gymwipe.networking.devices import SimpleNetworkDevice
-from gymwipe.networking.messages import IntTransmittable, Packet
+from gymwipe.networking.messages import Transmittable, Packet
 from gymwipe.networking.physical import FrequencyBand
 from gymwipe.plants.core import OdePlant
 from gymwipe.simtools import SimMan
@@ -127,7 +127,7 @@ class AngleSensor(SimpleNetworkDevice):
     def _sensor(self):
         while True:
             self.position.x = self.plant.getWagonPos()
-            self.send(IntTransmittable(2, self.plant.getAngle()), self.controllerAddr)
+            self.send(Transmittable(2, self.plant.getAngle()), self.controllerAddr)
             yield SimMan.timeout(self.sampleInterval)
 
 class WagonActuator(SimpleNetworkDevice):

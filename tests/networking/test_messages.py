@@ -3,11 +3,15 @@ import pytest
 from gymwipe.networking.messages import Packet, Transmittable
 
 def test_packets():
-    p1 = Packet(Transmittable("HEADER1 CONTENT"), Transmittable("test"))
-    assert str(p1.payload) == "test"
-    assert str(p1.header) == "HEADER1 CONTENT"
+    header = Transmittable("header")
+    payload = Transmittable("payload")
+    p1 = Packet(header, payload)
 
-    assert str(p1) == "HEADER1 CONTENT,test"
-    
-    p2 = Packet(Transmittable("HEADER2 CONTENT"), p1)
-    assert str(p2) == "HEADER2 CONTENT,HEADER1 CONTENT,test"
+    assert p1.header is header
+    assert p1.payload is payload
+    assert p1.byteSize == header.byteSize + payload.byteSize
+
+    trailer = Transmittable("payload")
+    p2 = Packet(header, payload, trailer)
+    assert p2.trailer is trailer
+    assert p2.byteSize == header.byteSize + payload.byteSize + trailer.byteSize

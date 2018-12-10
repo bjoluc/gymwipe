@@ -3,7 +3,7 @@ from math import degrees, pi
 from simpy.rt import RealtimeEnvironment
 
 from gymwipe.networking.devices import SimpleNetworkDevice
-from gymwipe.networking.messages import IntTransmittable, Packet
+from gymwipe.networking.messages import Transmittable, Packet
 from gymwipe.networking.physical import FrequencyBand
 from gymwipe.plants.sliding_pendulum import SlidingPendulum
 from gymwipe.simtools import SimMan
@@ -41,7 +41,7 @@ class InvertedPendulumPidController(SimpleNetworkDevice):
             self._angle = degrees(packet.payload.value)
 
     def _sendVelocity(self, velocity: float):
-        self.send(IntTransmittable(1, velocity), self.actuatorAddr)
+        self.send(Transmittable(velocity, 1), self.actuatorAddr)
 
     def control(self):
         correction = 0

@@ -382,7 +382,7 @@ class SimpleMac(StackLayer):
                 logger.debug("Received a packet from RRM: %s", packet, sender=self)
                 if header.flag == 1:
                     # we may transmit
-                    timeSlots = packet.payload.obj
+                    timeSlots = packet.payload.value
                     timeTotal = timeSlots*TIME_SLOT_LENGTH
                     stopTime = SimMan.now + timeTotal
                     def timeLeft():
