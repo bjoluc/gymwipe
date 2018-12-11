@@ -3,7 +3,7 @@ import logging
 import pytest
 from pytest_mock import mocker
 
-from gymwipe.networking.construction import Gate, Module, Port, PortListener
+from gymwipe.networking.construction import Gate, Module, Port, GateListener
 from gymwipe.simtools import SimMan, SimTimePrepender
 
 from ..fixtures import simman
@@ -129,27 +129,27 @@ def test_module_simulation(caplog, simman):
     SimMan.runSimulation(50)
 
 class MyModule(Module):
-    @PortListener.setup
+    @GateListener.setup
     def __init__(self, name: str):
         super(MyModule, self).__init__(name)
         self._addPort("a")
         self._addPort("b")
         self.logs = [[] for _ in range(4)]
 
-    @PortListener("a", queued=False)
+    @GateListener("aIn", queued=False)
     def aListener(self, message):
         self.logs[0].append(message)
     
-    @PortListener("a", queued=True) # queued should have no effect here
+    @GateListener("aIn", queued=True) # queued should have no effect here
     def aListenerQueued(self, message):
         self.logs[1].append(message)
 
-    @PortListener("b", queued=False)
+    @GateListener("bIn", queued=False)
     def bListener(self, message):
         self.logs[2].append(message)
         yield SimMan.timeout(10)
     
-    @PortListener("b", queued=True)
+    @GateListener("bIn", queued=True)
     def bListenerQueued(self, message):
         self.logs[3].append(message)
         yield SimMan.timeout(10)
