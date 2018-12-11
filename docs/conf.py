@@ -215,8 +215,11 @@ def linkcode_resolve(domain, info):
     except Exception:
         filename = info['module'].replace('.', '/') + '.py'
     #tag = 'master' if 'dev' in release else ('v' + release)
-    tag = 'develop'
+    tag = 'master'
     return "https://github.com/bjoluc/gymwipe/blob/%s/%s" % (tag, filename)
+
+tikz_proc_suite = 'GhostScript'
+tikz_tikzlibraries = 'positioning'
 
 # -- Options for todo extension ----------------------------------------------
 
