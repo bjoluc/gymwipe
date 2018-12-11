@@ -72,7 +72,7 @@ class Gate:
             :meth:`connectTo`
     """
 
-    def __init__(self, name: str = None, owner = None):
+    def __init__(self, name: str, owner = None):
         self.name = name
         self._owner = owner
 
@@ -112,25 +112,23 @@ class Port:
     """   
     A :class:`Port` simplifies the setup of bidirectional connections by
     wrapping an input and an output :class:`Gate` and offering two connection
-    methods: :meth:`biConnectTo` and :meth:`biConnectProxy`.
+    methods: :meth:`biConnectWith` and :meth:`biConnectProxy`.
+
+    Args:
+        name(:class:`str`): The Port's name
+        owner(Any): The object that the :class:`Port` belongs to (e.g. a
+            :class:`Module`)
 
     Attributes:
-        name(str): The Port's name, as provided to the constructor
+        name(:class:`str`): The Port's name, as provided to the constructor
+        input: The Port's input :class:`Gate`
+        output: The Port's output :class:`Gate`
     """
 
-    def __init__(self, name: str, inputCallback: Callable[[Any], None] = None, owner: Any = None):
-        """
-        Args:
-            name: The Port's name
-            owner: The object that the :class:`Port` belongs to (e.g. a
-                :class:`Module`)
-        """
-        
+    def __init__(self, name: str, owner: Any = None):
         self.name = name
         self._owner = owner
         self.input: Gate = Gate("in", owner=self)
-        if inputCallback is not None:
-            self.input.nReceives.subscribeCallback(inputCallback)
         self.output: Gate = Gate("out", owner=self)
 
     def __repr__(self):
@@ -138,7 +136,7 @@ class Port:
 
     # Connecting Ports
     
-    def biConnectWith(self, port: 'Port') -> None:
+    def biConnectWith(self, port: 'Port'):
         """
         Shorthand for
         ::
@@ -146,13 +144,33 @@ class Port:
             self.output.connectTo(port.input)
             port.output.connectTo(self.input)
 
+        Creates a bidirectional connection between this port an the passed port.
+        If :tikz:`\\node [draw,circle,inner sep=1.5pt,outer sep=1pt]{};`
+        indicates input gates and
+        :tikz:`\\node [draw,fill,circle,inner sep=1.5pt,outer sep=1pt]{};`
+        indicates output gates, the resulting connection between two ports can
+        be visualized like this:
+
+        .. tikz::
+
+            \\node (p1in) at (0,0)[draw,circle,inner sep=1.5pt]{};
+            \\node (p1out) at (0,0.4)[draw,circle,fill,inner sep=1.5pt]{};
+            \\node (p2out) at (2,0)[draw,circle,fill,inner sep=1.5pt]{};
+            \\node (p2in) at (2,0.4)[draw,circle,inner sep=1.5pt]{};
+
+            \\draw[draw=black] (-0.2,-0.2) rectangle ++(0.4,0.8);
+            \\draw[draw=black] (1.8,-0.2) rectangle ++(0.4,0.8);
+
+            \\draw[->] (p1out) -- (p2in);
+            \\draw[->] (p2out) -- (p1in);
+
         Args:
-            port: The `Port` for the bidirectional connection to be established to
+            port: The :class:`Port` to establish the bidirectional connection to
         """
         self.output.connectTo(port.input)
         port.output.connectTo(self.input)
     
-    def biConnectProxy(self, port: 'Port') -> None:
+    def biConnectProxy(self, port: 'Port'):
         """
         Shorthand for
         ::
@@ -160,12 +178,27 @@ class Port:
             self.output.connectTo(port.output)
             port.input.connectTo(self.input)
         
-        Note:
-            The term `Proxy` is used for a port that passes its input
-            to another port's input.
+        If :tikz:`\\node [draw,circle,inner sep=1.5pt,outer sep=1pt]{};`
+        indicates input gates and
+        :tikz:`\\node [draw,fill,circle,inner sep=1.5pt,outer sep=1pt]{};`
+        indicates output gates, the resulting connection between two ports can
+        be visualized like this:
+
+        .. tikz::
+
+            \\node (p1in) at (0,0)[draw,circle,inner sep=1.5pt]{};
+            \\node (p1out) at (0,0.4)[draw,circle,fill,inner sep=1.5pt]{};
+            \\node (p2out) at (2,0.4)[draw,circle,fill,inner sep=1.5pt]{};
+            \\node (p2in) at (2,0)[draw,circle,inner sep=1.5pt]{};
+
+            \\draw[draw=black] (-0.2,-0.2) rectangle ++(0.4,0.8);
+            \\draw[draw=black] (1.8,-0.2) rectangle ++(0.4,0.8);
+
+            \\draw[->] (p1out) -- (p2out);
+            \\draw[->] (p2in) -- (p1in);
 
         Args:
-            port: The :class:`Port` to be connected as a proxy
+            port: The :class:`Port` to establish the bidirectional proxy connection to
         """
         self.output.connectTo(port.output)
         port.input.connectTo(self.input)
@@ -175,87 +208,29 @@ class Port:
     @property
     def nReceives(self):
         """
-        :class:`~gymwipe.simtools.Notifier`: A notifier that is triggered when
-        the input :class:`Gate` receives an object
+        :class:`~gymwipe.simtools.Notifier`: The input gate's nReceives
+        notifier, which is triggered when an object is received by the input
+        :class:`Gate`
         """
         return self.input.nReceives
-    
-class Module:
+
+class GateListener:
     """
-    Attributes:
-        name(str): The Module's name
-        ports(Dict[str, Port]): The Module's outer Ports
-        gates(Dict[str, Port]): The Module's outer Gates
-        subModules(Dict[str, Module]): The Module's nested Modules
-    """
-
-    def __init__(self, name: str, owner = None):
-        self.name = name
-        self._owner = owner
-
-        self.ports: Dict[str, Port]  = {}
-        self.gates: Dict[str, Gate] = {}
-        self.subModules: Dict[str, Module] = {}
-    
-    def __repr__(self):
-        return "{}{}('{}')".format(ownerPrefix(self._owner), self.__class__.__name__, self.name)
-    
-    def _addPort(self, name: str) -> None:
-        """
-        Adds a new :class:`Port` to the :attr:`ports` dictionary, indexed by the
-        name passed. Since a :class:`Port` holds two :class:`Gate` objects, a
-        call of this method also adds two entries to the :attr:`gates`
-        dictionary, namely "`name`In" and "`name`Out".
-
-        Args:
-            name: The name for the :class:`Port` to be indexed with
-        """
-        if name in self.ports:
-            raise ValueError("A port indexed by '{}' already exists.".format(name))
-        port = Port(name, owner=self)
-        self.ports[name] = port
-        self.gates[name + "In"] = port.input
-        self.gates[name + "Out"] = port.output
-    
-    def _addGate(self, name: str) -> None:
-        """
-        Adds a new :class:`Gate` to the :attr:`gates` dictionary, indexed by the
-        name passed.
-
-        Note:
-            
-            Single :class:`Gate` objects are only needed for unidirectional
-            connections. Bidirectional connections can rely on :class:`Port`
-            objects.
-        
-        Args:
-            name: The name for the :class:`Gate` to be indexed with
-        """
-        if name in self.gates:
-            raise ValueError("A gate indexed by '{}' already exists.".format(name))
-        self.gates[name] = Gate(name, owner=self)
-    
-    def _addSubModule(self, name: str, module: 'Module') -> None:
-        if name in self.subModules:
-            raise ValueError("A sub module named '{}' already exists.".format(name))
-        self.subModules[name] = module
-
-class PortListener:
-    """
-    A decorator factory to call methods or process SimPy generators whenever a
-    specified port receives an object. The received object is provided to the
-    decorated method as a parameter.
+    A factory for decorators that allow to call a module's method (or process a
+    SimPy generator method) whenever a specified gate of a :class:`Module`
+    receives an object. The received object is provided to the decorated method
+    as a parameter.
 
     Note:
-        In order to make this work for an object's methods, you have to decorate
-        that object's constructor with `@PortListener.setup`.
+        In order to make this work for a class' methods, you have to decorate that
+        class' constructor with `@PortListener.setup`.
 
     Examples:
-        A method using this decorator could look like this:
+        A module's method using this decorator could look like this:
 
         ::
 
-            @PortListener("myPort")
+            @PortListener("myPortIn")
             def myPortListener(self, obj):
                 # This SimPy generator is processed whenever
                 # self.gates["myPort"] receives an object and all
@@ -263,10 +238,10 @@ class PortListener:
                 yield SimMan.timeout(1)
     """
 
-    def __init__(self, portName: str, validTypes: Union[type, Tuple[type]]=None, blocking=True, queued=False):
+    def __init__(self, gateName: str, validTypes: Union[type, Tuple[type]]=None, blocking=True, queued=False):
         """
         Args:
-            portName: The index of the module's :class:`Port` to listen on
+            portName: The index of the module's :class:`Gate` to listen on
             validTypes: If this argument is provided, a :class:`TypeError` will
                 be raised when an object received via the specified :class:`Port` is
                 not of the :class:`type` / one of the types specified.
@@ -284,7 +259,7 @@ class PortListener:
                 received at the same simulated time, while still only having one
                 generator processed at a time.
         """
-        self._portName = portName
+        self._gateName = gateName
         self._validTypes = validTypes
         self._blocking = blocking
         self._queued = queued
@@ -303,36 +278,36 @@ class PortListener:
                     ensureType(obj, self._validTypes, instance)
                 return method(instance, obj)
 
-            receiveNotifier = instance.ports[self._portName].nReceives
+            nReceives = instance.gates[self._gateName].nReceives
 
             if isGenerator:
-                receiveNotifier.subscribeProcess(callAdapter, self._blocking, self._queued)
+                nReceives.subscribeProcess(callAdapter, self._blocking, self._queued)
             else:
                 if self._queued:
                     logger.warning("PortListener decorator for {}: The 'queued' "
                                     "flag only effects generator methods. "
                                     "Did you mean to make the decorated "
                                     "method a generator?".format(method))
-                receiveNotifier.subscribeCallback(callAdapter)
+                nReceives.subscribeCallback(callAdapter)
         
         # Set the docstring accordingly
 
         if isGenerator:
             initializer.__doc__ = """
-            A SimPy generator which is decorated with the
-            :class:`~gymwipe.networking.construction.PortListener` decorator,
-            processing it when the module's `{}`
-            :class:`~gymwipe.networking.construction.Port` receives an object.
+            A SimPy process method which is decorated with the
+            :class:`~gymwipe.networking.construction.GateListener` decorator.
+            It is processed when the module's `{}`
+            :class:`~gymwipe.networking.construction.Gate` receives an object.
             """
         else:
             initializer.__doc__ = """
             A method which is decorated with the
-            :class:`~gymwipe.networking.construction.PortListener` decorator,
-            invoking it when the module's `{}` :class:`~gymwipe.networking.construction.Port`
-            receives an object.
+            :class:`~gymwipe.networking.construction.GateListener` decorator.
+            It is processed when the module's `{}`
+            :class:`~gymwipe.networking.construction.Gate` receives an object.
             """
 
-        initializer.__doc__ = initializer.__doc__.format(self._portName)
+        initializer.__doc__ = initializer.__doc__.format(self._gateName)
 
         # Set the callAtConstruction flag.
         # This will make the setup generator invoke the method.
@@ -343,8 +318,8 @@ class PortListener:
     @staticmethod
     def setup(function):
         """
-        A decorator to be used for the constructor of any :class:`Module` sublass
-        that makes use of the :class:`PortListener` decorator.
+        A decorator to be used for the constructors of :class:`Module` subclasses
+        that make use of the :class:`GateListener` decorator.
         """
 
         @wraps(function)
@@ -359,3 +334,82 @@ class PortListener:
             return retVal
         
         return wrapper
+    
+class Module:
+    """
+    A module has a number of ports and gates that can be used to connect it to
+    exchange data with it and, for example, connect it to other modules. Modules
+    may contain an arbitrary number of submodules which can be connected with
+    each other and the parent module's gates and ports. Modules provide the
+    methods :meth:`_addPort`, :meth:`_addGate`, and :meth:`_addSubmodule` that
+    allow to add ports, gates and submodules, which can be accessed via the
+    :attr:`ports`, the :attr:`gates`, and the :attr:`subModules` dictionary.
+
+    Note:
+
+        Modules may have both ports (for bidirectional connections) and individual
+        gates (for unidirectional connections). When a port is added by
+        :meth:`_addPort`, its two gates are also added to the :attr:`gates`
+        dictionary.
+
+    Attributes:
+        name(str): The Module's name
+        ports(Dict[str, Port]): The Module's outer Ports
+        gates(Dict[str, Gate]): The Module's outer Gates
+        subModules(Dict[str, Module]): The Module's nested Modules
+
+    .. automethod:: _addPort
+    .. automethod:: _addGate
+    .. automethod:: _addSubModule
+    """
+
+    def __init__(self, name: str, owner = None):
+        self.name = name
+        self._owner = owner
+
+        self.ports: Dict[str, Port] = {}
+        self.gates: Dict[str, Gate] = {}
+        self.subModules: Dict[str, Module] = {}
+    
+    def __repr__(self):
+        return "{}{}('{}')".format(ownerPrefix(self._owner), self.__class__.__name__, self.name)
+    
+    def _addPort(self, name: str):
+        """
+        Adds a new :class:`Port` to the :attr:`ports` dictionary, indexed by the
+        name passed. Since a :class:`Port` holds two :class:`Gate` objects, a
+        call of this method also adds two entries to the :attr:`gates`
+        dictionary, namely "<name>In" and "<name>Out".
+
+        Args:
+            name: The name for the :class:`Port` to be indexed with
+        """
+        if name in self.ports:
+            raise ValueError("A port indexed by '{}' already exists.".format(name))
+        port = Port(name, owner=self)
+        self.ports[name] = port
+        self.gates[name + "In"] = port.input
+        self.gates[name + "Out"] = port.output
+    
+    def _addGate(self, name: str):
+        """
+        Adds a new :class:`Gate` to the :attr:`gates` dictionary, indexed by the
+        name passed.
+
+        Note:
+            
+            Plain :class:`Gate` objects are only needed for unidirectional
+            connections. Bidirectional connections can profit from :class:`Port`
+            objects.
+        
+        Args:
+            name: The name for the :class:`Gate` to be indexed with
+        """
+        if name in self.gates:
+            raise ValueError("A gate indexed by '{}' already exists.".format(name))
+        self.gates[name] = Gate(name, owner=self)
+    
+    def _addSubModule(self, name: str, module: 'Module'):
+        if name in self.subModules:
+            raise ValueError("A sub module named '{}' already exists.".format(name))
+        self.subModules[name] = module
