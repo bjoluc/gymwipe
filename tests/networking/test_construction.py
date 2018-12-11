@@ -20,8 +20,10 @@ def test_ports(mocker):
     p2_receive = mocker.Mock()
 
     # Create two ports and connect them bidirectionally
-    p1 = Port("1", p1_receive)
-    p2 = Port("2", p2_receive)
+    p1 = Port("1")
+    p1.input.nReceives.subscribeCallback(p1_receive)
+    p2 = Port("2")
+    p2.input.nReceives.subscribeCallback(p2_receive)
 
     p1.output.connectTo(p2.input)
     p2.output.connectTo(p1.input)
