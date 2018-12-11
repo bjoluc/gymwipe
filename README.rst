@@ -3,8 +3,16 @@ Gym-WiPE – Gym Wireless Plant Environment
 
 |Documentation|
 
-An OpenAI Gym Environment for Channel Assignments in the Simulation of Wireless
-Networked Feedback Control Loops
+An `OpenAI Gym`_ environment for the application of reinforcement learning in the simulation of wireless networked
+feedback control loops
+
+Documentation lives at `Read the Docs`_
+
+.. _Read the Docs: https://gymwipe.readthedocs.io/en/latest/
+
+.. |Documentation| image:: https://readthedocs.org/projects/gymwipe/badge/
+   :alt: Documentation Status
+   :target: https://gymwipe.readthedocs.io/
 
 .. include-in-docs
 
@@ -33,8 +41,8 @@ simplistic network-only example and the control of an inverted pendulum.
 The development of further environments may concern frequency band
 assignments but is not limited to these as the entire simulation model
 is accessible from within Python and may be used for arbitrary Gym
-wireless networked control environments. The implementation of control
-algorithms may profit from the `python-control`_ project.
+wireless networked control environments. Control
+algorithm implementations may profit from the `python-control`_ project.
 
 .. _SimPy: https://simpy.readthedocs.io/
 .. _Open Dynamics Engine (ODE): https://www.ode.org/
@@ -86,13 +94,8 @@ Running the tests
 The pytest testsuite can be executed via ``make test``.
 
 Further steps
-~~~~~~~~~~~~~
+-------------
 
-Yet, this project is missing usage examples and tutorials. For now, you
+Yet, this project lacks usage examples and tutorials. For now, you
 can have a look at the API documentation at
-`https://gymwipe.readthedocs.io/en/latest/api/index.html`
-
-
-.. |Documentation| image:: https://readthedocs.org/projects/gymwipe/badge/
-   :alt: Documentation Status
-   :target: https://gymwipe.readthedocs.io/
+https://gymwipe.readthedocs.io/en/latest/api/index.html

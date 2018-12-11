@@ -1,5 +1,5 @@
-Welcome to Gym-WiPE's documentation!
-====================================
+Contents
+========
 
 .. toctree::
     :maxdepth: 2
