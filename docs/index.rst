@@ -1,5 +1,5 @@
 Welcome to Gym-WiPE's documentation!
-============================================================
+====================================
 
 .. toctree::
     :maxdepth: 2
@@ -8,6 +8,8 @@ Welcome to Gym-WiPE's documentation!
     api/index
 
     bibliography
+
+.. todolist::
 
 Indices and tables
 ==================
