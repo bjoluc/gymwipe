@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "4a89d3a0a160922f1d538d0402455eaee457bdae5306f92a5086f9d30f4c56e7"
+            "sha256": "c8eb5238db9979de736422829acb533e1b128781c162a26cf6b96996064d85f3"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -714,13 +714,6 @@
             ],
             "index": "pypi",
             "version": "==0.11.0"
-        },
-        "rtd-tikz": {
-            "hashes": [
-                "sha256:34f0cf5a2be5ea71d82bd9f1fae95e928ca3b8986754e744dba4a9a8272ce8ce"
-            ],
-            "index": "pypi",
-            "version": "==0.1.2"
         },
         "scipy": {
             "hashes": [

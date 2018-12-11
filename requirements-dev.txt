@@ -19,7 +19,6 @@ pygame
 pylint
 pympler
 rope
-rtd-tikz
 sphinx
 sphinx-autobuild
 sphinx-autodoc-typehints
