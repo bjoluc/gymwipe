@@ -1,5 +1,6 @@
 """
-The Stack package contains implementations of network stack layers. Layers are modeled by :class:`~gymwipe.networking.construction.Module` objects.
+The Stack package contains implementations of network stack layers. Layers are
+modeled by :class:`~gymwipe.networking.construction.Module` objects.
 """
 import logging
 from collections import deque
@@ -10,7 +11,7 @@ import numpy as np
 from simpy.events import Event
 
 from gymwipe.devices import Device
-from gymwipe.networking.construction import Module, Port, PortListener
+from gymwipe.networking.construction import Module, Port, GateListener
 from gymwipe.networking.messages import (Message, Packet, SimpleMacHeader,
                                          StackMessages, Transmittable)
 from gymwipe.networking.physical import (AttenuationModel, BpskMcs,
@@ -65,7 +66,7 @@ class SimplePhy(StackLayer):
     NOISE_POWER_DENSITY = temperatureToNoisePowerDensity(20.0)
     """float: The receiver's noise power density in Watts/Hertz"""
 
-    @PortListener.setup
+    @GateListener.setup
     def __init__(self, name: str, device: Device, frequencyBand: FrequencyBand):
         super(SimplePhy, self).__init__(name, device)
         self.frequencyBand = frequencyBand
@@ -160,8 +161,8 @@ class SimplePhy(StackLayer):
     
     # SimPy generators
 
-    @PortListener("mac", Message, queued=True)
-    def macPortListener(self, cmd):
+    @GateListener("macIn", Message, queued=True)
+    def macInGateListener(self, cmd):
         p = cmd.args
 
         if cmd.type is StackMessages.SEND:
@@ -332,7 +333,7 @@ class SimpleMac(StackLayer):
             A packet received by the physical layer
     """
 
-    @PortListener.setup
+    @GateListener.setup
     def __init__(self, name: str, device: Device, frequencyBandSpec: FrequencyBandSpec, addr: bytes):
         """
         Args:
@@ -369,8 +370,8 @@ class SimpleMac(StackLayer):
         addr[5] = cls._macCounter
         return bytes(addr)
     
-    @PortListener("phy", Packet)
-    def phyPortListener(self, packet):
+    @GateListener("phyIn", Packet)
+    def phyInGateListener(self, packet):
         header = packet.header
         if not isinstance(header, SimpleMacHeader):
             raise ValueError("Can only deal with header of type SimpleMacHeader. Got %s.", type(header), sender=self)
@@ -433,8 +434,8 @@ class SimpleMac(StackLayer):
             # packet from RRM to all devices
             pass
     
-    @PortListener("transport", (Message, Packet))
-    def transportPortListener(self, cmd):
+    @GateListener("transportIn", (Message, Packet))
+    def transportInGateListener(self, cmd):
 
         if isinstance(cmd, Message):
             if cmd.type is StackMessages.RECEIVE:
@@ -495,7 +496,7 @@ class SimpleRrmMac(StackLayer):
     to extract observations and rewards for a frequency band assignment learning agent.
     """
 
-    @PortListener.setup
+    @GateListener.setup
     def __init__(self, name: str, device: Device, frequencyBandSpec: FrequencyBandSpec):
         super(SimpleRrmMac, self).__init__(name, device)
         self._addPort("phy")
@@ -510,12 +511,12 @@ class SimpleRrmMac(StackLayer):
         
         logger.debug("%s: Initialization completed, MAC address: %s", self, self.addr)
     
-    @PortListener("phy", Packet)
-    def phyPortListener(self, packet: Packet):
+    @GateListener("phyIn", Packet)
+    def phyInGateListener(self, packet: Packet):
         self.ports["transport"].output.send(packet.payload)
     
-    @PortListener("transport", Message)
-    def transportPortListener(self, message: Message):
+    @GateListener("transportIn", Message)
+    def transportInGateListener(self, message: Message):
         logger.debug("%s: Got new ASSIGN Message %s.", self, message)
         self._nAnnouncementReceived.trigger(message)
     
