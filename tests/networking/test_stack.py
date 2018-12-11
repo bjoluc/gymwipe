@@ -77,7 +77,7 @@ def test_simple_phy(caplog, mocker, simple_phy):
     # create a mocked port for capturing receiver Phy output
     receiverCallbackMock = mocker.Mock()
     receiverPort = Port("Receiver Stack", receiverCallbackMock)
-    receiverPhy.ports["mac"].connectOutputTo(receiverPort.input)
+    receiverPhy.ports["mac"].output.connectTo(receiverPort.input)
 
     # create something transmittable
     packet = Packet(FakeTransmittable(8), FakeTransmittable(128))

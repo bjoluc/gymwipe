@@ -110,18 +110,20 @@ class Gate:
 
 class Port:
     """   
-    Todo:
-        * documentation
+    A :class:`Port` simplifies the setup of bidirectional connections by
+    wrapping an input and an output :class:`Gate` and offering two connection
+    methods: :meth:`biConnectTo` and :meth:`biConnectProxy`.
 
     Attributes:
-        name(str): The Port's name
+        name(str): The Port's name, as provided to the constructor
     """
 
-    def __init__(self, name: str, inputCallback: Callable[[Any], None] = None, owner = None):
+    def __init__(self, name: str, inputCallback: Callable[[Any], None] = None, owner: Any = None):
         """
         Args:
-            inputCallback: A callback function that will be invoked when an object
-                is sent to the :attr:`input` Gate.
+            name: The Port's name
+            owner: The object that the :class:`Port` belongs to (e.g. a
+                :class:`Module`)
         """
         
         self.name = name
@@ -135,49 +137,28 @@ class Port:
         return "{}Port('{}')".format(ownerPrefix(self._owner), self.name)
 
     # Connecting Ports
-
-    def connectOutputTo(self, gate: Gate) -> None:
-        """
-        Connects this Port's output Gate to the provided Gate.
-
-        Args:
-            gate: The gate to connect this Port's output to
-        """
-        if not isinstance(gate, Gate):
-            raise TypeError("Expected Gate, got {}. Use .input or .output to "
-                            "access a Port's ports.".format(type(gate)))
-        self.output.connectTo(gate)
-    
-    def connectInputTo(self, gate: Gate) -> None:
-        """
-        Connects this Port's input Gate to the provided Gate.
-
-        Args:
-            gate: The gate to connect this Port's input to
-        """
-        self.input.connectTo(gate)
     
     def biConnectWith(self, port: 'Port') -> None:
         """
         Shorthand for
         ::
         
-            self.connectOutputTo(port.input)
-            port.connectOutputTo(self.input)
+            self.output.connectTo(port.input)
+            port.output.connectTo(self.input)
 
         Args:
             port: The `Port` for the bidirectional connection to be established to
         """
-        self.connectOutputTo(port.input)
-        port.connectOutputTo(self.input)
+        self.output.connectTo(port.input)
+        port.output.connectTo(self.input)
     
     def biConnectProxy(self, port: 'Port') -> None:
         """
         Shorthand for
         ::
         
-            self.connectOutputTo(port.output)
-            port.connectInputTo(self.input)
+            self.output.connectTo(port.output)
+            port.input.connectTo(self.input)
         
         Note:
             The term `Proxy` is used for a port that passes its input
@@ -186,8 +167,8 @@ class Port:
         Args:
             port: The :class:`Port` to be connected as a proxy
         """
-        self.connectOutputTo(port.output)
-        port.connectInputTo(self.input)
+        self.output.connectTo(port.output)
+        port.input.connectTo(self.input)
 
     # Notifiers
     

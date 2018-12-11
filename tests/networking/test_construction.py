@@ -23,8 +23,8 @@ def test_ports(mocker):
     p1 = Port("1", p1_receive)
     p2 = Port("2", p2_receive)
 
-    p1.connectOutputTo(p2.input)
-    p2.connectOutputTo(p1.input)
+    p1.output.connectTo(p2.input)
+    p2.output.connectTo(p1.input)
 
     # Test message sending
     msg1 = 'test message 1'
