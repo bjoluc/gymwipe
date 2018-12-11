@@ -74,7 +74,7 @@ class SimulationManager:
         """
         return Event(self.env)
 
-    def runSimulation(self, until: Union[int, float, Event]) -> None:
+    def runSimulation(self, until: Union[int, float, Event]):
         """
         Runs the simulation (or continues running it) until the amount of
         simulated time specified by `until` has passed (with `until` being a
@@ -87,7 +87,7 @@ class SimulationManager:
             until = self.now + until
         self.env.run(until)
     
-    def init(self) -> None:
+    def init(self):
         """
         Creates a new :class:`~simpy.core.Environment`.
         """
@@ -115,7 +115,7 @@ class SimulationManager:
         else:
             return self.timeout(0, value)
     
-    def triggerAfterTimeout(self, event: Event, timeout: float, value: Any = None) -> None:
+    def triggerAfterTimeout(self, event: Event, timeout: float, value: Any = None):
         """
         Calls :meth:`~simpy.events.Event.succeed` on the `event` after the
         simulated time specified in `timeout` has passed. If the event has
@@ -210,7 +210,7 @@ class SimTimePrepender(SourcePrepender):
 
 logger = SimTimePrepender(logging.getLogger(__name__))
 
-def ensureType(input: Any, validTypes: Union[type, Tuple[type]], caller: Any) -> None:
+def ensureType(input: Any, validTypes: Union[type, Tuple[type]], caller: Any):
     """
     Checks whether `input` is an instance of the type / one of the types
     provided as `validTypes`. If not, raises a :class:`TypeError` with a message
@@ -260,7 +260,7 @@ class Notifier:
         # SimPy generators
         self._processExecutors = {}
 
-    def subscribeCallback(self, callback: Callable[[Any], None], priority: int = 0, additionalArgs: List[Any] = None) -> None:
+    def subscribeCallback(self, callback: Callable[[Any], None], priority: int = 0, additionalArgs: List[Any] = None):
         """
         Adds the passed callable to the set of callback functions. Thus, when
         the :class:`Notifier` gets triggered, the callable will be invoked
@@ -343,7 +343,7 @@ class Notifier:
             logger.warn("Generator function %s was already subscribed! Ignoring the call.", process, sender=self)
         else:
             # creating an executor function that will be called whenever trigger is called
-            def executor(value: Any) -> None:
+            def executor(value: Any):
                 if not blocking:
                     # start a new process
                     SimMan.process(process(value))
@@ -356,17 +356,17 @@ class Notifier:
                                             "'queued' is 'False'.", value, process, sender=self)
                         else:
                             if len(executor.queue) == 10000:
-                                    logger.critical("Queue of subscribed SimPy generator %s reached a "
+                                    logger.critical("Queue of subscribed SimPy generator method %s reached a "
                                                     "size of 10000. Is this intended?", process, sender=self)
                             executor.queue.append(value)
-                            logger.debug("Object '%s' was appended to queue for SimPy generator %s, "
+                            logger.debug("Object '%s' was appended to queue for SimPy generator method %s, "
                                         "since a previous SimPy process is still active. "
                                         "Queue length: %d", value, process, len(executor.queue), sender=self)
                     else:
                         executor.running = True
                         processedEvent = SimMan.process(process(value))
                         if queued:
-                            def executeNext(prevProcessReturnValue: Any) -> None:
+                            def executeNext(prevProcessReturnValue: Any):
                                 # callback for running the next process from the queue
                                 if len(executor.queue) > 0:
                                     nextObject = executor.queue.popleft()
@@ -391,7 +391,7 @@ class Notifier:
                 executor.queue = deque()
             self._processExecutors[process] = executor
     
-    def trigger(self, value: Any) -> None:
+    def trigger(self, value: Any):
         """
         Triggers the :class:`Notifier`. This runs the callbacks, makes the
         :attr:`event` succeed, and triggers the processing of subscribed SimPy

@@ -85,7 +85,7 @@ class Gate:
     
     # connecting Gates with each other
 
-    def connectTo(self, gate: 'Gate') -> None:
+    def connectTo(self, gate: 'Gate'):
         """
         Connects this :class:`Gate` to the provided :class:`Gate`. Thus, if
         :meth:`send` is called on this :class:`Gate`, it will also be called on
@@ -232,9 +232,9 @@ class GateListener:
 
             @PortListener("myPortIn")
             def myPortListener(self, obj):
-                # This SimPy generator is processed whenever
-                # self.gates["myPort"] receives an object and all
-                # previously created instances have been processed.
+                # This  method is processed whenever self.gates["myPortIn"]
+                # receives an object and all previously created instances
+                # have been processed.
                 yield SimMan.timeout(1)
     """
 
