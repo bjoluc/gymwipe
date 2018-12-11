@@ -45,7 +45,7 @@ class SendingDevice(NetworkDevice):
                 )
 
                 signal = Message(StackMessages.SEND, {"packet": packet, "power": 40.0, "mcs": mcs})
-                self._phy.ports["mac"].send(signal)
+                self._phy.ports["mac"].input.send(signal)
 
         SimMan.process(sender())
 

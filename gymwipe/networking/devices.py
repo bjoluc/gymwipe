@@ -83,13 +83,13 @@ class SimpleNetworkDevice(NetworkDevice):
 
     def send(self, data: Transmittable, destinationMacAddr: bytes):
         p = Packet(SimpleNetworkHeader(self.mac, destinationMacAddr), data)
-        self._mac.ports["transport"].send(p)
+        self._mac.ports["transport"].input.send(p)
 
     def _receiver(self):
         # A blocking receive loop
         while self._receiving:
             receiveCmd = Message(StackMessages.RECEIVE, {"duration": self.RECEIVE_TIMEOUT})
-            self._mac.ports["transport"].send(receiveCmd)
+            self._mac.ports["transport"].input.send(receiveCmd)
             result = yield receiveCmd.eProcessed
             if result:
                 self.onReceive(result)
@@ -198,6 +198,6 @@ class SimpleRrmDevice(NetworkDevice):
             {"duration": duration, "dest": deviceMac}
         )
         self.interpreter.onFrequencyBandAssignment(duration, deviceIndex)
-        self._mac.ports["transport"].send(assignSignal)
+        self._mac.ports["transport"].input.send(assignSignal)
 
         return assignSignal

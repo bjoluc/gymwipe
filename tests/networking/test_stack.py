@@ -92,7 +92,7 @@ def test_simple_phy(caplog, mocker, simple_phy):
         cmd = Message(StackMessages.SEND, {"packet": packet, "power": POWER, "mcs": MCS})
 
         # send the message to the physical layer
-        senderPhy.ports["mac"].send(cmd)
+        senderPhy.ports["mac"].input.send(cmd)
 
         # wait 8 payload bits
         yield SimMan.timeout(8/MCS.dataRate)
@@ -173,14 +173,14 @@ def do_not_test_simple_mac_then(caplog, simple_mac):
         # send a bunch of packets from `fromMacLayer` to `toMacLayer`
         for p in payloads:
             packet = Packet(SimpleNetworkHeader(fromMacLayer.addr, toMacLayer.addr), p)
-            fromMacLayer.ports["transport"].send(packet)
+            fromMacLayer.ports["transport"].input.send(packet)
             yield SimMan.timeout(1e-4)
 
     def receiver(macLayer: SimpleMac, receivedPacketsList: List[Packet]):
         # receive forever
         while True:
             receiveCmd = Message(StackMessages.RECEIVE, {"duration": 10})
-            macLayer.ports["transport"].send(receiveCmd)
+            macLayer.ports["transport"].input.send(receiveCmd)
             result = yield receiveCmd.eProcessed
             if result is not None:
                 receivedPacketsList.append(result)

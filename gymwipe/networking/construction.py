@@ -1,5 +1,5 @@
 """
-Contains classes for building network stack representations.
+Classes for building network stack representations
 """
 import inspect
 import logging
@@ -16,11 +16,60 @@ logger = SimTimePrepender(logging.getLogger(__name__))
 
 class Gate:
     """
-    Todo:
-        * documentation
+    Gates provide features for the transfer of arbitrary objects. They can be
+    connected to each other and offer a :meth:`send` method that passes an
+    object to all connected gates, as shown in the figure below, where
+    connections are depicted as arrows.
+
+    .. tikz::
+
+        [thick, gate/.style args={#1}{draw, circle, inner sep=3, outer
+        sep=0, label=above:{#1}}]
+        
+        % Gates
+        \\node[gate=Gate1] (g1) at (0,1) {};
+        \\node[gate=Gate2] (g2) at (3,1) {};
+        \\node[gate=Gate3] (g3) at (6,1) {};
+
+        % Connections
+        \\draw[->] (g1) -- (g2) node[above,midway] {msg};
+        \\draw[->] (g2) -- (g3) node[above,midway] {msg};
+
+        % Commands
+        \\node[below=0.5 of g1] (s1) {send(msg)};
+        \\draw[dashed] (s1) -- (g1);
+
+    Gates emulate the transmission of objects via connections by calling
+    :meth:`send` on their connected gates as illustrated below.
+
+    .. tikz::
+
+        [thick, gate/.style args={#1}{draw, circle, inner sep=3, outer
+        sep=0, label=above:{#1}}]
+        
+        % Gates
+        \\node[gate=Gate1] (g1) at (0,1) {};
+        \\node[gate=Gate2] (g2) at (3,1) {};
+        \\node[gate=Gate3] (g3) at (6,1) {};
+
+        % Commands
+        \\node[below=0.5 of g1] (s1) {send(msg)};
+        \\node[below=0.5 of g2] (s2) {send(msg)};
+        \\node[below=0.5 of g3] (s3) {send(msg)};
+        \\draw[dashed] (s1) -- (g1);
+        \\draw[dashed] (s2) -- (g2);
+        \\draw[dashed] (s3) -- (g3);
+
+        \\draw[dashed,->] (s1) -- (s2);
+        \\draw[dashed,->] (s2) -- (s3);
 
     Attributes:
         name(str): The Gate's name
+        nReceives(gymwipe.simtools.Notifier): A notifier that is triggered when
+            :meth:`send` is called, providing the value passed to :meth:`send`
+        nConnectsTo(:class:`~gymwipe.simtools.Notifier`): A notifier that is
+            triggered when :meth:`connectTo` is called, providing the gate passed to
+            :meth:`connectTo`
     """
 
     def __init__(self, name: str = None, owner = None):
@@ -29,27 +78,10 @@ class Gate:
 
         # Notifiers
         self.nReceives: Notifier = Notifier('Receives', self)
-        """
-        :class:`~gymwipe.simtools.Notifier`: A notifier that is triggered when
-        :meth:`send` is called, providing the value passed to :meth:`send`
-        """
-
         self.nConnectsTo: Notifier = Notifier('Connects to', self)
-        """
-        :class:`~gymwipe.simtools.Notifier`: A notifier that is triggered when
-        :meth:`connectTo` is called, providing the gate passed to :meth:`connectTo`
-        """
 
     def __repr__(self):
         return "{}Gate('{}')".format(ownerPrefix(self._owner), self.name)
-
-    def addCallback(self, callback: Callable[[Any], None]) -> None:
-        """
-        Args:
-            callback: A callback function that will be invoked whenever
-                :meth:`send` is called, providing the object passed to :meth:`send`
-        """
-        self.nReceives.subscribeCallback(callback)
     
     # connecting Gates with each other
 
@@ -62,15 +94,15 @@ class Gate:
         Args:
             gate: The :class:`Gate` for the connection to be established to
         """
-        self.addCallback(gate.send)
+        self.nReceives.subscribeCallback(gate.send)
         self.nConnectsTo.trigger(gate)
 
     # sending objects
 
     def send(self, object: Any):
         """
-        Sends the object provided to all connected ports and registered callback
-        functions (if any).
+        Triggers :attr:`nReceives` with the provided object and sends it to all
+        connected gates.
         """
         logger.debug("Received object: %s", object, sender=self)
         self.nReceives.trigger(object)
@@ -96,7 +128,7 @@ class Port:
         self._owner = owner
         self.input: Gate = Gate("in", owner=self)
         if inputCallback is not None:
-            self.input.addCallback(inputCallback)
+            self.input.nReceives.subscribeCallback(inputCallback)
         self.output: Gate = Gate("out", owner=self)
 
     def __repr__(self):
@@ -156,13 +188,6 @@ class Port:
         """
         self.connectOutputTo(port.output)
         port.connectInputTo(self.input)
-    
-    def send(self, object: Any):
-        """
-        Calls the :meth:`~gymwipe.networking.construction.Gate.send` method of
-        the :attr:`input` port
-        """
-        self.input.send(object)
 
     # Notifiers
     

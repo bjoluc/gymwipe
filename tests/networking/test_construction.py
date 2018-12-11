@@ -1,11 +1,18 @@
-import pytest, logging
+import logging
+
+import pytest
 from pytest_mock import mocker
-from gymwipe.networking.construction import Gate, Port, Module, PortListener
-from gymwipe.simtools import SimMan
+
+from gymwipe.networking.construction import Gate, Module, Port, PortListener
+from gymwipe.simtools import SimMan, SimTimePrepender
+
+from ..fixtures import simman
 
 # Note: When mocking member functions of a class:
 # Disable pylint warnings due to dynamically added member functions
 # (assert_called_with) by # pylint: disable=E1101
+
+logger = SimTimePrepender(logging.getLogger(__name__))
 
 def test_ports(mocker):
     # Create mocking functions for message transfer testing
@@ -30,8 +37,8 @@ def test_ports(mocker):
     p1_receive.assert_called_with(msg2)
 
 def test_module_functions():
-    m = Module('test module')
-    assert m.name == 'test module'
+    m = Module('module1')
+    assert m.name == 'module1'
 
     m._addPort('port1')
     m._addPort('port2')
@@ -47,15 +54,15 @@ def test_module_functions():
     assert m.gates['gate1'].name == 'gate1'
     assert m.gates['gate2'].name == 'gate2'
 
-    m1 = Module('module1')
-    m2 = Module('module2')
-    m._addSubModule('sub1', m1)
-    m._addSubModule('sub2', m2)
-    assert m.subModules['sub1'] is m1
-    assert m.subModules['sub2'] is m2
-    assert m.subModules == {'sub1': m1, 'sub2': m2}
+    sub1 = Module('submodule1')
+    sub2 = Module('submodule2')
+    m._addSubModule('sub1', sub1)
+    m._addSubModule('sub2', sub2)
+    assert m.subModules['sub1'] is sub1
+    assert m.subModules['sub2'] is sub2
+    assert m.subModules == {'sub1': sub1, 'sub2': sub2}
 
-def test_module_simulation(caplog):
+def test_module_simulation(caplog, simman):
     # Connect two modules in a bidirectional cycle and let them pass around a message object in both directions
     #
     #      <----------------->
@@ -65,7 +72,6 @@ def test_module_simulation(caplog):
     #      <----------------->
 
     caplog.set_level(logging.DEBUG, logger='gymwipe.networking.construction')
-    SimMan.init()
 
     class TestModule(Module):
         def __init__(self, name):
@@ -80,11 +86,10 @@ def test_module_simulation(caplog):
         def process(self, fromPort: str, toPort: str):
             while(True):
                 # Listen on port fromPort and proxy messages
-                print("TestModule " + self.name + " gate " + fromPort + " waiting for message")
+                logger.info("Waiting for message", sender=fromPort)
 
                 msg = yield self.ports[fromPort].nReceives.event
 
-                print("TestModule " + self.name + " gate " + fromPort + " received message " + str(msg))
                 self.msgVal = msg
                 self.msgReceivedCount[fromPort] += 1
                 msg += 1
