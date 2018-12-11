@@ -26,6 +26,7 @@ tensorflow = "*"
 pympler = "*"
 objgraph = "*"
 sphinxcontrib-tikz = "*"
+"doc8" = "*"
 
 [requires]
 python_version = "3.6"
