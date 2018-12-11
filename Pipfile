@@ -25,6 +25,8 @@ keras-rl = "*"
 tensorflow = "*"
 pympler = "*"
 objgraph = "*"
+sphinxcontrib-tikz = "*"
+rtd-tikz = "*"
 
 [requires]
 python_version = "3.6"

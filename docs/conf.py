@@ -47,7 +47,8 @@ extensions = [
     'sphinx.ext.napoleon',
     'sphinx_autodoc_typehints',
     'sphinx.ext.intersphinx',
-    'sphinx.ext.linkcode'
+    'sphinx.ext.linkcode',
+    'sphinxcontrib.tikz'
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -144,7 +145,7 @@ latex_elements = {
 
     # Additional stuff for the LaTeX preamble.
     #
-    # 'preamble': '',
+    'preamble': '\\usepackage{tikz}',
 
     # Latex figure (float) alignment
     #

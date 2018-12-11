@@ -19,11 +19,13 @@ pygame
 pylint
 pympler
 rope
+rtd-tikz
 sphinx
 sphinx-autobuild
 sphinx-autodoc-typehints
 sphinx-rtd-theme
 sphinxcontrib-bibtex
+sphinxcontrib-tikz
 tensorflow
 
 gym
