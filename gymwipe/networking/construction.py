@@ -238,26 +238,28 @@ class GateListener:
                 yield SimMan.timeout(1)
     """
 
-    def __init__(self, gateName: str, validTypes: Union[type, Tuple[type]]=None, blocking=True, queued=False):
+    def __init__(self, gateName: str, validTypes: Union[type, Tuple[type]]=None,
+                    blocking: bool = True, queued: bool = False):
         """
         Args:
-            portName: The index of the module's :class:`Gate` to listen on
+            gateName: The index of the module's :class:`Gate` to listen on
             validTypes: If this argument is provided, a :class:`TypeError` will
-                be raised when an object received via the specified :class:`Port` is
+                be raised when an object received via the specified :class:`Gate` is
                 not of the :class:`type` / one of the types specified.
-            blocking: Set this to false if you decorate a SimPy process and
+            blocking: Set this to ``False`` if you decorate a SimPy generator method and
                 want it to be processed for each received object, regardless of
                 whether an instance of the generator is still being processed or
                 not. By default, only one instance of the decorated generator method
                 is run at a time (blocking is ``True``).
-            queued: If you decorate a generator method, `blocking` is ``True``
-                and you set `queued` to ``True``, an object received while an
-                instance of the generator is being processed will be queued.
+            queued: If you decorate a SimPy generator method, `blocking` is
+                ``True``, and you set `queued` to ``True``, an object received while
+                an instance of the generator is being processed will be queued.
                 Sequentially, a new generator will then be processed for every
-                queued object as soon as the current generator is processed.
+                queued object as soon as the current generator has been processed.
                 Using `queued`, you can thus react to multiple objects that are
                 received at the same simulated time, while still only having one
-                generator processed at a time.
+                generator instance processed at a time. Queued defaults to
+                ``False``.
         """
         self._gateName = gateName
         self._validTypes = validTypes
@@ -284,7 +286,7 @@ class GateListener:
                 nReceives.subscribeProcess(callAdapter, self._blocking, self._queued)
             else:
                 if self._queued:
-                    logger.warning("PortListener decorator for {}: The 'queued' "
+                    logger.warning("GateListener decorator for {}: The 'queued' "
                                     "flag only effects generator methods. "
                                     "Did you mean to make the decorated "
                                     "method a generator?".format(method))
