@@ -83,8 +83,8 @@ class SimplePhy(StackLayer):
         self._resetBitErrorCounter()
         # thermal noise power in mW
         self._thermalNoisePower = self.NOISE_POWER_DENSITY * frequencyBand.spec.bandwidth * 1000
-        self._transmissionToReceivedPowerDict: Dict[Transmission, float] = {}
-        self._transmissionToAttenuationChangedCallbackDict = {}
+        self._transmissionToReceivedPower: Dict[Transmission, float] = {}
+        self._transmissionToAttenuationChangedCallback = {}
         self._receivedPower = self._thermalNoisePower
         def updateReceivedPower(delta: float):
             self._receivedPower += delta
@@ -131,8 +131,8 @@ class SimplePhy(StackLayer):
         """
         logger.debug("%s: Attenuation to the sender of %s changed to %s dB.", self, t, attenuation)
         newReceivedPower = self._calculateReceivedPower(t, attenuation)
-        delta = newReceivedPower - self._transmissionToReceivedPowerDict[t]
-        self._transmissionToReceivedPowerDict[t] = newReceivedPower
+        delta = newReceivedPower - self._transmissionToReceivedPower[t]
+        self._transmissionToReceivedPower[t] = newReceivedPower
         self._nReceivedPowerChanges.trigger(delta)
     
     def _onNewTransmission(self, t: Transmission):
@@ -141,14 +141,14 @@ class SimplePhy(StackLayer):
         """
         if t is not self._currentTransmission:
             receivedPower = self._calculateReceivedPower(t)
-            self._transmissionToReceivedPowerDict[t] = receivedPower
+            self._transmissionToReceivedPower[t] = receivedPower
             logger.debug("%s starts, received power from that "
                             "transmission: %s mW", t, receivedPower, sender=self)
             self._nReceivedPowerChanges.trigger(receivedPower)
             t.eCompletes.callbacks.append(self._onCompletingTransmission)
             # Subscribe to changes of attenuation for the transmission
             onAttenuationChange = partial(self._onAttenuationChange, t)
-            self._transmissionToAttenuationChangedCallbackDict[t] = onAttenuationChange
+            self._transmissionToAttenuationChangedCallback[t] = onAttenuationChange
             self._getAttenuationModelByTransmission(t).nAttenuationChanges.subscribeCallback(onAttenuationChange)
             
     def _onCompletingTransmission(self, event: Event):
@@ -156,12 +156,12 @@ class SimplePhy(StackLayer):
         Is called when a transmission from another device completes
         """
         t: Transmission = event.value
-        assert t in self._transmissionToReceivedPowerDict
-        receivedPower = self._transmissionToReceivedPowerDict[t]
-        self._transmissionToReceivedPowerDict.pop(t)
+        assert t in self._transmissionToReceivedPower
+        receivedPower = self._transmissionToReceivedPower[t]
+        self._transmissionToReceivedPower.pop(t)
         self._nReceivedPowerChanges.trigger(-receivedPower)
         # Unsubscribe from changes of attenuation for the transmission
-        callback = self._transmissionToAttenuationChangedCallbackDict.pop(t)
+        callback = self._transmissionToAttenuationChangedCallback.pop(t)
         self._getAttenuationModelByTransmission(t).nAttenuationChanges.unsubscribeCallback(callback)
     
     # Callbacks for bit error calculation
@@ -171,7 +171,7 @@ class SimplePhy(StackLayer):
         Sets :attr:`_receivedBitErrorRate` to the current bit error rate for the
         transmission `t`.
         """
-        signalPower = self._transmissionToReceivedPowerDict[t]
+        signalPower = self._transmissionToReceivedPower[t]
         noisePower = self._receivedPower - signalPower
         assert signalPower >= 0
         assert noisePower >= 0
