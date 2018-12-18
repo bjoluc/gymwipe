@@ -391,7 +391,7 @@ class Notifier:
                 executor.queue = deque()
             self._processExecutors[process] = executor
     
-    def trigger(self, value: Any):
+    def trigger(self, value: Any = None):
         """
         Triggers the :class:`Notifier`. This runs the callbacks, makes the
         :attr:`event` succeed, and triggers the processing of subscribed SimPy

@@ -73,10 +73,14 @@ class SimplePhy(StackLayer):
         self._addPort("mac")
 
         # Attributes related to sending
-        self._currentTransmission = None
         self._transmitting = False
+        self._currentTransmission = None
 
         # Attributes related to receiving
+        self._receiving = False
+        self._nReceivingFinished = Notifier("Finished receiving", self)
+        self._currentReceiverMcs = None
+        self._resetBitErrorCounter()
         # thermal noise power in mW
         self._thermalNoisePower = self.NOISE_POWER_DENSITY * frequencyBand.spec.bandwidth * 1000
         self._transmissionToReceivedPowerDict: Dict[Transmission, float] = {}
@@ -88,7 +92,7 @@ class SimplePhy(StackLayer):
                             self, delta, self._receivedPower)
         self._nReceivedPowerChanges = Notifier("Received power changes", self)
         self._nReceivedPowerChanges.subscribeCallback(updateReceivedPower, priority=1)
-
+        
         self.frequencyBand.nNewTransmission.subscribeCallback(self._onNewTransmission)
         self.frequencyBand.nNewTransmission.subscribeProcess(self._receive)
         logger.info("Initialized %s with noise power %s dBm", self, milliwattsToDbm(self._thermalNoisePower))
@@ -115,9 +119,10 @@ class SimplePhy(StackLayer):
         return dbmToMilliwatts(t.power - attenuation)
 
     # Callbacks
-    # The purpose of the following callbacks is to maintain a dict that maps
-    # active transmissions to their received power. This is used to calculate
-    # signal and noise levels.
+
+    # The purpose of the following three callbacks is to maintain a dict that
+    # maps active transmissions to their received power. This is used to
+    # calculate signal and noise levels.
 
     def _onAttenuationChange(self, t: Transmission, attenuation: float):
         """
@@ -137,11 +142,11 @@ class SimplePhy(StackLayer):
         if t is not self._currentTransmission:
             receivedPower = self._calculateReceivedPower(t)
             self._transmissionToReceivedPowerDict[t] = receivedPower
-            logger.debug("%s: %s was added, received power from that "
-                            "transmission: %s mW", self, t, receivedPower)
+            logger.debug("%s starts, received power from that "
+                            "transmission: %s mW", t, receivedPower, sender=self)
             self._nReceivedPowerChanges.trigger(receivedPower)
             t.eCompletes.callbacks.append(self._onCompletingTransmission)
-            # subscribe to changes of attenuation for the transmission
+            # Subscribe to changes of attenuation for the transmission
             onAttenuationChange = partial(self._onAttenuationChange, t)
             self._transmissionToAttenuationChangedCallbackDict[t] = onAttenuationChange
             self._getAttenuationModelByTransmission(t).nAttenuationChanges.subscribeCallback(onAttenuationChange)
@@ -159,7 +164,38 @@ class SimplePhy(StackLayer):
         callback = self._transmissionToAttenuationChangedCallbackDict.pop(t)
         self._getAttenuationModelByTransmission(t).nAttenuationChanges.unsubscribeCallback(callback)
     
-    # SimPy generators
+    # Callbacks for bit error calculation
+
+    def _updateBitErrorRate(self, t: Transmission):
+        """
+        Sets :attr:`_receivedBitErrorRate` to the current bit error rate for the
+        transmission `t`.
+        """
+        signalPower = self._transmissionToReceivedPowerDict[t]
+        noisePower = self._receivedPower - signalPower
+        assert signalPower >= 0
+        assert noisePower >= 0
+        signalPowerDbm = milliwattsToDbm(signalPower)
+        noisePowerDbm = milliwattsToDbm(noisePower)
+        self._receivedBitErrorRate = self._currentReceiverMcs.calculateBitErrorRate(signalPowerDbm, noisePowerDbm)
+        logger.debug("Currently simulated bit error rate: " + str(self._receivedBitErrorRate), sender=self)
+
+    def _resetBitErrorCounter(self):
+        self._receivedBitErrorSum = 0
+        self._receivedBitErrorRate = 0.0
+        self._lastReceivedErrorCountTime = SimMan.now
+    
+    def _countBitErrors(self):
+        # Calculate the duration since last time that we counted errors
+        now = SimMan.now
+        duration = now - self._lastReceivedErrorCountTime
+
+        # Derive the number of bit errors for that duration (as a float,
+        # rounding is done in the end)
+        bitErrors = self._receivedBitErrorRate * duration * self._currentReceiverMcs.bitRate
+        self._receivedBitErrorSum += bitErrors
+    
+    # SimPy processes
 
     @GateListener("macIn", Message, queued=True)
     def macInGateListener(self, cmd):
@@ -167,92 +203,74 @@ class SimplePhy(StackLayer):
 
         if cmd.type is StackMessages.SEND:
             logger.info("Received SEND command", sender=self)
-            # wait for the beginning of the next time slot
-            yield SimMan.nextTimeSlot(TIME_SLOT_LENGTH)
-            # simulate transmitting
+            # If the receiver is active, wait until it is inactive again
+            if self._receiving:
+                yield self._nReceivingFinished.event
+
             self._transmitting = True
+            # Wait for the beginning of the next time slot
+            yield SimMan.nextTimeSlot(TIME_SLOT_LENGTH)
+            # Simulate transmitting
             t = self.frequencyBand.transmit(self.device, p["power"],  p["packet"], p["mcs"], p["mcs"])
             self._currentTransmission = t
-            # wait for the transmission to finish
+            # Wait for the transmission to finish
             yield t.eCompletes
             self._transmitting = False
-            # indicate that the send command was processed
+            # Indicate that the send command was processed
             cmd.setProcessed()
     
     def _receive(self, t: Transmission):
         # Simulates receiving via the frequency band
         if not self._transmitting:
             logger.info("Sensed a transmission.", sender=self)
-
-            currentMcs = t.mcsHeader
-            bitErrorSum = 0
-            currentBitErrorRate = 0.0
-            lastErrorCountTime = SimMan.now
-
-            def updateBitErrorRate():
-                """
-                Sets `bitErrorRate` to the current bit error rate for the
-                transmission `t` if t has not yet completed.
-                """
-                nonlocal currentBitErrorRate
-                signalPower = self._transmissionToReceivedPowerDict[t]
-                noisePower = self._receivedPower - signalPower
-                assert signalPower >= 0
-                assert noisePower >= 0
-                signalPowerDbm = milliwattsToDbm(signalPower)
-                noisePowerDbm = milliwattsToDbm(noisePower)
-                currentBitErrorRate = currentMcs.calculateBitErrorRate(signalPowerDbm, noisePowerDbm)
-                logger.debug("Currently simulated bit error rate: " + str(currentBitErrorRate), sender=self)
-            
-            def countBitErrors():
-                nonlocal bitErrorSum
-                # Calculate the duration since last time that we counted errors
-                now = SimMan.now
-                duration = now - lastErrorCountTime
-
-                # Derive the number of bit errors for that duration (still
-                # as a float, rounding is done in the end)
-                bitErrors = currentBitErrorRate * duration * currentMcs.bitRate
-                bitErrorSum += bitErrors
+            self._receiving = True
+            self._currentReceiverMcs = t.mcsHeader
 
             # Callback for reacting to changes of the received power
             def onReceivedPowerChange(delta: float):
-                nonlocal bitErrorSum
                 if delta != 0:
-                    # Count bit errors for the duration in which the power was "constant"
-                    countBitErrors()
+                    # Count bit errors for the duration in which the power has
+                    # not changed
+                    self._countBitErrors()
 
                     if not t.completed:
                         # Update the bit error rate accordingly
-                        updateBitErrorRate()
+                        self._updateBitErrorRate(t)
             
             self._nReceivedPowerChanges.subscribeCallback(onReceivedPowerChange)
 
-            updateBitErrorRate() # Calculate initial bitErrorRate
+            self._updateBitErrorRate(t) # Calculate initial bitErrorRate
             
             # Wait for the header to be transmitted
             yield t.eHeaderCompletes
 
-            countBitErrors() # count errors since the last time that the received power has changed
+            # Count errors since the last time that the received power has changed
+            self._countBitErrors() 
 
             # Decide whether the header could be received
-            if self._decide(bitErrorSum, t.headerBits, t.mcsHeader, logSubject="Header"):
+            if self._decide(self._receivedBitErrorSum, t.headerBits, t.mcsHeader, logSubject="Header"):
                 # Possibly switch MCS
-                currentMcs = t.mcsPayload
-                bitErrorSum = 0
+                self._currentReceiverMcs = t.mcsPayload
+                self._resetBitErrorCounter()
 
                 # Wait for the payload to be transmitted
                 yield t.eCompletes
-                self._nReceivedPowerChanges.unsubscribeCallback(onReceivedPowerChange)
+                self._countBitErrors()
 
-                countBitErrors()
+                logger.debug("{:.3} of {:.3} payload bits were errors.".format(
+                                self._receivedBitErrorSum, t.payloadBits), sender=self)
+                
                 # Decide whether the payload could be received
-                logger.debug("{:.3} of {:.3} payload bits were errors.".format(bitErrorSum, t.payloadBits), sender=self)
-                if self._decide(bitErrorSum, t.payloadBits, t.mcsPayload, logSubject="Payload"):
-                    # sending the packet via the mac gate
+                if self._decide(self._receivedBitErrorSum, t.payloadBits, t.mcsPayload, logSubject="Payload"):
+                    # Send the packet via the mac gate
                     self.ports["mac"].output.send(t.packet)
                 else:
                     logger.info("Receiving transmission payload failed for %s", t, sender=self)
+            
+            self._nReceivedPowerChanges.unsubscribeCallback(onReceivedPowerChange)
+            self._resetBitErrorCounter()
+            self._receiving = False
+            self._nReceivingFinished.trigger()
                 
     def _decide(self, bitErrorSum, totalBits, mcs, logSubject = "Data") -> bool:
         """
@@ -267,9 +285,10 @@ class SimplePhy(StackLayer):
                             "(bit error rate: {:.3%})".format(logSubject, bitErrorRate), sender=self)
             return True
         else:
-            logger.info("Decider: Data received with uncorectable errors "
+            logger.info("Decider: {} received with uncorectable errors "
                             "(bit error rate: {:.3%}, max. correctable "
-                            "bit error rate: {:.3%})!".format(bitErrorRate, maxCorrectableBer), sender=self)
+                            "bit error rate: {:.3%})!".format(logSubject,
+                            bitErrorRate, maxCorrectableBer), sender=self)
             return False
         
 
@@ -517,7 +536,7 @@ class SimpleRrmMac(StackLayer):
     
     @GateListener("transportIn", Message)
     def transportInGateListener(self, message: Message):
-        logger.debug("%s: Got new ASSIGN Message %s.", self, message)
+        logger.debug("%s: Got %s.", self, message)
         self._nAnnouncementReceived.trigger(message)
     
     def _sendAnnouncement(self, assignMessage: Message):
@@ -539,7 +558,7 @@ class SimpleRrmMac(StackLayer):
                 "mcs": self._announcementMcs
             }
         )
-        logger.debug("%s: Sending new announcement: %s", self, announcement)
+        logger.debug("%s: Sending announcement: %s", self, announcement)
         self.ports["phy"].output.send(sendCmd)
         yield sendCmd.eProcessed
         yield SimMan.timeout((duration+1)*TIME_SLOT_LENGTH) # one extra time slot to prevent collisions

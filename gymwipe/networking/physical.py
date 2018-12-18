@@ -560,8 +560,11 @@ class FrequencyBand:
         """
         :class:`~gymwipe.simtools.Notifier`: A notifier that is triggered when
         :meth:`transmit` is executed, providing the :class:`Transmission` object
-        representing the transmission.
+        that represents the transmission.
         """
+    
+    def __repr__(self):
+        return "FrequencyBand(f={:.2E} Hz)".format(self.spec.frequency)
 
     def getAttenuationModel(self, deviceA: Device, deviceB: Device) -> AttenuationModel:
         """
@@ -593,7 +596,7 @@ class FrequencyBand:
         self._removeFirstPastTransmission() # regular cleanup
         t = Transmission(sender, power, packet, mcsHeader, mcsPayload, SimMan.now)
         self._transmissions.append(t)
-        logger.info("%s added to FrequencyBand", t)
+        logger.info("%s added", t, sender=self)
         # trigger notifiers after returning the transmission
         def callAfterReturn(value: Any):
             self.nNewTransmission.trigger(t)

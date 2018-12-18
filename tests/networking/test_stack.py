@@ -29,8 +29,8 @@ class CollectorPort(Port):
         super(CollectorPort, self).__init__(name)
         self.inputHistory = []
         self.outputHistory = []
-        self.input.addCallback(self.inputSaver)
-        self.output.addCallback(self.outputSaver)
+        self.input.nReceives.subscribeCallback(self.inputSaver)
+        self.output.nReceives.subscribeCallback(self.outputSaver)
     
     def inputSaver(self, obj):
         self.inputHistory.append(obj)
@@ -157,13 +157,12 @@ def simple_mac(simple_phy):
 
     return s
 
-def do_not_test_simple_mac_then(caplog, simple_mac):
-    # TODO Why does device 1 all the sudden fail to receive the first RRM packet?
+def test_simple_mac(caplog, simple_mac):
     caplog.set_level(logging.INFO, logger='gymwipe.networking.construction')
     caplog.set_level(logging.INFO, logger='gymwipe.networking.core')
     caplog.set_level(logging.INFO, logger='gymwipe.networking.physical')
     caplog.set_level(logging.DEBUG, logger='gymwipe.networking.stack')
-    #caplog.set_level(logging.INFO, logger='gymwipe.simtools')
+    caplog.set_level(logging.INFO, logger='gymwipe.simtools')
 
     s = simple_mac
 
@@ -199,7 +198,7 @@ def do_not_test_simple_mac_then(caplog, simple_mac):
             else:
                 dest = dev2Addr
             cmd = Message(StackMessages.ASSIGN, {"duration": ASSIGN_TIME/TIME_SLOT_LENGTH, "dest": dest})
-            s.rrmMac.ports["transport"].send(cmd)
+            s.rrmMac.gates["transportIn"].send(cmd)
             if previousCmd is not None:
                 yield previousCmd.eProcessed
             previousCmd = cmd
