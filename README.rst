@@ -6,7 +6,7 @@ Gym-WiPE – Gym Wireless Plant Environment
 An `OpenAI Gym`_ environment for the application of reinforcement learning in the simulation of wireless networked
 feedback control loops
 
-Documentation lives at `Read the Docs`_
+Documentation lives at `Read the Docs`_.
 
 .. _Read the Docs: https://gymwipe.readthedocs.io/en/latest/
 
