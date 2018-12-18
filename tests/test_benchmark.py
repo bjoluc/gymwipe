@@ -14,7 +14,7 @@ from gymwipe.networking.physical import BpskMcs, FrequencyBand
 from gymwipe.networking.stack import SimplePhy
 from gymwipe.simtools import SimMan
 
-SEND_INTERVAL = 1e-3 # seconds
+SEND_INTERVAL = 1e-2 # seconds
 MOVE_INTERVAL = 1e-3 # seconds
 
 class SendingDevice(NetworkDevice):
