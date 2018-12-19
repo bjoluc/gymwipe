@@ -3,8 +3,8 @@ Gym-WiPE – Gym Wireless Plant Environment
 
 |Documentation|
 
-An `OpenAI Gym`_ environment for the application of reinforcement learning in the simulation of wireless networked
-feedback control loops
+`OpenAI Gym`_ environments for the application of reinforcement learning in the
+simulation of wireless networked feedback control loops
 
 Documentation lives at `Read the Docs`_.
 
@@ -24,9 +24,9 @@ networks. Off-the-shelf wireless network solutions, however, may not fulfill
 their needs without further improvements. Reinforcement learning may help to
 find appropriate policies for radio resource management in control systems for
 which optimal static resource management algorithms can not easily be
-determined. This is where Gym-WiPE comes in: It provides an `OpenAI Gym`_
-reinforcement learning environment that simulates wireless networked feedback
-control loops.
+determined. This is where Gym-WiPE comes in: It provides simulation tools for
+the creation of `OpenAI Gym`_ reinforcement learning environments that simulate
+wireless networked feedback control loops.
 
 .. _OpenAI Gym: https://gym.openai.com/
 
