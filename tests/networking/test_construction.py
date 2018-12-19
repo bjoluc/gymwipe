@@ -3,7 +3,8 @@ import logging
 import pytest
 from pytest_mock import mocker
 
-from gymwipe.networking.construction import Gate, Module, Port, GateListener
+from gymwipe.networking.construction import (CompoundModule, Gate,
+                                             GateListener, Module, Port)
 from gymwipe.simtools import SimMan, SimTimePrepender
 
 from ..fixtures import simman
@@ -56,13 +57,18 @@ def test_module_functions():
     assert m.gates['gate1'].name == 'gate1'
     assert m.gates['gate2'].name == 'gate2'
 
-    sub1 = Module('submodule1')
+    sub1 = m
     sub2 = Module('submodule2')
-    m._addSubModule('sub1', sub1)
-    m._addSubModule('sub2', sub2)
-    assert m.subModules['sub1'] is sub1
-    assert m.subModules['sub2'] is sub2
-    assert m.subModules == {'sub1': sub1, 'sub2': sub2}
+    sub3 = Module('submodule3')
+    cm = CompoundModule('CompoundModule')
+    assert cm.name == 'CompoundModule'
+    cm._addSubmodule('sub1', sub1)
+    cm._addSubmodule('sub2', sub2)
+    cm._addSubmodule('sub3', sub3)
+    assert cm.submodules['sub1'] is sub1
+    assert cm.submodules['sub2'] is sub2
+    assert cm.submodules['sub3'] is sub3
+    assert cm.submodules == {'sub1': sub1, 'sub2': sub2, 'sub3': sub3}
 
 def test_module_simulation(caplog, simman):
     # Connect two modules in a bidirectional cycle and let them pass around a message object in both directions

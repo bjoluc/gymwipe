@@ -29,16 +29,7 @@ TIME_SLOT_LENGTH = 1e-6
 float: The length of one time slot in seconds (used for simulating slotted time)
 """
 
-class StackLayer(Module):
-
-    def __init__(self, name: str, device: Device):
-        super(StackLayer, self).__init__(name)
-        self.device = device
-    
-    def __repr__(self):
-        return "{}.{}('{}')".format(repr(self.device), self.__class__.__name__, self.name)
-
-class SimplePhy(StackLayer):
+class SimplePhy(Module):
     """
     A phy layer implementation that does not take propagation delays into
     account. It provides a port called `mac` to be connected to a mac layer.
@@ -68,7 +59,8 @@ class SimplePhy(StackLayer):
 
     @GateListener.setup
     def __init__(self, name: str, device: Device, frequencyBand: FrequencyBand):
-        super(SimplePhy, self).__init__(name, device)
+        super(SimplePhy, self).__init__(name , owner=device)
+        self.device = device
         self.frequencyBand = frequencyBand
         self._addPort("mac")
 
@@ -292,7 +284,7 @@ class SimplePhy(StackLayer):
             return False
         
 
-class SimpleMac(StackLayer):
+class SimpleMac(Module):
     """
     A MAC layer implementation of the contention-free protocol described as
     follows:
@@ -360,7 +352,7 @@ class SimpleMac(StackLayer):
             device: The device that operates the SimpleMac layer
             addr: The 6-byte-long MAC address to be assigned to this MAC layer
         """
-        super(SimpleMac, self).__init__(name, device)
+        super(SimpleMac, self).__init__(name, owner=device)
         self._addPort("phy")
         self._addPort("transport")
         self.addr = addr
@@ -489,7 +481,7 @@ class SimpleMac(StackLayer):
         self._receiving = False
         self._receiveTimeout = None
 
-class SimpleRrmMac(StackLayer):
+class SimpleRrmMac(Module):
     """
     The RRM implementation of the protocol described in :class:`SimpleMac`
 

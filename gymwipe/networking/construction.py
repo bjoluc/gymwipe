@@ -270,7 +270,7 @@ class GateListener:
         typecheck = self._validTypes is not None
         isGenerator = inspect.isgeneratorfunction(method)
 
-        # define the initialization method to be returned
+        # Define the initialization method to be returned
         def initializer(instance):
 
             def callAdapter(obj: Any):
@@ -339,13 +339,11 @@ class GateListener:
     
 class Module:
     """
-    A module has a number of ports and gates that can be used to connect it to
-    exchange data with it and, for example, connect it to other modules. Modules
-    may contain an arbitrary number of submodules which can be connected with
-    each other and the parent module's gates and ports. Modules provide the
-    methods :meth:`_addPort`, :meth:`_addGate`, and :meth:`_addSubmodule` that
-    allow to add ports, gates and submodules, which can be accessed via the
-    :attr:`ports`, the :attr:`gates`, and the :attr:`subModules` dictionary.
+    A module has a number of ports and gates that can be used to exchange
+    data with it and connect it to other modules.
+    Modules provide the methods :meth:`_addPort` and :meth:`_addGate` that
+    allow to add ports and gates, which can be accessed via the
+    :attr:`ports` and the :attr:`gates` dictionaries.
 
     Note:
 
@@ -358,11 +356,9 @@ class Module:
         name(str): The Module's name
         ports(Dict[str, Port]): The Module's outer Ports
         gates(Dict[str, Gate]): The Module's outer Gates
-        subModules(Dict[str, Module]): The Module's nested Modules
 
     .. automethod:: _addPort
     .. automethod:: _addGate
-    .. automethod:: _addSubModule
     """
 
     def __init__(self, name: str, owner = None):
@@ -371,7 +367,6 @@ class Module:
 
         self.ports: Dict[str, Port] = {}
         self.gates: Dict[str, Gate] = {}
-        self.subModules: Dict[str, Module] = {}
     
     def __repr__(self):
         return "{}{}('{}')".format(ownerPrefix(self._owner), self.__class__.__name__, self.name)
@@ -410,8 +405,44 @@ class Module:
         if name in self.gates:
             raise ValueError("A gate indexed by '{}' already exists.".format(name))
         self.gates[name] = Gate(name, owner=self)
+
+class CompoundModule(Module):
+    """
+    A :class:`CompoundModule` is a :class:`Module` that contains an arbitrary
+    number of submodules (:class:`Module` objects) which can be connected with
+    each other and their parent module's gates and ports.
+    Submodules are added using :meth:`_addSubmodule` and can be accessed via
+    the :attr:`submodules` dictionary.
     
-    def _addSubModule(self, name: str, module: 'Module'):
-        if name in self.subModules:
-            raise ValueError("A sub module named '{}' already exists.".format(name))
-        self.subModules[name] = module
+    Note:
+
+        When subclassing CompoundModule, do not directly implement
+        functionalities in your subclass, but wrap them in submodules
+        to ensure modularity.
+        Also, do not connect a CompoundModule's submodules to anything
+        else than other submodules or the CompoundModule itself for
+        the same reason.
+    
+    Attributes:
+        submodules(Dict[str, Module]): The CompoundModule's nested :class:`Module`
+            objects
+    
+    .. automethod:: _addSubmodule
+    """
+
+    def __init__(self, name: str, owner = None):
+        super(CompoundModule, self).__init__(name, owner)
+        self.submodules: Dict[str, Module] = {}
+
+    def _addSubmodule(self, name: str, module: Module):
+        """
+        Adds a new :class:`Module` to the :attr:`submodules` dictionary, indexed
+        by the name passed.
+
+        Args:
+            name: The name for the submodule to be indexed with
+            module: The :class:`Module` object to be added as a submodule
+        """
+        if name in self.submodules:
+            raise ValueError("A submodule named '{}' already exists.".format(name))
+        self.submodules[name] = module
