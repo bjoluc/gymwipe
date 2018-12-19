@@ -82,6 +82,8 @@ pygments_style = 'sphinx'
 # unit titles (such as .. function::).
 add_module_names = False
 
+# Keep autodoc member order
+autodoc_member_order = 'bysource'
 
 # -- Options for HTML output -------------------------------------------------
 
