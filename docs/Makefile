@@ -4,7 +4,7 @@
 # You can set these variables from the command line.
 SPHINXOPTS    =
 SPHINXBUILD   = pipenv run sphinx-build
-SPHINXPROJ    = gymwirelesscontrol
+SPHINXPROJ    = gymwipe
 SOURCEDIR     = .
 BUILDDIR      = _build
 

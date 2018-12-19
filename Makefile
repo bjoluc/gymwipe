@@ -11,7 +11,8 @@ benchmark:
 		--benchmark-json=benchmark_results.json
 
 docs:
-	pipenv run sphinx-apidoc --force --separate -o docs/api gymwipe gymwipe/test gymwipe/*/test
+	pipenv run sphinx-apidoc --force --separate -o docs/api gymwipe gymwipe/test
+	rm docs/api/modules.rst docs/api/gymwipe.rst # since they will are not included in any toctree
 	$(MAKE) -C docs clean
 	$(MAKE) -C docs html
 	# Open docs/_build/html/index.html to see the results
