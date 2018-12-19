@@ -1,3 +1,6 @@
+"""
+Controller implementations for an inverted pendulum (using the :mod:`gymwipe.plants.sliding_pendulum` module)
+"""
 from math import degrees, pi
 
 from simpy.rt import RealtimeEnvironment

@@ -1,6 +1,5 @@
 """
-Todo:
-    Documentation
+Core components for plant implementations.
 """
 
 import ode
@@ -9,7 +8,9 @@ from gymwipe.simtools import SimMan
 
 class Plant:
     """
-
+    Plants are supposed to hold the state of a simulated plant and make it
+    accessible to simulated sensors and modifyable by simulated actuators.
+    The :class:`Plant` class itself does not provide any features.
     """
 
 class OdePlant(Plant):

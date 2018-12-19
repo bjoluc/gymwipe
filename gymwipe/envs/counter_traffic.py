@@ -1,7 +1,6 @@
 """
-Gym environments based on the Simple network devices
+A simple Gym environment using the `Simple` network devices for demonstration purposes 
 """
-
 from typing import Dict, List
 
 import gym

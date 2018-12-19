@@ -1,3 +1,6 @@
+"""
+A plant, sensor, and actuator implementation for an inverted pendulum.
+"""
 import pygame
 from pygame import Surface
 
@@ -112,7 +115,7 @@ class SlidingPendulum(OdePlant):
 
 class AngleSensor(SimpleNetworkDevice):
     """
-    A networked angle sensor implementation for the SlidingPendulum plant
+    A networked angle sensor implementation for the :class:`SlidingPendulum` plant
     """
 
     def __init__(self, name: str, xPos: float, yPos: float, frequencyBand: FrequencyBand,
@@ -132,7 +135,7 @@ class AngleSensor(SimpleNetworkDevice):
 
 class WagonActuator(SimpleNetworkDevice):
     """
-    A networked actuator implementation for moving the SlidingPendulum plant's wagon
+    A networked actuator implementation for moving the :class:`SlidingPendulum` plant's wagon
     """
 
     def __init__(self, name: str, xPos: float, yPos: float, frequencyBand: FrequencyBand,

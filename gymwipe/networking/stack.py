@@ -11,7 +11,7 @@ import numpy as np
 from simpy.events import Event
 
 from gymwipe.devices import Device
-from gymwipe.networking.construction import Module, Port, GateListener
+from gymwipe.networking.construction import GateListener, Module, Port
 from gymwipe.networking.messages import (Message, Packet, SimpleMacHeader,
                                          StackMessageTypes, Transmittable)
 from gymwipe.networking.physical import (AttenuationModel, BpskMcs,
