@@ -10,7 +10,7 @@ from gymwipe.networking.attenuation_models import FsplAttenuation
 from gymwipe.networking.construction import Port
 from gymwipe.networking.messages import (FakeTransmittable, Message, Packet,
                                          SimpleMacHeader, SimpleNetworkHeader,
-                                         StackMessages, Transmittable)
+                                         StackMessageTypes, Transmittable)
 from gymwipe.networking.physical import BpskMcs, FrequencyBand
 from gymwipe.networking.stack import (TIME_SLOT_LENGTH, SimpleMac, SimplePhy,
                                       SimpleRrmMac)
@@ -78,7 +78,7 @@ def test_simple_phy(caplog, mocker, simple_phy):
     receiverCallbackMock = mocker.Mock()
     receiverPort = Port("Receiver Stack")
     receiverPort.input.nReceives.subscribeCallback(receiverCallbackMock)
-    receiverPhy.ports["mac"].output.connectTo(receiverPort.input)
+    receiverPhy.gates["macOut"].connectTo(receiverPort.input)
 
     # create something transmittable
     packet = Packet(FakeTransmittable(8), FakeTransmittable(128))
@@ -90,10 +90,10 @@ def test_simple_phy(caplog, mocker, simple_phy):
         # setup the message to the physical layer
         MCS = BpskMcs(frequencyBand.spec)
         POWER = 0.0 # dBm
-        cmd = Message(StackMessages.SEND, {"packet": packet, "power": POWER, "mcs": MCS})
+        cmd = Message(StackMessageTypes.SEND, {"packet": packet, "power": POWER, "mcs": MCS})
 
         # send the message to the physical layer
-        senderPhy.ports["mac"].input.send(cmd)
+        senderPhy.gates["macIn"].send(cmd)
 
         # wait 8 payload bits
         yield SimMan.timeout(8/MCS.dataRate)
@@ -173,14 +173,14 @@ def test_simple_mac(caplog, simple_mac):
         # send a bunch of packets from `fromMacLayer` to `toMacLayer`
         for p in payloads:
             packet = Packet(SimpleNetworkHeader(fromMacLayer.addr, toMacLayer.addr), p)
-            fromMacLayer.ports["transport"].input.send(packet)
+            fromMacLayer.gates["networkIn"].send(packet)
             yield SimMan.timeout(1e-4)
 
     def receiver(macLayer: SimpleMac, receivedPacketsList: List[Packet]):
         # receive forever
         while True:
-            receiveCmd = Message(StackMessages.RECEIVE, {"duration": 10})
-            macLayer.ports["transport"].input.send(receiveCmd)
+            receiveCmd = Message(StackMessageTypes.RECEIVE, {"duration": 10})
+            macLayer.gates["networkIn"].send(receiveCmd)
             result = yield receiveCmd.eProcessed
             if result is not None:
                 receivedPacketsList.append(result)
@@ -197,8 +197,8 @@ def test_simple_mac(caplog, simple_mac):
                 dest = dev1Addr
             else:
                 dest = dev2Addr
-            cmd = Message(StackMessages.ASSIGN, {"duration": ASSIGN_TIME/TIME_SLOT_LENGTH, "dest": dest})
-            s.rrmMac.gates["transportIn"].send(cmd)
+            cmd = Message(StackMessageTypes.ASSIGN, {"duration": ASSIGN_TIME/TIME_SLOT_LENGTH, "dest": dest})
+            s.rrmMac.gates["networkIn"].send(cmd)
             if previousCmd is not None:
                 yield previousCmd.eProcessed
             previousCmd = cmd

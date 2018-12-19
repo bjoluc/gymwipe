@@ -17,7 +17,7 @@ The following classes are used for inter-module communication:
 .. autosummary::
 
     ~gymwipe.networking.messages.Message
-    ~gymwipe.networking.messages.StackMessages
+    ~gymwipe.networking.messages.StackMessageTypes
 """
 from enum import Enum
 from typing import Any, Dict
@@ -227,7 +227,7 @@ class Message:
     def __repr__(self):
         return "Message(type: '{}', args: {})".format(self.type.name, self.args)
 
-class StackMessages(Enum):
+class StackMessageTypes(Enum):
     """
     An enumeration of control message types to be used for the exchange of
     `Message` objects between network stack layers.

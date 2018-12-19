@@ -118,7 +118,7 @@ def test_module_simulation(caplog, simman):
     def simulation():
         # send the test message (a zero)
         print("sending message")
-        m1.ports["a"].input.send(1)
+        m1.gates["aIn"].send(1)
 
         # wait 40 time units
         yield SimMan.timeout(20)
@@ -169,7 +169,7 @@ def test_gate_listener_method(caplog):
     for i in range(3):
         for module in modules:
             # pass a message to port a
-            module.ports["a"].input.send("msg" + str(i))
+            module.gates["aIn"].send("msg" + str(i))
             for j in range(1):
                 # All messages passed yet should have been received (and thus logged),
                 # regardless of the queued flag.
@@ -185,7 +185,7 @@ def test_gate_listener_generator(caplog):
     def main():
         for i in range(3):
             for module in modules:
-                module.ports["b"].input.send("msg" + str(i))
+                module.gates["bIn"].send("msg" + str(i))
                 yield SimMan.timeout(1)
 
     SimMan.process(main())

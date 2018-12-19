@@ -9,7 +9,7 @@ import pytest
 from gymwipe.networking.attenuation_models import FsplAttenuation
 from gymwipe.networking.devices import NetworkDevice
 from gymwipe.networking.messages import (Message, Packet, SimpleMacHeader,
-                                         StackMessages, Transmittable)
+                                         StackMessageTypes, Transmittable)
 from gymwipe.networking.physical import BpskMcs, FrequencyBand
 from gymwipe.networking.stack import SimplePhy
 from gymwipe.simtools import SimMan
@@ -44,8 +44,8 @@ class SendingDevice(NetworkDevice):
                     Transmittable("A message to all my homies")
                 )
 
-                signal = Message(StackMessages.SEND, {"packet": packet, "power": 40.0, "mcs": mcs})
-                self._phy.ports["mac"].input.send(signal)
+                signal = Message(StackMessageTypes.SEND, {"packet": packet, "power": 40.0, "mcs": mcs})
+                self._phy.gates["macIn"].send(signal)
 
         SimMan.process(sender())
 
