@@ -37,9 +37,9 @@ class SimplePhy(Module):
     :attr:`TIME_SLOT_LENGTH`.
     
     During simulation the frequency band is sensed and every successfully
-    received packet is sent via the `mac` gate.
+    received packet is sent via the `macOut` gate.
 
-    The `mac` port accepts :class:`~gymwipe.networking.messages.Message` objects
+    The `macIn` gate accepts :class:`~gymwipe.networking.messages.Message` objects
     with the following :class:`~gymwipe.networking.messages.StackMessageTypes`:
 
     * :attr:`~gymwipe.networking.messages.StackMessageTypes.SEND`
