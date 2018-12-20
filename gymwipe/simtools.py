@@ -231,12 +231,12 @@ def ensureType(input: Any, validTypes: Union[type, Tuple[type]], caller: Any):
 
 class Notifier:
     """
-    A class implementing the observer pattern. A :class:`Notifier` can be
-    triggered providing a value. Both callback functions and SimPy generators
-    can be subscribed. Every time the :class:`Notifier` is triggered, it will
-    run its callback methods and trigger the execution of the subscribed SimPy
-    generators. Aditionally, SimPy generators can wait for a :class:`Notifier`
-    to be triggered by yielding its :attr:`event`.
+    A class that helps implementing the observer pattern. A :class:`Notifier`
+    can be triggered providing a value. Both callback functions and SimPy
+    generators can be subscribed. Every time the :class:`Notifier` is triggered,
+    it will run its callback methods and trigger the execution of the subscribed
+    SimPy generators. Aditionally, SimPy generators can wait for a
+    :class:`Notifier` to be triggered by yielding its :attr:`event`.
     """
 
     def __init__(self, name: str = "", owner: Any = None):
@@ -292,8 +292,8 @@ class Notifier:
     
     def unsubscribeCallback(self, callback: Callable[[Any], None]):
         """
-        Removes the passed callable from the set of callback functions. It is
-        thus not triggered anymore by this :class:`Notifier`.
+        Removes the passed callable from the set of callback functions.
+        Afterwards, it is not triggered anymore by this :class:`Notifier`.
 
         Args:
             callback: The callable to be removed
@@ -310,7 +310,7 @@ class Notifier:
     
     def _updateSortedCallbacks(self):
         """
-        Rebuilds the sortedCallbacks list
+        Rebuilds the :attr:`_sortedCallbacks` list
         """
         sortedPriorities = sorted(self._priorityToCallbacks.keys(), reverse=True)
         self._sortedCallbacks = list(
@@ -328,19 +328,20 @@ class Notifier:
         Args:
             blocking: If set to ``False``, only one instance of the generator
                 will be processed at a time. Thus, if :meth:`trigger` is called
-                while the SimPy process started by an earlier call has not
-                terminated, no action is taken.
-            queued: If blocking is ``True`` and queued is ``False``, a
-                :meth:`trigger` call while an instance of the generator is still
-                active will not result in a new generator instance. If queued is set
-                to ``True`` instead, the values of those :meth:`trigger` calls will
-                be queued and as long as the queue is not empty, a new generator
-                instance with a queued value will be created every time a previous
-                instance has terminated.
+                while the SimPy process started by an earlier :meth:`trigger` call
+                has not terminated, no action is taken.
+            queued: Only relevant if blocking is ``True``. If `queued` is set to
+                false ``False``, a :meth:`trigger` call while an instance of the
+                generator is still active will not result in an additional generator
+                execution. If queued is set to ``True`` instead, the values of
+                :meth:`trigger` calls that happen while the subscribed generator is
+                being processed will be queued and as long as the queue is not
+                empty, a new generator instance with a queued value will be
+                processed every time a previous instance has terminated.
         """
 
         if process in self._processExecutors:
-            logger.warn("Generator function %s was already subscribed! Ignoring the call.", process, sender=self)
+            logger.warn("Generator function %s is already subscribed! Ignoring the call.", process, sender=self)
         else:
             # creating an executor function that will be called whenever trigger is called
             def executor(value: Any):
@@ -385,7 +386,6 @@ class Notifier:
                                 executor.running = False
                             processedEvent.callbacks.append(setRunningFlagToFalse)
 
-
             executor.running = False
             if blocking:
                 executor.queue = deque()
@@ -424,7 +424,7 @@ class Notifier:
     @property
     def name(self):
         """
-        str: The notifier's name as it has been passed to the constructor
+        str: The :class:`Notifier`'s name as it has been passed to the constructor
         """
         return self._name
     

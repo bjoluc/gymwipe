@@ -62,7 +62,6 @@ class InvertedPendulumEnv(BaseEnv):
     :class:`~gymwipe.control.inverted_pendulum.InvertedPendulumPidController`
 
     Note:
-
         This environment is yet untested!
     """
 

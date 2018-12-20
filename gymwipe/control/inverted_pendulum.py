@@ -18,7 +18,6 @@ class InvertedPendulumPidController(SimpleNetworkDevice):
     A PID inverted pendulum controller for the SlidingPendulum plant.
 
     Note:
-
         After initialization, the :attr:`sensorAddr` and :attr:`actuatorAddr`
         attributes have to be set to the network addresses of the sensor and the
         actuator.
