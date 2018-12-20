@@ -19,7 +19,7 @@ MOVE_INTERVAL = 1e-3 # seconds
 
 class SendingDevice(NetworkDevice):
     """
-    A device that sends packets to a non-existent mac address.
+    A device that sends packets to a non-used mac address
     """
 
     def __init__(self, id, xPos, yPos, frequencyBand, sendInterval, initialDelay):
@@ -49,17 +49,16 @@ class SendingDevice(NetworkDevice):
 
         SimMan.process(sender())
 
-deviceCounts = range(0, 101, 5)
-#deviceCounts = [20]
+deviceCounts = range(0, 21, 2)
 
 @pytest.fixture(params=deviceCounts)
 def device_grid(request):
     """
-    A parametrized device fixture that sets up SendingDevices in a block
+    A parametrized device fixture that sets up SendingDevices in a grid
     arrangement with 1 m distance between adjacent devices.
     Tests using this fixture will be run with every specified parameter.
     """
-    n = request.param # number of devices to be created
+    n = request.param # Number of devices to be created
     SimMan.init()
     frequencyBand = FrequencyBand([FsplAttenuation])
 
@@ -85,8 +84,13 @@ def mobile_device_grid(device_grid):
     for device in device_grid:
         SimMan.process(mover(device))
 
-# def benchmark_simulation_grid(benchmark, device_grid):
-#     benchmark(SimMan.runSimulation, 1)
+def benchmark_simulation_grid(benchmark, device_grid):
+    benchmark(SimMan.runSimulation, 1)
+
+def benchmark_simulation_mobile_grid(benchmark, mobile_device_grid):
+    benchmark(SimMan.runSimulation, 1)
+
+# Code snippets for memory leak finding
 
 # from pympler import tracker
 # tr = tracker.SummaryTracker()
@@ -97,17 +101,7 @@ def mobile_device_grid(device_grid):
 #     output = repr(x)[:1000]
 #     return textwrap.fill(output,40)
 
-def benchmark_simulation_mobile_grid(benchmark, mobile_device_grid):
+#objgraph.show_refs(SimMan.env)
+#objgraph.show_backrefs(random.choice(objgraph.by_type("Notifier")), extra_info=extrinfo)
 
-    #tr.print_diff()
-
-    benchmark(SimMan.runSimulation, 1)
-
-    #SimMan.runSimulation(1)
-    #objgraph.show_refs(SimMan.env)
-    #objgraph.show_backrefs(random.choice(objgraph.by_type("Notifier")), extra_info=extrinfo)
-
-    #tr.print_diff()
-
-    #cb = refbrowser.ConsoleBrowser(SimMan.env, maxdepth=3, str_func=output_function)
-    #cb.print_tree()
+#tr.print_diff()
