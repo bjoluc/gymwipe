@@ -51,12 +51,12 @@ class SimpleNetworkDevice(NetworkDevice):
         self._receiving = False
         self._receiverProcess = None # a SimPy receiver process
 
-        self.mac: bytes = SimpleMac.newMacAddress()
+        self.macAddr: bytes = SimpleMac.newMacAddress()
         """bytes: The address that is used by the MAC layer to identify this device"""
 
         # Initialize PHY and MAC
         self._phy = SimplePhy("phy", self, self.frequencyBand)
-        self._mac = SimpleMac("mac", self, self.frequencyBand.spec, self.mac)
+        self._mac = SimpleMac("mac", self, self.frequencyBand.spec, self.macAddr)
         # Connect them with each other
         self._mac.ports["phy"].biConnectWith(self._phy.ports["mac"])
     
@@ -82,7 +82,7 @@ class SimpleNetworkDevice(NetworkDevice):
             self._receiving = receiving
 
     def send(self, data: Transmittable, destinationMacAddr: bytes):
-        p = Packet(SimpleNetworkHeader(self.mac, destinationMacAddr), data)
+        p = Packet(SimpleNetworkHeader(self.macAddr, destinationMacAddr), data)
         self._mac.gates["networkIn"].send(p)
 
     def _receiver(self):
@@ -171,7 +171,7 @@ class SimpleRrmDevice(NetworkDevice):
     __init__.__doc__ = NetworkDevice.__init__.__doc__ + __init__.__doc__
     
     @property
-    def mac(self) -> bytes:
+    def macAddr(self) -> bytes:
         """bytes: The RRM's MAC address"""
         return self._mac.addr
 

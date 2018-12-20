@@ -35,7 +35,7 @@ class SimulationManager:
         current simulation
         """
         return self._env
-    
+
     @env.setter
     def env(self, environment):
         logger.debug("SimulationManager: Setting environment")

@@ -33,16 +33,16 @@ wireless networked feedback control loops.
 What's included?
 ----------------
 
-Gym-WiPE features an all-Python wireless network simulator based on
-`SimPy`_. The `Open Dynamics Engine (ODE)`_, more specifically its
-Python wrapper `Py3ODE`_ is integrated for plant simulation. Two Gym
-environments have been implemented for frequency band assignments yet: A
-simplistic network-only example and the control of an inverted pendulum.
-The development of further environments may concern frequency band
-assignments but is not limited to these as the entire simulation model
-is accessible from within Python and may be used for arbitrary Gym
-wireless networked control environments. Control
-algorithm implementations may profit from the `python-control`_ project.
+Gym-WiPE features an all-Python wireless network simulator based on `SimPy`_.
+The `Open Dynamics Engine (ODE)`_, more specifically its Python wrapper
+`Py3ODE`_ is integrated for plant simulation. Two Gym environments have been
+implemented for frequency band assignments yet: A simplistic network-only
+example and a (yet untested) environment for frequency band assignments to a
+sensor and a controller of an inverted pendulum. The development of further
+environments may concern frequency band assignments but is not limited to these
+as the entire simulation model is accessible from within Python and may be used
+for arbitrary Gym wireless networked control environments. Control algorithm
+implementations may profit from the `python-control`_ project.
 
 .. _SimPy: https://simpy.readthedocs.io/
 .. _Open Dynamics Engine (ODE): https://www.ode.org/
@@ -61,15 +61,15 @@ Gym-WiPE uses `pipenv`_. To install it, run
 
    pip install pipenv
 
-With pipenv installed, you may clone the repository like
+With `pipenv` installed, you may clone the repository like
 
 ::
 
    git clone https://github.com/bjoluc/gymwipe.git
    cd gymwipe
 
-and invoke pipenv to set up a virtual environment and install the
-dependencies into it:
+and invoke pipenv to set up a virtual environment and install the dependencies
+into it:
 
 ::
 
@@ -79,11 +79,10 @@ Optionally, the development dependencies may be installed via
 
 ::
 
-   pipenv isntall --dev
+   pipenv install --dev
 
-If ODE is used for plant Simulation, it has to be `downloaded`_ and
-built. After that, ``make ode`` will install Py3ODE and pygame for plant
-visualizations.
+If ODE is used for plant Simulation, it has to be `downloaded`_ and built. After
+that, ``make ode`` will install Py3ODE and pygame for plant visualizations.
 
 .. _pipenv: https://pipenv.readthedocs.io/en/latest/
 .. _downloaded: https://sourceforge.net/projects/opende/files/ODE/
@@ -96,6 +95,7 @@ The pytest testsuite can be executed via ``make test``.
 Further steps
 -------------
 
-Yet, this project lacks usage examples and tutorials. For now, you
-can have a look at the API documentation at
-https://gymwipe.readthedocs.io/en/latest/api/index.html
+This project lacks tutorials. For now, you can have a look at the API
+documentation at https://gymwipe.readthedocs.io/en/latest/api/index.html. An
+example agent implementation for a Gym-WiPE environment is provided in the
+`agents` directory.

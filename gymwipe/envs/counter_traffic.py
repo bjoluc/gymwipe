@@ -125,9 +125,9 @@ class CounterTrafficEnv(BaseEnv):
             CounterTrafficEnv.SenderDevice("Sender 1", 0, 2, self.frequencyBand, 1),
             CounterTrafficEnv.SenderDevice("Sender 2", 0, -2, self.frequencyBand, 3)
         ]
-        self.deviceIndexToMacDict: Dict[int, bytes] = {i: s.mac for i, s in enumerate(self.senders)}
-        self.senders[0].destinationMac = self.senders[1].mac
-        self.senders[1].destinationMac = self.senders[0].mac
+        self.deviceIndexToMacDict: Dict[int, bytes] = {i: s.macAddr for i, s in enumerate(self.senders)}
+        self.senders[0].destinationMac = self.senders[1].macAddr
+        self.senders[1].destinationMac = self.senders[0].macAddr
 
         interpreter = self.CounterTrafficInterpreter(self)
         self.rrm = SimpleRrmDevice("RRM", 0, 0, self.frequencyBand, self.deviceIndexToMacDict, interpreter)

@@ -1,9 +1,9 @@
 """
-Controller implementations for an inverted pendulum (using the :mod:`gymwipe.plants.sliding_pendulum` module)
+Controller implementations for an inverted pendulum (using the
+:mod:`gymwipe.plants.sliding_pendulum` module)
 """
 from math import degrees, pi
 
-from simpy.rt import RealtimeEnvironment
 
 from gymwipe.networking.devices import SimpleNetworkDevice
 from gymwipe.networking.messages import Transmittable, Packet
@@ -11,9 +11,7 @@ from gymwipe.networking.physical import FrequencyBand
 from gymwipe.plants.sliding_pendulum import SlidingPendulum
 from gymwipe.simtools import SimMan
 
-# You may want to use this for plant setup in an appropriate environment:
-# SimMan.setEnvironment(RealtimeEnvironment())
-# plant = SlidingPendulum(visualized=True)
+# You may want to use the SimPy RealtimeEnvironment for visualized simulations
 
 class InvertedPendulumPidController(SimpleNetworkDevice):
     """
