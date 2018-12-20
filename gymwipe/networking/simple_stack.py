@@ -1,6 +1,6 @@
 """
-The Stack package contains implementations of network stack layers. Layers are
-modeled by :class:`~gymwipe.networking.construction.Module` objects.
+The simple_stack package contains basic network stack layer implementations.
+Layers are modeled by :class:`~gymwipe.networking.construction.Module` objects.
 """
 import logging
 from collections import deque

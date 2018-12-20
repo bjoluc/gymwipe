@@ -10,7 +10,7 @@ def test_counter_traffic_env(caplog):
     caplog.set_level(logging.INFO, logger='gymwipe.networking.construction')
     caplog.set_level(logging.INFO, logger='gymwipe.networking.core')
     caplog.set_level(logging.INFO, logger='gymwipe.networking.physical')
-    caplog.set_level(logging.INFO, logger='gymwipe.networking.stack')
+    caplog.set_level(logging.INFO, logger='gymwipe.networking.simple_stack')
     caplog.set_level(logging.INFO, logger='gymwipe.simtools')
 
     # Get the environment and extract the number of actions.

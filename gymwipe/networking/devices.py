@@ -7,7 +7,7 @@ from gymwipe.devices import Device
 from gymwipe.networking.messages import (Packet, Message, SimpleNetworkHeader,
                                          StackMessageTypes, Transmittable)
 from gymwipe.networking.physical import FrequencyBand
-from gymwipe.networking.stack import SimpleMac, SimplePhy, SimpleRrmMac
+from gymwipe.networking.simple_stack import SimpleMac, SimplePhy, SimpleRrmMac
 from gymwipe.simtools import Notifier, SimMan
 
 

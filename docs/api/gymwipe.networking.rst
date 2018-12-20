@@ -11,7 +11,7 @@ Submodules
    gymwipe.networking.devices
    gymwipe.networking.messages
    gymwipe.networking.physical
-   gymwipe.networking.stack
+   gymwipe.networking.simple_stack
 
 Module contents
 ---------------

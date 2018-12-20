@@ -11,7 +11,7 @@ from gymwipe.networking.devices import NetworkDevice
 from gymwipe.networking.messages import (Message, Packet, SimpleMacHeader,
                                          StackMessageTypes, Transmittable)
 from gymwipe.networking.physical import BpskMcs, FrequencyBand
-from gymwipe.networking.stack import SimplePhy
+from gymwipe.networking.simple_stack import SimplePhy
 from gymwipe.simtools import SimMan
 
 SEND_INTERVAL = 1e-2 # seconds
