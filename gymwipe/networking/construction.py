@@ -1,5 +1,8 @@
 """
-Classes for building network stack representations
+The construction module provides classes for building network stack
+representations. The concept of modules, compound
+modules, and gates is borrowed from the OMNeT++ model structure, which is
+described in :cite:`varga2008omnetpp`.
 """
 import inspect
 import logging
@@ -109,20 +112,20 @@ class Gate:
 
 
 class Port:
-    """   
+    """
     A :class:`Port` simplifies the setup of bidirectional connections by
     wrapping an input and an output :class:`Gate` and offering two connection
     methods: :meth:`biConnectWith` and :meth:`biConnectProxy`.
 
     Args:
-        name(:class:`str`): The Port's name
+        name(:class:`str`): The :class:`Port`'s name
         owner(Any): The object that the :class:`Port` belongs to (e.g. a
             :class:`Module`)
 
     Attributes:
-        name(:class:`str`): The Port's name, as provided to the constructor
-        input: The Port's input :class:`Gate`
-        output: The Port's output :class:`Gate`
+        name(:class:`str`): The port's name, as provided to the constructor
+        input: The port's input :class:`Gate`
+        output: The port's output :class:`Gate`
     """
 
     def __init__(self, name: str, owner: Any = None):
@@ -198,7 +201,8 @@ class Port:
             \\draw[->] (p2in) -- (p1in);
 
         Args:
-            port: The :class:`Port` to establish the bidirectional proxy connection to
+            port: The :class:`Port` to establish the bidirectional proxy
+                connection to
         """
         self.output.connectTo(port.output)
         port.input.connectTo(self.input)
@@ -208,9 +212,9 @@ class Port:
     @property
     def nReceives(self):
         """
-        :class:`~gymwipe.simtools.Notifier`: The input gate's nReceives
-        notifier, which is triggered when an object is received by the input
-        :class:`Gate`
+        :class:`~gymwipe.simtools.Notifier`: The input :class:`Gate`'s
+        :attr:`~Gate.nReceives` :class:`~gymwipe.simtools.Notifier`, which is triggered when an object is
+        received by the input :class:`Gate`.
         """
         return self.input.nReceives
 
@@ -226,12 +230,12 @@ class GateListener:
         class' constructor with `@PortListener.setup`.
 
     Examples:
-        A module's method using this decorator could look like this:
+        A :class:`Module`'s method using this decorator could look like this:
 
         ::
 
-            @PortListener("myPortIn")
-            def myPortListener(self, obj):
+            @GateListener("myPortIn")
+            def myPortInListener(self, obj):
                 # This  method is processed whenever self.gates["myPortIn"]
                 # receives an object and all previously created instances
                 # have been processed.
@@ -246,20 +250,20 @@ class GateListener:
             validTypes: If this argument is provided, a :class:`TypeError` will
                 be raised when an object received via the specified :class:`Gate` is
                 not of the :class:`type` / one of the types specified.
-            blocking: Set this to ``False`` if you decorate a SimPy generator method and
-                want it to be processed for each received object, regardless of
-                whether an instance of the generator is still being processed or
-                not. By default, only one instance of the decorated generator method
-                is run at a time (blocking is ``True``).
+            blocking: Set this to ``False`` if you decorate a SimPy generator
+                method and want it to be processed for each received object,
+                regardless of whether an instance of the generator is still being
+                processed or not. By default, only one instance of the decorated
+                generator method is run at a time (blocking is ``True``).
             queued: If you decorate a SimPy generator method, `blocking` is
                 ``True``, and you set `queued` to ``True``, an object received while
                 an instance of the generator is being processed will be queued.
-                Sequentially, a new generator will then be processed for every
-                queued object as soon as the current generator has been processed.
-                Using `queued`, you can thus react to multiple objects that are
-                received at the same simulated time, while still only having one
-                generator instance processed at a time. Queued defaults to
-                ``False``.
+                Sequentially, a new generator instance will then be processed for
+                every queued object as soon as a previous generator instance has
+                been processed. Using `queued`, you can, for example, react to
+                multiple objects that are received at the same simulated time, while
+                only having one instance of a subscribed generator method processed
+                at a time. Queued defaults to ``False``.
         """
         self._gateName = gateName
         self._validTypes = validTypes
@@ -305,7 +309,7 @@ class GateListener:
             initializer.__doc__ = """
             A method which is decorated with the
             :class:`~gymwipe.networking.construction.GateListener` decorator.
-            It is processed when the module's `{}`
+            It is invoked when the module's `{}`
             :class:`~gymwipe.networking.construction.Gate` receives an object.
             """
 
@@ -321,7 +325,7 @@ class GateListener:
     def setup(function):
         """
         A decorator to be used for the constructors of :class:`Module` subclasses
-        that make use of the :class:`GateListener` decorator.
+        that apply the :class:`GateListener` decorator.
         """
 
         @wraps(function)
@@ -339,6 +343,8 @@ class GateListener:
     
 class Module:
     """
+    Modules are used to model components that interact with each other, as
+    for example network stack layers.
     A module has a number of ports and gates that can be used to exchange
     data with it and connect it to other modules.
     Modules provide the methods :meth:`_addPort` and :meth:`_addGate` that
@@ -346,7 +352,6 @@ class Module:
     :attr:`ports` and the :attr:`gates` dictionaries.
 
     Note:
-
         Modules may have both ports (for bidirectional connections) and individual
         gates (for unidirectional connections). When a port is added by
         :meth:`_addPort`, its two gates are also added to the :attr:`gates`
@@ -394,7 +399,6 @@ class Module:
         name passed.
 
         Note:
-            
             Plain :class:`Gate` objects are only needed for unidirectional
             connections. Bidirectional connections can profit from :class:`Port`
             objects.
@@ -415,8 +419,7 @@ class CompoundModule(Module):
     the :attr:`submodules` dictionary.
     
     Note:
-
-        When subclassing CompoundModule, do not directly implement
+        When subclassing :class:`CompoundModule`, do not directly implement
         functionalities in your subclass, but wrap them in submodules
         to ensure modularity.
         Also, do not connect a CompoundModule's submodules to anything
@@ -424,8 +427,8 @@ class CompoundModule(Module):
         the same reason.
     
     Attributes:
-        submodules(Dict[str, Module]): The CompoundModule's nested :class:`Module`
-            objects
+        submodules(Dict[str, Module]): The :class:`CompoundModule`'s nested
+            :class:`Module` objects
     
     .. automethod:: _addSubmodule
     """

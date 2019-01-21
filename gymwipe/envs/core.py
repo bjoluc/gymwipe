@@ -105,7 +105,7 @@ class Interpreter(ABC):
             deviceIndex: The index (as in the gym environment's action space) of
                 the device that the frequency band is assigned to.
             duration: The duration of the assignment in multiples of
-                :attr:`~gymwipe.networking.stack.TIME_SLOT_LENGTH`
+                :attr:`~gymwipe.networking.simple_stack.TIME_SLOT_LENGTH`
         """
 
     @abstractmethod

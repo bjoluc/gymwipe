@@ -115,12 +115,13 @@ class SlidingPendulum(OdePlant):
 
 class AngleSensor(SimpleNetworkDevice):
     """
-    A networked angle sensor implementation for the :class:`SlidingPendulum` plant
+    A networked angle sensor implementation for the :class:`SlidingPendulum`
+    plant
     """
 
-    def __init__(self, name: str, xPos: float, yPos: float, frequencyBand: FrequencyBand,
-                    plant: SlidingPendulum, controllerAddr: bytes, sampleInterval: float):
-        super(AngleSensor, self).__init__(name, xPos, yPos, frequencyBand)
+    def __init__(self, name: str, frequencyBand: FrequencyBand, plant: SlidingPendulum,
+                    controllerAddr: bytes, sampleInterval: float):
+        super(AngleSensor, self).__init__(name, plant.getWagonPos(), 0, frequencyBand)
         self.plant = plant
         self.controllerAddr = controllerAddr
         self.sampleInterval = sampleInterval
@@ -135,14 +136,14 @@ class AngleSensor(SimpleNetworkDevice):
 
 class WagonActuator(SimpleNetworkDevice):
     """
-    A networked actuator implementation for moving the :class:`SlidingPendulum` plant's wagon
+    A networked actuator implementation for moving the :class:`SlidingPendulum`
+    plant's wagon
     """
 
-    def __init__(self, name: str, xPos: float, yPos: float, frequencyBand: FrequencyBand,
-                    plant: SlidingPendulum):
-        super(WagonActuator, self).__init__(name, xPos, yPos, frequencyBand)
+    def __init__(self, name: str, frequencyBand: FrequencyBand, plant: SlidingPendulum):
+        super(WagonActuator, self).__init__(name, plant.getWagonPos, 0, frequencyBand)
         self.plant = plant
-
+        
         SimMan.process(self._positionUpdater())
     
     def _positionUpdater(self):

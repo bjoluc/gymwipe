@@ -14,7 +14,7 @@ Submodules
    gymwipe.networking.mac_layers
    gymwipe.networking.messages
    gymwipe.networking.physical
-   gymwipe.networking.stack
+   gymwipe.networking.simple_stack
 
 Module contents
 ---------------

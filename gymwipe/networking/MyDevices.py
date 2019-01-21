@@ -8,7 +8,7 @@ from gymwipe.networking.mac_layers import (ActuatorMacTDMA, GatewayMac,
 from gymwipe.networking.messages import (Message, Packet, SimpleNetworkHeader,
                                          StackMessageTypes, Transmittable)
 from gymwipe.networking.physical import FrequencyBand
-from gymwipe.networking.stack import SimpleMac, SimplePhy, SimpleRrmMac
+from gymwipe.networking.simple_stack import SimpleMac, SimplePhy, SimpleRrmMac
 from gymwipe.plants.core import OdePlant
 from gymwipe.networking.devices import SimpleRrmDevice
 from gymwipe.simtools import Notifier, SimMan, SimTimePrepender

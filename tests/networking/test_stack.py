@@ -12,7 +12,7 @@ from gymwipe.networking.messages import (FakeTransmittable, Message, Packet,
                                          SimpleMacHeader, SimpleNetworkHeader,
                                          StackMessageTypes, Transmittable)
 from gymwipe.networking.physical import BpskMcs, FrequencyBand
-from gymwipe.networking.stack import (TIME_SLOT_LENGTH, SimpleMac, SimplePhy,
+from gymwipe.networking.simple_stack import (TIME_SLOT_LENGTH, SimpleMac, SimplePhy,
                                       SimpleRrmMac)
 from gymwipe.simtools import SimMan
 
@@ -66,7 +66,7 @@ def test_simple_phy(caplog, mocker, simple_phy):
     caplog.set_level(logging.INFO, logger='gymwipe.networking.construction')
     caplog.set_level(logging.INFO, logger='gymwipe.networking.core')
     caplog.set_level(logging.DEBUG, logger='gymwipe.networking.physical')
-    caplog.set_level(logging.INFO, logger='gymwipe.networking.stack')
+    caplog.set_level(logging.INFO, logger='gymwipe.networking.simple_stack')
     caplog.set_level(logging.INFO, logger='gymwipe.simtools')
 
     setup = simple_phy
@@ -161,7 +161,7 @@ def test_simple_mac(caplog, simple_mac):
     caplog.set_level(logging.INFO, logger='gymwipe.networking.construction')
     caplog.set_level(logging.INFO, logger='gymwipe.networking.core')
     caplog.set_level(logging.INFO, logger='gymwipe.networking.physical')
-    caplog.set_level(logging.DEBUG, logger='gymwipe.networking.stack')
+    caplog.set_level(logging.DEBUG, logger='gymwipe.networking.simple_stack')
     caplog.set_level(logging.INFO, logger='gymwipe.simtools')
 
     s = simple_mac

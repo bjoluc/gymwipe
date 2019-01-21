@@ -1,6 +1,6 @@
 """
-The Stack package contains implementations of network stack layers. Layers are
-modeled by :class:`~gymwipe.networking.construction.Module` objects.
+The simple_stack package contains basic network stack layer implementations.
+Layers are modelled by :class:`gymwipe.networking.construction.Module` objects.
 """
 import logging
 from collections import deque
@@ -190,7 +190,7 @@ class SimplePhy(Module):
     # SimPy processes
 
     @GateListener("macIn", Message, queued=True)
-    def macInGateListener(self, cmd):
+    def macInHandler(self, cmd):
         p = cmd.args
 
         if cmd.type is StackMessageTypes.SEND:
@@ -313,7 +313,7 @@ class SimpleMac(Module):
         *   Every other packet sent has a :class:`~gymwipe.networking.messages.SimpleMacHeader`
             with :attr:`~gymwipe.networking.messages.SimpleMacHeader.flag` ``0``.
 
-    The `network` port accepts objects of the following types:
+    The `networkIn` gate accepts objects of the following types:
 
         * :class:`~gymwipe.networking.messages.Message`
 
@@ -337,7 +337,7 @@ class SimpleMac(Module):
 
             Send a given packet (with a :attr:`~gymwipe.networking.messages.SimpleNetworkHeader`) to the MAC address defined in the header.
 
-    The `phy` port accepts objects of the following types:
+    The `phyIn` gate accepts objects of the following types:
 
         * :attr:`~gymwipe.networking.messages.Packet`
 
@@ -446,7 +446,7 @@ class SimpleMac(Module):
             pass
     
     @GateListener("networkIn", (Message, Packet))
-    def networkInGateListener(self, cmd):
+    def networkInHandler(self, cmd):
 
         if isinstance(cmd, Message):
             if cmd.type is StackMessageTypes.RECEIVE:
@@ -485,7 +485,7 @@ class SimpleRrmMac(Module):
     """
     The RRM implementation of the protocol described in :class:`SimpleMac`
 
-    The `network` port accepts objects of the following types:
+    The `networkIn` gate accepts objects of the following types:
 
         * :class:`~gymwipe.networking.messages.Message`
 
@@ -523,11 +523,11 @@ class SimpleRrmMac(Module):
         logger.debug("%s: Initialization completed, MAC address: %s", self, self.addr)
     
     @GateListener("phyIn", Packet)
-    def phyInGateListener(self, packet: Packet):
+    def phyInHandler(self, packet: Packet):
         self.gates["networkOut"].send(packet.payload)
     
     @GateListener("networkIn", Message)
-    def networkInGateListener(self, message: Message):
+    def networkInHandler(self, message: Message):
         logger.debug("%s: Got %s.", self, message)
         self._nAnnouncementReceived.trigger(message)
     
