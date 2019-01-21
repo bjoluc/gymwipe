@@ -27,6 +27,7 @@ pympler = "*"
 objgraph = "*"
 sphinxcontrib-tikz = "*"
 "doc8" = "*"
+pytest = "*"
 
 [requires]
 python_version = "3.6"

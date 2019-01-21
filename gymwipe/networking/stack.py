@@ -382,7 +382,7 @@ class SimpleMac(Module):
         return bytes(addr)
     
     @GateListener("phyIn", Packet)
-    def phyInGateListener(self, packet):
+    def phyInGateListener(self, packet: Packet):
         header = packet.header
         if not isinstance(header, SimpleMacHeader):
             raise ValueError("Can only deal with header of type SimpleMacHeader. Got %s.", type(header), sender=self)

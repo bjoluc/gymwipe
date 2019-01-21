@@ -7,6 +7,7 @@ Submodules
 .. toctree::
 
    gymwipe.plants.core
+   gymwipe.plants.scheduling
    gymwipe.plants.sliding_pendulum
 
 Module contents

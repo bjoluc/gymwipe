@@ -7,6 +7,7 @@ Submodules
 .. toctree::
 
    gymwipe.control.inverted_pendulum
+   gymwipe.control.scheduler
 
 Module contents
 ---------------

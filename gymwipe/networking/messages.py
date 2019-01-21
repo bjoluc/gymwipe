@@ -235,3 +235,4 @@ class StackMessageTypes(Enum):
     RECEIVE = 0
     SEND = 1
     ASSIGN = 2
+    SENDCONTROL = 3
