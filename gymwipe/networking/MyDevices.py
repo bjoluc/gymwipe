@@ -4,7 +4,7 @@ from typing import Any, Dict, Tuple
 from gymwipe.control.scheduler import Scheduler, RoundRobinTDMAScheduler, DQNTDMAScheduler
 from gymwipe.networking.devices import NetworkDevice
 from gymwipe.networking.mac_layers import (ActuatorMacTDMA, GatewayMac,
-                                           SensorMac, newUniqueMacAddress)
+                                           SensorMacTDMA, newUniqueMacAddress)
 from gymwipe.networking.messages import (Message, Packet, SimpleNetworkHeader,
                                          StackMessageTypes, Transmittable)
 from gymwipe.networking.physical import FrequencyBand
@@ -40,7 +40,7 @@ class ComplexNetworkDevice(NetworkDevice):
         if(type == "Sensor"):
             # Initialize PHY and MAC
             self._phy = SimplePhy("phy", self, self.frequencyBand)
-            self._mac = SensorMac("mac", self, self.frequencyBand.spec, self.mac)
+            self._mac = SensorMacTDMA("mac", self, self.frequencyBand.spec, self.mac)
         elif(type == "Controller"):
             # Initialize PHY and MAC
             self._phy = SimplePhy("phy", self, self.frequencyBand)

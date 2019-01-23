@@ -10,7 +10,7 @@ from gymwipe.networking.physical import FrequencyBand
 from gymwipe.networking.simple_stack import SimpleMac, SimplePhy, SimpleRrmMac
 from gymwipe.simtools import Notifier, SimMan
 from gymwipe.networking.mac_layers import (ActuatorMacTDMA, GatewayMac,
-                                           SensorMac, newUniqueMacAddress)
+                                           SensorMacTDMA, newUniqueMacAddress)
 
 
 class NetworkDevice(Device):

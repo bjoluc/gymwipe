@@ -182,7 +182,8 @@ class TDMASchedule(Schedule):
         lastAction = None
         for i in range(len(self.action)):            
             if self.action[i] != lastAction:
-                self.schedule.append((i+1).__str__()  + self.action[i][0].__str__()+ self.action[i][1].__str__() + "1")
+                self.schedule.append((i+1).__str__() + " " + self.action[i][0].__str__() + " "+
+                                     self.action[i][1].__str__() + " 1")
             lastAction = self.action[i]
         self.schedule.append((len(action)+1).__str__())
         self.string = " ".join(self.schedule)
@@ -191,7 +192,22 @@ class TDMASchedule(Schedule):
     def getString(self):
         return self.string
 
-        
+    def getNextRelevantTimespan(self, MACadress, lastStep):
+
+        schedulelist = self.string.split(" ")
+        for i in range(len(schedulelist)):
+            if schedulelist[(i % 4) - 1] == 0:
+                if schedulelist[i] == MACadress:
+                    if schedulelist[i-1] > lastStep:
+                        logger.debug("relevant span for %s is %d to %d", MACadress, schedulelist[i-1],
+                                     schedulelist[i+3], sender=self)
+                        return [schedulelist[i-1], schedulelist[i+3]]
+        return None
+
+    def getEndTime(self) -> int:
+        schedulelist = self.string.split(" ")
+        return int(schedulelist[len(schedulelist)-1])
+
 
 class CSMASchedule():
     pass

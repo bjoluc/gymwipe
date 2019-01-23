@@ -5,7 +5,7 @@ import logging
 
 from simpy.events import Event
 
-from gymwipe.control.scheduler import Schedule, TDMAEncode
+from gymwipe.control.scheduler import TDMAEncode
 from gymwipe.devices import Device
 from gymwipe.networking.construction import GateListener, Module
 from gymwipe.networking.mac_headers import NCSMacHeader
@@ -14,12 +14,13 @@ from gymwipe.networking.messages import (Message, Packet, StackMessageTypes,
 from gymwipe.networking.physical import BpskMcs, FrequencyBandSpec
 from gymwipe.simtools import Notifier, SimMan, SimTimePrepender
 
+from gymwipe.baSimulation.BA import TIMESLOT_LENGTH
+
 logger = SimTimePrepender(logging.getLogger(__name__))
 
 macCounter = 0 #global mac counter
 
 
-TIME_SLOT_LENGTH = 1e-6
 """
 float: The length of one time slot in seconds (used for simulating slotted time)
 """
@@ -37,7 +38,7 @@ def newUniqueMacAddress() -> bytes:
 
 
 
-class SensorMac(Module):
+class SensorMacTDMA(Module):
     """
         A sensor's mac layer implementation using a :class:`~gymwipe.control.scheduler.TDMASchedule` object.
         It sends its most recent sensordata if the next timeslot is reserved according to the schedule.
@@ -46,19 +47,18 @@ class SensorMac(Module):
 
     @GateListener.setup
     def __init__(self, name: str, device: Device,frequencyBandSpec: FrequencyBandSpec, addr: bytes):
-        super(SensorMac, self).__init__(name, owner=device)
+        super(SensorMacTDMA, self).__init__(name, owner=device)
         self._addPort("phy")
         self._addPort("network")
         self.addr = addr
-        self._packetAddedEvent = Event(SimMan.env)
         self._schedule = None
         self._lastDatapacket = None
-        self._packetAddedEvent = Event(SimMan.env)
+        self._nScheduleAdded = Notifier("new schedule received", self)
+        self._nScheduleAdded.subscribeProcess(self._senddata, queued=False)
         self._transmissionPower = 0.0 # dBm
         self._mcs = BpskMcs(frequencyBandSpec)
-        self._receiving = False
-        self._receiveCmd = None
-        self._receiveTimeout = None
+        self._receiving = True
+        self.gatewayAdress = None
         """
         The most recent clock signal sent by the gateway. Is sent within a scheduling Packet.
         """
@@ -67,37 +67,60 @@ class SensorMac(Module):
 
     @GateListener("phyIn", Packet, queued=True)
     def phyInGateListener(self, packet: Packet):
-        header = packet.header
-        if not isinstance(header, NCSMacHeader):
-            raise ValueError("Can only deal with header of type NCSMacHeader. Got %s.", type(header), sender=self)
-        if header.type[0] == 0: # received schedule from gateway
-            self._schedule = packet.payload.value
-            self.gatewayAdress = header.sourceMAC
-            logger.debug("received a schedule: %s", packet , sender=self)
+        if self._receiving:
+            header = packet.header
+            if not isinstance(header, NCSMacHeader):
+                raise ValueError("Can only deal with header of type NCSMacHeader. Got %s.", type(header), sender=self)
+            if header.type[0] == 0: # received schedule from gateway
+                self._schedule = packet.payload.value
+                self._lastGatewayClock = packet.trailer.value
+                self._nScheduleAdded.trigger(packet)
+                self.gatewayAdress = header.sourceMAC
+                schedulestr = self._schedule.getString()
+                logger.debug("received a schedule: gateway clock: %s schedule: %s", self._lastGatewayClock.__str__(), schedulestr , sender=self)
 
-    @GateListener("networkIn",(Message, Packet), queued = False)
+
+    @GateListener("networkIn", (Message, Packet), queued=False)
     def networkInGateListener(self, cmd):
-        if isinstance(cmd, Packet):
-            payload = packet.payload
-            sensorSendingType = bytearray(1)
-            sensorSendingType[0] = 1
-            packet = Packet(NCSMacHeader(sensorSendingType, self.addr), payload)
-            self._lastDatapacket = packet
-            self._packetAddedEvent.succeed()
-            self._packetAddedEvent = Event(SimMan.env)
-
-    def _receiveTimeoutCallback(self, event: Event):
-        if event is self._receiveTimeout:
-            # the current receive message has timed out
-            logger.debug("%s: Receive timed out.", self)
-            self._receiveCmd.setProcessed()
-            self._stopReceiving()
+        if isinstance(cmd, Message):
+            if cmd.type is StackMessageTypes.SEND:
+                data = cmd.args["state"]
+                sensorsendingtype = bytearray(1)
+                sensorsendingtype[0] = 1
+                datapacket = Packet(
+                    NCSMacHeader(bytes(sensorsendingtype), self.addr),
+                    Transmittable(data)
+                )
+                self._lastDatapacket = datapacket
 
     def _stopReceiving(self):
         logger.debug("%s: Stopping to receive.", self)
-        self._receiveCmd = None
         self._receiving = False
-        self._receiveTimeout = None
+
+    def _startReceiving(self):
+        logger.debug("%s: Starting to receive.", self)
+        self._receiving = True
+
+    def _senddata(self, packet: Packet):
+        self._stopReceiving()
+        relevantSpan = self._schedule.getNextRelevantTimespan(self.addr, 0)
+        while relevantSpan is not None:
+            for i in range(relevantSpan[0], relevantSpan[1]):
+                SimMan.timeoutUntil(self._lastGatewayClock + i*TIMESLOT_LENGTH)
+                sendCmd = Message(
+                    StackMessageTypes.SEND, {
+                        "packet": self._lastDatapacket,
+                        "power": self._transmissionPower,
+                        "mcs": self._mcs
+                    }
+                )
+                self.gates["phyOut"].send(sendCmd)
+                logger.debug("Transmitting data. Schedule timestep %d", i, sender=self)
+                yield sendCmd.eProcessed
+            relevantSpan = self._schedule.getNextRelevantTimespan(self.addr, relevantSpan[1])
+        self._startReceiving()
+
+
 
 
 class ActuatorMacTDMA(Module):
