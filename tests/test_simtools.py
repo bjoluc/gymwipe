@@ -23,7 +23,7 @@ def test_notifier_callback(caplog, mocker, simman):
     callHistory = []
     callbackList = []
     for i in range(3, 0, -1):
-        def callback(value, i=i): # force early binding for the i values
+        def callback(value, i=i):  # force early binding for the i values
             callHistory.append((i, value))
             print(i)
         callbackList.append(callback)

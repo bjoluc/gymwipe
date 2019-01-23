@@ -46,7 +46,7 @@ class SensorMac(Module):
 
     @GateListener.setup
     def __init__(self, name: str, device: Device,frequencyBandSpec: FrequencyBandSpec, addr: bytes):
-        super(SensorMac, self).__init__(name , owner=device)
+        super(SensorMac, self).__init__(name, owner=device)
         self._addPort("phy")
         self._addPort("network")
         self.addr = addr
@@ -160,8 +160,6 @@ class ActuatorMacTDMA(Module):
         self._receiveTimeout = None
 
 
-
-
 class GatewayMac(Module):
     """
         A gateway's mac layer implementation
@@ -195,14 +193,14 @@ class GatewayMac(Module):
             pass
 
     @GateListener("networkIn", Message)
-    def networkInGateListener(self, cmd: Message):       
-        if cmd.type is StackMessageTypes.SEND:
-            logger.debug("%s: Got the schedule %s.", self, cmd)
-            self._nAnnouncementReceived.trigger(cmd)
+    def networkInGateListener(self, message: Message):
+        if message.type is StackMessageTypes.SEND:
+            logger.debug("%s: Got the schedule %s.", self, message)
+            self._nAnnouncementReceived.trigger(message)
 
-        if cmd.type is StackMessageTypes.SENDCONTROL:
-            logger.debug("%s: Got the control message %s.", self, cmd)
-            self._nControlReceived.trigger(cmd)
+        if message.type is StackMessageTypes.SENDCONTROL:
+            logger.debug("%s: Got the control message %s.", self, message)
+            self._nControlReceived.trigger(message)
 
     def _sendControl(self, message: Message):
         """
@@ -215,7 +213,7 @@ class GatewayMac(Module):
         type = bytearray(1)
         type[0] = 2
         controlpacket = Packet(
-            NCSMacHeader(bytes(type),self.addr, receiver),
+            NCSMacHeader(bytes(type), self.addr, receiver),
             Transmittable(control)
         )
         sendCmd = Message(
@@ -228,6 +226,7 @@ class GatewayMac(Module):
         logger.debug("%s: Sending control: %s", self, controlpacket)
         self.gates["phyOut"].send(sendCmd)
         yield sendCmd.eProcessed
+        sendCmd.setProcessed()
 
     def _sendAnnouncement(self, message: Message):
         """
@@ -236,11 +235,13 @@ class GatewayMac(Module):
         gate.
         """
         schedule = message.args["schedule"]
+        clock = message.args["clock"]
         type = bytearray(1)
         type[0] = 0
         announcement = Packet(
-            NCSMacHeader(bytes(type),self.addr),
-            Transmittable(schedule, TDMAEncode(schedule, False))
+            NCSMacHeader(bytes(type), self.addr),
+            Transmittable(schedule, TDMAEncode(schedule, False)),
+            Transmittable(clock)
         )
         sendCmd = Message(
             StackMessageTypes.SEND, {
@@ -252,3 +253,4 @@ class GatewayMac(Module):
         logger.debug("%s: Sending schedule: %s", self, announcement)
         self.gates["phyOut"].send(sendCmd)
         yield sendCmd.eProcessed
+        message.setProcessed()

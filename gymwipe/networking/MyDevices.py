@@ -255,7 +255,7 @@ class SimpleSensor(ComplexNetworkDevice):
         super(SimpleSensor, self).__init__(name, xPos, yPos, frequencyBand, "Sensor")
         self.plant = plant
         self.sampleInterval = sampleInterval
-        
+
 
         SimMan.process(self._sensor())
     
@@ -281,13 +281,14 @@ class SimpleSensor(ComplexNetworkDevice):
             self.send(Transmittable(2, self.plant.getAngle()))
             yield SimMan.timeout(self.sampleInterval)
 
-    
 
 class SimpleActuator(ComplexNetworkDevice):
     pass
 
+
 class Gateway(GatewayDevice):
     scheduler = None
+
     def __init__(self, scheduler: str, sensorMACS: [], actuatorMACS: [], name: str, xPos: float, yPos: float, frequencyBand: FrequencyBand, schedule_timeslots: int):
         
         indexToMAC = {}
@@ -303,6 +304,10 @@ class Gateway(GatewayDevice):
             indexToMAC[i] = actuatorMACS[i-len(sensorMACS)]
         super(Gateway, self).__init__(name, xPos, yPos, frequencyBand, indexToMAC, None)
         self._create(scheduler)
+
+        def onPacketReceived(p: Packet):
+            pass
+        self._mac.gates["networkOut"].nReceives.subscribeCallback(onPacketReceived)
 
         
     def _create(self, schedule_name: str):
