@@ -17,6 +17,7 @@ from gymwipe.baSimulation.BA import TIMESLOT_LENGTH
 
 from ..fixtures import simman, simple_phy
 
+
 class dotdict(dict):
     """dot.notation access to dictionary attributes"""
     __getattr__ = dict.get
@@ -39,28 +40,30 @@ def my_mac(simple_phy):
 
     return s
 
+
 def test_sensormac(caplog, simman):
     caplog.set_level(logging.DEBUG, logger='gymwipe.networking.construction')
     caplog.set_level(logging.DEBUG, logger='gymwipe.networking.mac_layers')
     caplog.set_level(logging.DEBUG, logger='gymwipe.networking.mac_headers')
     sensor1 = Device("Sensor1", 0, 0)
-    actuator1 = Device("Actuator1",1,1)
+    actuator1 = Device("Actuator1", 1, 1)
     mac1 = newUniqueMacAddress()
     mac2 = newUniqueMacAddress()
-    sensor1Mac = SensorMacTDMA("Sensor1MacLayer", sensor1, FrequencyBand([FsplAttenuation]).spec, mac1)
-    controller1Mac = ActuatorMacTDMA("Actuator1MacLayer", actuator1, FrequencyBand([FsplAttenuation]).spec, mac2)
+    sensor1_mac = SensorMacTDMA("Sensor1MacLayer", sensor1, FrequencyBand([FsplAttenuation]).spec, mac1)
+    controller1_mac = ActuatorMacTDMA("Actuator1MacLayer", actuator1, FrequencyBand([FsplAttenuation]).spec, mac2)
 
-    type = bytearray(1)
-    type[0] = 0  # schedule
-    packet = Packet(NCSMacHeader(bytes(type), mac2, mac1), Transmittable("Test"))
-    type[0] = 1  # sensordata
-    packet2 = Packet(NCSMacHeader(bytes(type), mac1, mac2), Transmittable("Test2"))
-    packet3 = Packet(NCSMacHeader(bytes(type), mac1, mac1), Transmittable("Test3"))
+    message_type = bytearray(1)
+    message_type[0] = 0  # schedule
+    packet = Packet(NCSMacHeader(bytes(message_type), mac2, mac1), Transmittable(TDMASchedule([[mac1, 0], [mac2, 0]])),
+                    Transmittable(5))
+    message_type[0] = 1  # sensor data
+    packet2 = Packet(NCSMacHeader(bytes(message_type), mac1, mac2),  Transmittable("Test"))
+    packet3 = Packet(NCSMacHeader(bytes(message_type), mac1, mac1),  Transmittable("Test"))
 
-    sensor1Mac.gates["phyIn"].send(packet)
-    controller1Mac.gates["phyIn"].send(packet2)  # should appear as relevant
-    controller1Mac.gates["phyIn"].send(packet3)  # should appear as irrelevant
-    assert sensor1Mac.name == "Sensor1MacLayer"
+    sensor1_mac.gates["phyIn"].send(packet)
+    controller1_mac.gates["phyIn"].send(packet2)  # should appear as relevant
+    controller1_mac.gates["phyIn"].send(packet3)  # should appear as irrelevant
+    assert sensor1_mac.name == "Sensor1MacLayer"
 
 
 def test_sending(caplog, my_mac):
@@ -69,51 +72,42 @@ def test_sending(caplog, my_mac):
     caplog.set_level(logging.INFO, logger='gymwipe.networking.physical')
     caplog.set_level(logging.INFO, logger='gymwipe.simtools')
     caplog.set_level(logging.DEBUG, logger='gymwipe.networking.mac_layers')
-    caplog.set_level(logging.DEBUG, logger='gymwipe.networking.mac_headers')
 
-    s= my_mac
-    sen1addr = s.device1Mac.addr
-    sen2addr = s.device2Mac.addr
-    rrmaddr = s.rrmMac.addr
+    s = my_mac
+    sen1address = s.device1Mac.addr
+    sen2address = s.device2Mac.addr
 
-    def sender(fromMacLayer: GatewayMac, payloads: Iterable):
+    def sender(from_mac_layer: GatewayMac, payloads: Iterable):
         # send a bunch of packets from `fromMacLayer` to `toMacLayer`
         for p in payloads:
             clock = SimMan.now
-            sendCmd = Message(
+            send_cmd = Message(
                 StackMessageTypes.SEND, {
                     "schedule": p,
                     "clock": clock
                 }
             )
-            fromMacLayer.gates["networkIn"].send(sendCmd)
-            yield sendCmd.eProcessed
+            from_mac_layer.gates["networkIn"].send(send_cmd)
+            yield send_cmd.eProcessed
             time = SimMan.now
-            endslot= p.getEndTime()
+            endslot = p.get_end_time()
             endtime = time + (endslot * TIMESLOT_LENGTH)
-            SimMan.timeoutUntil(endtime)
+            yield SimMan.timeoutUntil(endtime)
 
-    def receiver(macLayer: SensorMacTDMA, receivedPacketsList: List[Packet]):
+    def receiver(mac_layer: SensorMacTDMA):
         # receive forever
         i = 1
         while True:
-            sendCmd = Message(StackMessageTypes.SEND, {"state": i})
-            macLayer.gates["networkIn"].send(sendCmd)
-            receiveCmd = Message(StackMessageTypes.RECEIVE, {"duration": 10})
-            macLayer.gates["networkIn"].send(receiveCmd)
-            result = yield receiveCmd.eProcessed
-            if result is not None:
-                i += 1
-                sendCmd = Message(StackMessageTypes.SEND, {"data": i})
-                macLayer.gates["networkIn"].send(sendCmd)
-                receivedPacketsList.append(result)
+            send_cmd = Message(StackMessageTypes.SEND, {"state": i})
+            mac_layer.gates["networkIn"].send(send_cmd)
+            yield send_cmd.eProcessed
+            i += 1
 
-    receivedPackets1 = []
-
-    SimMan.process(sender(s.rrmMac, [TDMASchedule([[sen1addr, 0], [sen2addr, 0]]) for i in range(10)]))
-    SimMan.process(receiver(s.device1Mac, receivedPackets1))
+    SimMan.process(sender(s.rrmMac, [TDMASchedule([[sen1address, 0], [sen2address, 0]]) for i in range(10)]))
+    SimMan.process(receiver(s.device1Mac))
+    SimMan.process(receiver(s.device2Mac))
 
     ROUND_TIME = 11
     SimMan.runSimulation(ROUND_TIME)
-    assert len(receivedPackets1) == 10
+    assert False
 

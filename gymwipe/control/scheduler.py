@@ -14,7 +14,8 @@ from gymwipe.simtools import SimMan, SimTimePrepender
 
 logger = SimTimePrepender(logging.getLogger(__name__))
 
-class Schedule():
+
+class Schedule:
     """
         A framework for schedule classes. A implemented schedule will produce and contain the specific schedule for a scheduling descision taken by a scheduler
     """
@@ -23,13 +24,11 @@ class Schedule():
         self.schedule = []
         self.string = ""
 
-
-    def getString(self):
+    def get_string(self):
         raise NotImplementedError
 
 
-
-class Scheduler():
+class Scheduler:
     """
         A framework for a Scheduler class, which will produce channel allocation schedules
     """
@@ -42,9 +41,8 @@ class Scheduler():
         self.devices = devices # list of sensor/controller mac adresses
         self.schedule = None # current schedule
         self.timeslots = timeslots # 
-    
 
-    def nextSchedule(self, input) -> Schedule:
+    def next_schedule(self, input) -> Schedule:
         """
             produces the next schedule, possibly given information about the system's state. Raises a NotImplementedError if not overridden by a subclass
 
@@ -52,6 +50,7 @@ class Scheduler():
                 input: a representation of the observed state
         """
         raise NotImplementedError
+
 
 class RoundRobinTDMAScheduler(Scheduler):
     """
@@ -64,20 +63,20 @@ class RoundRobinTDMAScheduler(Scheduler):
         self.nextDevice = 0 # position in device list of the first device in the next schedule
         self.wasActuator = False
         
-    def nextSchedule(self, input = None):
+    def next_schedule(self, input=None):
         action = []
         for i in range(self.timeslots):
-            if(self.devices[self.nextDevice] in self.actuators):
-                if self.wasActuator == True:
+            if self.devices[self.nextDevice] in self.actuators:
+                if self.wasActuator:
                     action.append([self.devices[self.nextDevice], 0])
                     self.wasActuator = False
                 else:   
                     action.append([self.devices[self.nextDevice], 1])
                     self.wasActuator = True
             else:
-                action.append([self.devices[self.nextDevice],0])
-            if self.wasActuator == False:
-                if self.nextDevice == (len(self.devices) -1):
+                action.append([self.devices[self.nextDevice], 0])
+            if not self.wasActuator:
+                if self.nextDevice == (len(self.devices) - 1):
                     self.nextDevice = 0
                 else:
                     self.nextDevice += 1
@@ -85,6 +84,7 @@ class RoundRobinTDMAScheduler(Scheduler):
         logger.debug("new schedule generated", sender=self)    
         self.schedule = TDMASchedule(action)
         return self.schedule
+
 
 class DQNTDMAScheduler(Scheduler):
     """
@@ -104,21 +104,21 @@ class DQNTDMAScheduler(Scheduler):
         self.learning_rate = np.exp(-4)
         self.c = 100        # how many steps to fix target Q
         
-        self.inputsize = 3* len(self.sensors) + 2* len(self.actuators) + self.timeslots
-        self.actionset = list(itertools.combinations_with_replacement(self.devices,self.timeslots))
-        self.actionsize = len(self.actionset)
-        self.string = ', '.join(map(str, self.actionset))
-        logger.debug("actionset: " + self.string, sender=self)
+        self.input_size = 3 * len(self.sensors) + 2 * len(self.actuators) + self.timeslots
+        self.action_set = list(itertools.combinations_with_replacement(self.devices, self.timeslots))
+        self.action_size = len(self.action_set)
+        self.string = ', '.join(map(str, self.action_set))
+        logger.debug("action set: " + self.string, sender=self)
 
-        self.model = self._buildModel()
-        self.targetModel = self._buildModel()
-        logger.debug("initialzed. statetsize : " + self.inputsize.__str__() + " actionsize: " + self.actionsize.__str__(), sender=self)
+        self.model = self._build_model()
+        self.targetModel = self._build_model()
+        logger.debug("initialized. state size : " + self.input_size.__str__() + " action size: " + self.action_size.__str__(), sender=self)
 
-    def _buildModel(self):
+    def _build_model(self):
         model = Sequential()
-        model.add(Dense(1024, input_dim=self.inputsize, activation='relu'))
+        model.add(Dense(1024, input_dim=self.input_size, activation='relu'))
         model.add(Dense(1024, activation='relu'))
-        model.add(Dense(self.actionsize, activation='linear'))
+        model.add(Dense(self.action_size, activation='linear'))
         model.compile(loss='mean_squared_error', optimizer=Adam(lr=self.learning_rate, decay=.001))
 
         return model
@@ -138,12 +138,13 @@ class DQNTDMAScheduler(Scheduler):
 
     def act(self, state):
         if np.random.rand() <= self.epsilon:
-            return random.randrange(self.actionsize)
+            return random.randrange(self.action_size)
         act_values = self.model.predict(state)
         return np.argmax(act_values[0])  # returns action
 
-    def nextSchedule(self, input):
+    def next_schedule(self, input):
         return None
+
 
 class DQNCSMAScheduler(Scheduler):
     """
@@ -153,7 +154,7 @@ class DQNCSMAScheduler(Scheduler):
         super(DQNCSMAScheduler,self).__init__(devices, timeslots)
         self. result = 0
 
-    def nextSchedule(self, input):
+    def next_schedule(self, input):
         x = tf.Variable(3, name ="x")
         y = tf.Variable(4, name = "y")
 
@@ -167,9 +168,6 @@ class DQNCSMAScheduler(Scheduler):
         return None
 
 
-
-
-
 class TDMASchedule(Schedule):
     """
         A TDMA Schedule implementation. In every timeslot one single device will be allowed to send. 
@@ -179,59 +177,69 @@ class TDMASchedule(Schedule):
     """
     def __init__(self, action):
         super(TDMASchedule, self).__init__(action)
-        lastAction = None
+        last_action = None
         for i in range(len(self.action)):            
-            if self.action[i] != lastAction:
+            if self.action[i] != last_action:
                 self.schedule.append((i+1).__str__() + " " + self.action[i][0].__str__() + " "+
                                      self.action[i][1].__str__() + " 1")
-            lastAction = self.action[i]
+            last_action = self.action[i]
         self.schedule.append((len(action)+1).__str__())
         self.string = " ".join(self.schedule)
         logger.debug("Schedule created. Content: " + self.string, sender=self)
 
-    def getString(self):
+    def get_string(self):
         return self.string
 
-    def getNextRelevantTimespan(self, MACadress, lastStep):
-
-        schedulelist = self.string.split(" ")
-        for i in range(len(schedulelist)):
-            if schedulelist[(i % 4) - 1] == 0:
-                if schedulelist[i] == MACadress:
-                    if schedulelist[i-1] > lastStep:
-                        logger.debug("relevant span for %s is %d to %d", MACadress, schedulelist[i-1],
-                                     schedulelist[i+3], sender=self)
-                        return [schedulelist[i-1], schedulelist[i+3]]
+    def get_next_relevant_timespan(self, mac_address: str, last_step):
+        logger.debug("called function with address %s and last step %d", mac_address, last_step, sender=self)
+        schedule_list = self.string.split(" ")
+        string = "".join(schedule_list)
+        logger.debug("schedule list: %s", string, sender=self)
+        for i in range(len(schedule_list)):
+            if ((i % 4) - 1) == 0:
+                logger.debug("Found a mac address field, address is: %s", schedule_list[i], sender=self)
+                if schedule_list[i] == mac_address:
+                    logger.debug("mac addresses are the same : %s at timestep %s", mac_address, schedule_list[i-1], sender=self)
+                    if int(schedule_list[i-1]) > last_step:
+                        logger.debug("relevant span for %s is %s to %s", mac_address, schedule_list[i - 1],
+                                     schedule_list[i+3], sender=self)
+                        return [int(schedule_list[i-1]), int(schedule_list[i+3])]
         return None
 
-    def getEndTime(self) -> int:
-        schedulelist = self.string.split(" ")
-        return int(schedulelist[len(schedulelist)-1])
+    def get_end_time(self) -> int:
+        schedule_list = self.string.split(" ")
+        logger.debug("endtime is %s", schedule_list[len(schedule_list)-1], sender=self)
+        return int(schedule_list[len(schedule_list)-1])
 
 
-class CSMASchedule():
-    pass
+class CSMASchedule(Schedule):
+    def __init__(self, action):
+        super(CSMASchedule, self).__init__(action)
+
+    def get_string(self):
+        pass
 
 
-def CSMAEncode(schedule : CSMASchedule, compressed: bool) -> int:
+def csma_encode(schedule : CSMASchedule, compressed: bool) -> int:
     return 0
 
-def TDMAEncode(schedule: TDMASchedule, compressed:bool) -> int:
-    bytesize = 1 #endbyte
-    if compressed==False:
+
+def tdma_encode(schedule: TDMASchedule, compressed: bool) -> int:
+    bytesize = 1  # time byte at the end of the schedule
+    if not compressed:
         for i in range((len(schedule.schedule)-1)):
             bytesize += 7
         return bytesize
     else:
-        alreadyIn = []
-        alreadyInTime = []
+        already_in = []
+        already_in_time = []
         for i in range((len(schedule.action))):
-            if schedule.action[i][0] in alreadyIn:
-                bytesize +=3
-                logger.debug("mac already in Schedule: %s" ,schedule.action[i][0]  , sender = "TDMAEncode")
+            if schedule.action[i][0] in already_in:
+                bytesize += 3
+                logger.debug("mac already in Schedule: %s", schedule.action[i][0], sender="TDMAEncode")
             else:
                 logger.debug("mac not yet in schedule: %s", schedule.action[i][0], sender="TDMAEncode")
-                bytesize +=7
-                alreadyIn.append(schedule.action[i][0])
-                alreadyInTime.append(i+1)
+                bytesize += 7
+                already_in.append(schedule.action[i][0])
+                already_in_time.append(i+1)
         return bytesize

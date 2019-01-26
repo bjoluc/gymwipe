@@ -5,7 +5,7 @@ import logging
 
 from simpy.events import Event
 
-from gymwipe.control.scheduler import TDMAEncode
+from gymwipe.control.scheduler import tdma_encode
 from gymwipe.devices import Device
 from gymwipe.networking.construction import GateListener, Module
 from gymwipe.networking.mac_headers import NCSMacHeader
@@ -58,32 +58,41 @@ class SensorMacTDMA(Module):
         self._transmissionPower = 0.0 # dBm
         self._mcs = BpskMcs(frequencyBandSpec)
         self._receiving = True
-        self.gatewayAdress = None
+        self.gateway_address = None
+        self._network_cmd: Message = None
         """
         The most recent clock signal sent by the gateway. Is sent within a scheduling Packet.
         """
         self._lastGatewayClock = 0
         logger.debug("Initialization completed, MAC address: %s", self.addr, sender=self)
 
-    @GateListener("phyIn", Packet, queued=True)
+    @GateListener("phyIn", Packet)
     def phyInGateListener(self, packet: Packet):
-        if self._receiving:
+
+        if self._receiving is True:
+            logger.debug("received a packet from phy, am in receiving mode", sender=self)
             header = packet.header
             if not isinstance(header, NCSMacHeader):
                 raise ValueError("Can only deal with header of type NCSMacHeader. Got %s.", type(header), sender=self)
             if header.type[0] == 0: # received schedule from gateway
                 self._schedule = packet.payload.value
                 self._lastGatewayClock = packet.trailer.value
+                self.gateway_address = header.sourceMAC
                 self._nScheduleAdded.trigger(packet)
-                self.gatewayAdress = header.sourceMAC
-                schedulestr = self._schedule.getString()
-                logger.debug("received a schedule: gateway clock: %s schedule: %s", self._lastGatewayClock.__str__(), schedulestr , sender=self)
-
+                schedulestr = self._schedule.get_string()
+                logger.debug("received a schedule: gateway clock: %s schedule: %s", self._lastGatewayClock.__str__(),
+                             schedulestr, sender=self)
+            else:
+                pass
+        else:
+            logger.debug("received a packet from phy, but not in receiving mode. packet ignored", sender=self)
+            pass
 
     @GateListener("networkIn", (Message, Packet), queued=False)
     def networkInGateListener(self, cmd):
         if isinstance(cmd, Message):
             if cmd.type is StackMessageTypes.SEND:
+                self._network_cmd = cmd
                 data = cmd.args["state"]
                 sensorsendingtype = bytearray(1)
                 sensorsendingtype[0] = 1
@@ -92,35 +101,36 @@ class SensorMacTDMA(Module):
                     Transmittable(data)
                 )
                 self._lastDatapacket = datapacket
+                logger.debug("%s received new sensordata: %s , saved it", self, data)
 
     def _stopReceiving(self):
         logger.debug("%s: Stopping to receive.", self)
         self._receiving = False
 
-    def _startReceiving(self):
+    def _start_receiving(self):
         logger.debug("%s: Starting to receive.", self)
         self._receiving = True
 
     def _senddata(self, packet: Packet):
         self._stopReceiving()
-        relevantSpan = self._schedule.getNextRelevantTimespan(self.addr, 0)
-        while relevantSpan is not None:
-            for i in range(relevantSpan[0], relevantSpan[1]):
-                SimMan.timeoutUntil(self._lastGatewayClock + i*TIMESLOT_LENGTH)
-                sendCmd = Message(
+        relevant_span = self._schedule.get_next_relevant_timespan(self.addr.__str__(), 0)
+        while relevant_span is not None:
+            logger.debug("%s: next relevant timespan is [%d, %d]", self, relevant_span[0], relevant_span[1])
+            for i in range(relevant_span[0], relevant_span[1]):
+                yield SimMan.timeoutUntil(self._lastGatewayClock + i*TIMESLOT_LENGTH)
+                send_cmd = Message(
                     StackMessageTypes.SEND, {
                         "packet": self._lastDatapacket,
                         "power": self._transmissionPower,
                         "mcs": self._mcs
                     }
                 )
-                self.gates["phyOut"].send(sendCmd)
+                self.gates["phyOut"].send(send_cmd)
                 logger.debug("Transmitting data. Schedule timestep %d", i, sender=self)
-                yield sendCmd.eProcessed
-            relevantSpan = self._schedule.getNextRelevantTimespan(self.addr, relevantSpan[1])
-        self._startReceiving()
-
-
+                yield send_cmd.eProcessed
+                self._network_cmd.setProcessed()
+            relevant_span = self._schedule.get_next_relevant_timespan(self.addr, relevant_span[1])
+        self._start_receiving()
 
 
 class ActuatorMacTDMA(Module):
@@ -152,9 +162,9 @@ class ActuatorMacTDMA(Module):
             self.schedule = packet.payload.value
             self.gatewayAdress = header.sourceMAC
             logger.debug("received a schedule", sender=self)
-        if header.type[0] == 1: # received sensordata
-            if header.destMAC == self.addr: #sensordata is for me
-                logger.debug("received relevant sensordata", sender=self)
+        if header.type[0] == 1:  # received sensor data
+            if header.destMAC == self.addr:  # sensor data is for me
+                logger.debug("received relevant sensor data", sender=self)
                 self.gates["networkOut"].send(packet.payload)
 
     @GateListener("networkIn",(Message, Packet), queued = True)
@@ -206,13 +216,14 @@ class GatewayMac(Module):
 
     @GateListener("phyIn", Packet, queued=True)
     def phyInGateListener(self, packet: Packet):
+        logger.debug("%s: received a packet", self)
         header = packet.header
         if not isinstance(header, NCSMacHeader):
             raise ValueError("Can only deal with header of type NCSMacHeader. Got %s.", type(header), sender=self)
-        messageType = header.type[0]
-        if messageType == 1: #received sensordata
-            pass
-        if messageType == 2: #received Actuator ACK
+        message_type = header.type[0]
+        if message_type == 1: #received sensordata
+            logger.debug("received sensordata from %s. data is %s", header.sourceMAC, packet.payload.value, sender=self)
+        if message_type == 2: #received Actuator ACK
             pass
 
     @GateListener("networkIn", Message)
@@ -249,7 +260,7 @@ class GatewayMac(Module):
         logger.debug("%s: Sending control: %s", self, controlpacket)
         self.gates["phyOut"].send(sendCmd)
         yield sendCmd.eProcessed
-        sendCmd.setProcessed()
+        message.setProcessed()
 
     def _sendAnnouncement(self, message: Message):
         """
@@ -263,7 +274,7 @@ class GatewayMac(Module):
         type[0] = 0
         announcement = Packet(
             NCSMacHeader(bytes(type), self.addr),
-            Transmittable(schedule, TDMAEncode(schedule, False)),
+            Transmittable(schedule, tdma_encode(schedule, False)),
             Transmittable(clock)
         )
         sendCmd = Message(
@@ -273,7 +284,7 @@ class GatewayMac(Module):
                 "mcs": self._mcs
             }
         )
-        logger.debug("%s: Sending schedule: %s", self, announcement)
+        logger.debug("%s: Sending schedule: %s", self, announcement.payload.value.get_string())
         self.gates["phyOut"].send(sendCmd)
         yield sendCmd.eProcessed
         message.setProcessed()
