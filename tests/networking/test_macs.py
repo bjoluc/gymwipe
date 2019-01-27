@@ -69,7 +69,6 @@ def test_sensormac(caplog, simman):
 def test_sending(caplog, my_mac):
     caplog.set_level(logging.DEBUG, logger='gymwipe.networking.simple_stack')
     caplog.set_level(logging.DEBUG, logger='gymwipe.networking.mac_layers')
-    caplog.set_level(logging.DEBUG, logger='gymwipe.networking.mac_headers')
 
     s = my_mac
     sen1address = s.device1Mac.addr
@@ -101,11 +100,11 @@ def test_sending(caplog, my_mac):
             yield send_cmd.eProcessed
             i += 1
 
-    SimMan.process(sender(s.rrmMac, [TDMASchedule([[sen1address, 0], [sen2address, 0]]) for i in range(3)]))
+    SimMan.process(sender(s.rrmMac, [TDMASchedule([[sen1address, 0], [sen2address, 0]]) for i in range(10)]))
     SimMan.process(receiver(s.device1Mac))
     SimMan.process(receiver(s.device2Mac))
 
-    ROUND_TIME = 2
+    ROUND_TIME = 1
     SimMan.runSimulation(ROUND_TIME)
     assert False
 
