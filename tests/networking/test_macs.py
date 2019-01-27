@@ -1,6 +1,7 @@
 import logging
 
 import pytest
+from gymwipe.baSimulation.BA import TIMESLOT_LENGTH
 from gymwipe.devices import Device
 from gymwipe.networking.attenuation_models import FsplAttenuation
 from gymwipe.networking.mac_headers import NCSMacHeader
@@ -11,9 +12,9 @@ from gymwipe.networking.physical import FrequencyBand
 from gymwipe.control.scheduler import TDMASchedule
 
 from gymwipe.networking.simple_stack import SimplePhy
-from typing import Iterable, List
+from typing import Iterable
 from gymwipe.simtools import SimMan
-from gymwipe.baSimulation.BA import TIMESLOT_LENGTH
+
 
 from ..fixtures import simman, simple_phy
 
@@ -63,22 +64,19 @@ def test_sensormac(caplog, simman):
     sensor1_mac.gates["phyIn"].send(packet)
     controller1_mac.gates["phyIn"].send(packet2)  # should appear as relevant
     controller1_mac.gates["phyIn"].send(packet3)  # should appear as irrelevant
-    assert sensor1_mac.name == "Sensor1MacLayer"
 
 
 def test_sending(caplog, my_mac):
-    caplog.set_level(logging.INFO, logger='gymwipe.networking.construction')
-    caplog.set_level(logging.INFO, logger='gymwipe.networking.core')
-    caplog.set_level(logging.INFO, logger='gymwipe.networking.physical')
-    caplog.set_level(logging.INFO, logger='gymwipe.simtools')
+    caplog.set_level(logging.DEBUG, logger='gymwipe.networking.simple_stack')
     caplog.set_level(logging.DEBUG, logger='gymwipe.networking.mac_layers')
+    caplog.set_level(logging.DEBUG, logger='gymwipe.networking.mac_headers')
 
     s = my_mac
     sen1address = s.device1Mac.addr
     sen2address = s.device2Mac.addr
 
     def sender(from_mac_layer: GatewayMac, payloads: Iterable):
-        # send a bunch of packets from `fromMacLayer` to `toMacLayer`
+        # send a bunch of schedules
         for p in payloads:
             clock = SimMan.now
             send_cmd = Message(
@@ -103,11 +101,11 @@ def test_sending(caplog, my_mac):
             yield send_cmd.eProcessed
             i += 1
 
-    SimMan.process(sender(s.rrmMac, [TDMASchedule([[sen1address, 0], [sen2address, 0]]) for i in range(10)]))
+    SimMan.process(sender(s.rrmMac, [TDMASchedule([[sen1address, 0], [sen2address, 0]]) for i in range(3)]))
     SimMan.process(receiver(s.device1Mac))
     SimMan.process(receiver(s.device2Mac))
 
-    ROUND_TIME = 11
+    ROUND_TIME = 2
     SimMan.runSimulation(ROUND_TIME)
     assert False
 

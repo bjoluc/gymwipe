@@ -1,17 +1,18 @@
-from enum import Enum
 import logging
 from typing import Any, Dict, Tuple
-from gymwipe.control.scheduler import Scheduler, RoundRobinTDMAScheduler, DQNTDMAScheduler
+
+from gymwipe.baSimulation.BA import SCHEDULER, PROTOCOL
+from gymwipe.control.scheduler import RoundRobinTDMAScheduler, MyDQNTDMAScheduler
+from gymwipe.envs.core import Interpreter
 from gymwipe.networking.devices import NetworkDevice
 from gymwipe.networking.mac_layers import (ActuatorMacTDMA, GatewayMac,
                                            SensorMacTDMA, newUniqueMacAddress)
 from gymwipe.networking.messages import (Message, Packet, SimpleNetworkHeader,
                                          StackMessageTypes, Transmittable)
 from gymwipe.networking.physical import FrequencyBand
-from gymwipe.networking.simple_stack import SimpleMac, SimplePhy, SimpleRrmMac
+from gymwipe.networking.simple_stack import SimpleMac, SimplePhy
 from gymwipe.plants.core import OdePlant
-from gymwipe.networking.devices import SimpleRrmDevice
-from gymwipe.simtools import Notifier, SimMan, SimTimePrepender
+from gymwipe.simtools import SimMan, SimTimePrepender, Notifier
 
 logger = SimTimePrepender(logging.getLogger(__name__))
 
@@ -114,7 +115,7 @@ class GatewayDevice(NetworkDevice):
     """
 
     def __init__(self, name: str, xPos: float, yPos: float, frequencyBand: FrequencyBand,
-                    deviceIndexToMacDict: Dict[int, bytes], interpreter):
+                    deviceIndexToMacDict: Dict[int, bytes], interpreter, control):
         # No type definition for 'interpreter' to avoid circular dependencies
         """
             deviceIndexToMacDict: A dictionary mapping integer indexes to device
@@ -127,6 +128,8 @@ class GatewayDevice(NetworkDevice):
         """
         self.mac: bytes = newUniqueMacAddress()
         super(GatewayDevice, self).__init__(name, xPos, yPos, frequencyBand)
+
+        self.control = control
 
         
         self.interpreter = interpreter
@@ -156,14 +159,13 @@ class GatewayDevice(NetworkDevice):
         self._mac.ports["phy"].biConnectWith(self._phy.ports["mac"])
 
         self._receiving = False
-        self._receiverProcess = None # a SimPy receiver process
+        self._receiverProcess = None  # a SimPy receiver process
 
         # Connect the "upper" mac layer output to the interpreter
         def onPacketReceived(p: Packet):
             # Mapping MAC addresses to indexes
             senderIndex = self.macToDeviceIndexDict[p.header.sourceMAC]
-            receiverIndex = self.macToDeviceIndexDict[p.header.destMAC]
-            self.interpreter.onPacketReceived(senderIndex, receiverIndex, p.payload)
+            self.interpreter.onPacketReceived(senderIndex, p.payload)
         self._mac.gates["networkOut"].nReceives.subscribeCallback(onPacketReceived)
     
     # merge __init__ docstrings
@@ -225,24 +227,75 @@ class GatewayDevice(NetworkDevice):
             packet: The packet that has been received
         """
 
-class MyNetworkDevice(NetworkDevice):
 
-    def __init__(self, name: str, xPos: float, yPos: float, frequencyBand: FrequencyBand):
-        super(MyNetworkDevice, self).__init__(name, xPos, yPos, frequencyBand)
-        self._receiving = False
-        self._receiverProcess = None # a SimPy receiver process
+class Gateway(GatewayDevice):
+    scheduler = None
 
-        self.mac: bytes = newUniqueMacAddress()
-        """bytes: The address that is used by the MAC layer to identify this device"""
+    def __init__(self, scheduler: str, sensorMACS: [], actuatorMACS: [], name: str, xPos: float, yPos: float,
+                 frequencyBand: FrequencyBand, schedule_timeslots: int):
 
-        
-    
-    # inherit __init__ docstring
-    __init__.__doc__ = NetworkDevice.__init__.__doc__
-    
-    RECEIVE_TIMEOUT = 100
+        indexToMAC = {}
+        self.sensors = sensorMACS
+        self.actuators = actuatorMACS
+        self.nextScheduleCreation = 0
+        self.schedule_timeslots = schedule_timeslots
+
+        for i in range(len(sensorMACS)):
+            indexToMAC[i] = sensorMACS[i]
+
+        for i in range(len(sensorMACS), (len(sensorMACS)+len(actuatorMACS))):
+            indexToMAC[i] = actuatorMACS[i-len(sensorMACS)]
+        super(Gateway, self).__init__(name, xPos, yPos, frequencyBand, indexToMAC, DQNInterpreter(SCHEDULER), Control())
+
+        self._create(scheduler)
+        self._n_schedule_created = Notifier("new Schedule created", self)
+        self._n_schedule_created.subscribeCallback(self.interpreter.newSchedule)
+
+    def _create(self, schedule_name: str):
+        creator = self.__getattribute__("_create_"+schedule_name)
+        creator()
+
+    def _create_roundrobinTDMA(self):
+        self.scheduler = RoundRobinTDMAScheduler(list(self.deviceIndexToMacDict.values()), self.sensors, self.actuators,
+                                                 self.schedule_timeslots)
+        logger.debug("RoundRobinTDMAScheduler created", sender=self)
+
+    def _create_DQNTDMAScheduler(self):
+        self.scheduler = MyDQNTDMAScheduler(list(self.deviceIndexToMacDict.values()), self.sensors, self.actuators,
+                                            self.schedule_timeslots)
+        logger.debug("DQNTDMAScheduler created", sender=self)
+
+    def _gateway(self):
+        if PROTOCOL == 1:
+            if SCHEDULER == 1:
+                pass
+            elif SCHEDULER == 2:
+                observation = self.interpreter.getObservation()
+                schedule = self.scheduler.next_schedule(observation)
+                self._n_schedule_created.trigger(schedule)
+                while True:
+                    yield SimMan.timeoutUntil(self.nextScheduleCreation)
+                    observation = self.interpreter.getObservation()
+
+                    schedule = self.scheduler.next_schedule()
+            elif SCHEDULER == 3:
+                pass
+
+        elif PROTOCOL == 2:
+            while True:
+                yield SimMan.timeoutUntil(self.nextScheduleCreation)
+                observation = self.interpreter.getObservation()
+
+                schedule = self.scheduler.next_schedule()
+
+
+
     """
-    int: The timeout in seconds for the simulated blocking MAC layer receive call
+        while True:
+            #if self.nextScheduleCreation == SimMan.t
+            self.state = self._noise(self.plant.getState())
+            self.send(Transmittable(2, self.plant.getAngle()))
+            yield SimMan.timeout(self.sampleInterval)   
     """
 
 
@@ -258,8 +311,8 @@ class SimpleSensor(ComplexNetworkDevice):
 
 
         SimMan.process(self._sensor())
-    
-    
+
+
     def _noise(self, state):
         """
         Adds gaussian white noise to an observed state
@@ -268,14 +321,12 @@ class SimpleSensor(ComplexNetworkDevice):
 
     def send(self, data: Transmittable, destinationMacAddr: bytes = None):
         """
-            Sends the last observed state
+            Sends the last observed state to the mac layer
         """
         pass
 
     def _sensor(self):
-        """
-            TODO: send if schedule tells me to
-        """
+
         while True:
             self.state = self._noise(self.plant.getState())
             self.send(Transmittable(2, self.plant.getAngle()))
@@ -286,48 +337,47 @@ class SimpleActuator(ComplexNetworkDevice):
     pass
 
 
-class Gateway(GatewayDevice):
-    scheduler = None
+class Control:
+    pass
 
-    def __init__(self, scheduler: str, sensorMACS: [], actuatorMACS: [], name: str, xPos: float, yPos: float, frequencyBand: FrequencyBand, schedule_timeslots: int):
-        
-        indexToMAC = {}
-        self.sensors = sensorMACS
-        self.actuators = actuatorMACS
-        self.nextScheduleCreation = 0
-        self.schedule_timeslots = schedule_timeslots
-    
-        for i in range(len(sensorMACS)):
-            indexToMAC[i] = sensorMACS[i]
 
-        for i in range(len(sensorMACS),(len(sensorMACS)+len(actuatorMACS))):
-            indexToMAC[i] = actuatorMACS[i-len(sensorMACS)]
-        super(Gateway, self).__init__(name, xPos, yPos, frequencyBand, indexToMAC, None)
-        self._create(scheduler)
+class DQNInterpreter(Interpreter):
 
-        def onPacketReceived(p: Packet):
+    def __init__(self, scheduler):
+        self.scheduler = scheduler
+        self.gateway = None # set after gateway creation
+
+    def onPacketReceived(self, senderIndex: int, receiverIndex: int, payload: Transmittable):
+        if self.scheduler == 2:
             pass
-        self._mac.gates["networkOut"].nReceives.subscribeCallback(onPacketReceived)
+        elif self.scheduler == 3:
+            pass
 
-        
-    def _create(self, schedule_name: str):
-        creator =self.__getattribute__("_create_"+schedule_name)
-        creator()
-
-    def _create_roundrobinTDMA(self):
-        self.scheduler = RoundRobinTDMAScheduler(list(self.deviceIndexToMacDict.values()), self.sensors, self.actuators, self.schedule_timeslots)
-        logger.debug("RoundRobinTDMAScheduler created", sender=self)
-
-    def _create_DQNTDMAScheduler(self):
-        self.scheduler = DQNTDMAScheduler(list(self.deviceIndexToMacDict.values()), self.sensors, self.actuators, self.schedule_timeslots)
-        logger.debug("DQNTDMAScheduler created", sender=self)
-
-    def _gateway(self):
+    def onFrequencyBandAssignment(self, deviceIndex: int, duration: int):
         pass
-    """
-        while True:
-            #if self.nextScheduleCreation == SimMan.t
-            self.state = self._noise(self.plant.getState())
-            self.send(Transmittable(2, self.plant.getAngle()))
-            yield SimMan.timeout(self.sampleInterval)   
-    """
+
+    def getReward(self):
+        """
+        Reward is
+        """
+        if self.scheduler == 2:
+            pass
+        elif self.scheduler == 3:
+            pass
+        return None
+
+    def getObservation(self):
+        if self.scheduler == 2:
+            pass
+        elif self.scheduler == 3:
+            pass
+        return None
+
+    def getDone(self):
+        return False
+
+    def getInfo(self):
+        pass
+
+    def newSchedule(self, schedule):
+        pass

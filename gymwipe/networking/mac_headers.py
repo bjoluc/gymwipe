@@ -5,6 +5,7 @@ from gymwipe.simtools import SimMan, SimTimePrepender
 
 logger = SimTimePrepender(logging.getLogger(__name__))
 
+
 class NCSMacHeader(Transmittable):
     def __init__(self, type: bytes, sourceMAC: bytes, destMAC: bytes = None, more: bytes = None):
         if len(sourceMAC) != 6:
@@ -27,8 +28,6 @@ class NCSMacHeader(Transmittable):
             bytesize += len(destMAC)
         if more != None:
             bytesize += len(more)
-        
-        
-        super(NCSMacHeader, self).__init__((type, sourceMAC,destMAC, more), bytesize)
-        debug = "Header created, bytesize: " + str(bytesize)
-        logger.debug(debug, sender=self)
+
+        super(NCSMacHeader, self).__init__((type, sourceMAC, destMAC, more), bytesize)
+        logger.debug("Header created, bytesize %d: ", bytesize, sender=self)

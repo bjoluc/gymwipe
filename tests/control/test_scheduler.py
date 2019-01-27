@@ -1,11 +1,11 @@
 import logging
 
-from gymwipe.control.scheduler import (DQNTDMAScheduler,
-                                       RoundRobinTDMAScheduler, Scheduler,
+from gymwipe.control.scheduler import (MyDQNTDMAScheduler,
+                                       RoundRobinTDMAScheduler,
                                        TDMASchedule, tdma_encode)
 from gymwipe.networking.attenuation_models import FsplAttenuation
 from gymwipe.networking.mac_layers import newUniqueMacAddress
-from gymwipe.networking.MyDevices import Gateway,GatewayDevice
+from gymwipe.networking.MyDevices import Gateway
 from gymwipe.networking.physical import FrequencyBand
 
 
@@ -42,7 +42,7 @@ def test_scheduler_creation(caplog):
     assert len(gateway.actuators) == 1
     assert isinstance(gateway.scheduler, RoundRobinTDMAScheduler)
     gateway2 = Gateway("DQNTDMAScheduler", [1, 2, 3], [4, 5, 6], "Gateway", 0, 0, FrequencyBand([FsplAttenuation]),5)
-    assert isinstance(gateway2.scheduler, DQNTDMAScheduler)
+    assert isinstance(gateway2.scheduler, MyDQNTDMAScheduler)
 
 
 def test_encoding(caplog):

@@ -200,7 +200,7 @@ class GatewayMac(Module):
 
     @GateListener.setup
     def __init__(self, name: str, device: Device, frequencyBandSpec: FrequencyBandSpec, addr: bytes):
-        super(GatewayMac, self).__init__(name , owner=device)
+        super(GatewayMac, self).__init__(name, owner=device)
         self._addPort("phy")
         self._addPort("network")
         self.addr = addr
@@ -265,13 +265,13 @@ class GatewayMac(Module):
     def _sendAnnouncement(self, message: Message):
         """
         Is executed by the `_nAnnouncementReceived` notifier in a blocking and
-        queued way for every schedule Packet that is received on the `networkIn`
+        queued way for every schedule that is received on the `networkIn`
         gate.
         """
         schedule = message.args["schedule"]
         clock = message.args["clock"]
         type = bytearray(1)
-        type[0] = 0
+        type[0] = 0 # schedule
         announcement = Packet(
             NCSMacHeader(bytes(type), self.addr),
             Transmittable(schedule, tdma_encode(schedule, False)),

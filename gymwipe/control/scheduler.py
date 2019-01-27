@@ -85,13 +85,83 @@ class RoundRobinTDMAScheduler(Scheduler):
         self.schedule = TDMASchedule(action)
         return self.schedule
 
+    def get_next_control_slot(self, last_control_slot) -> [int, str]:
+        schedule_list = self.schedule.string
 
-class DQNTDMAScheduler(Scheduler):
+class PaperDQNTDMAScheduler(Scheduler):
+    def __init__(self, devices: {}, sensors: [], actuators: [], timeslots: int):
+        super(PaperDQNTDMAScheduler, self).__init__(devices, timeslots)
+        self.sensors = sensors
+        self.actuators = actuators
+
+        self.state_dim = 3 * len(self.sensors) + 2 * len(self.actuators) + self.timeslots
+        self.action_set = list(itertools.combinations_with_replacement(self.devices, self.timeslots))
+        self.action_size = len(self.action_set)
+
+        self.batch_size = 32  # mini-batch size
+        self.memory = deque(maxlen=20000)  # replay memory
+        self.alpha = 0.95  # discount rate
+        self.epsilon = 1  # exploration rate
+        self.epsilon_min = 0.01
+        self.epsilon_decay = 0.999
+        self.learning_rate = np.exp(-4)
+        self.c = 100  # how many steps to fix target Q
+        self.model = self._build_model()
+        self.target_model = self._build_model()
+        self.update_target_model()
+
+    def _build_model(self):
+        # Neural Net for Deep-Q learning Model
+        model = Sequential()
+        model.add(Dense(1024, input_dim=self.state_dim, activation='relu'))
+        #        model.add(Dropout(.4))
+        model.add(Dense(1024, activation='relu'))
+        model.add(Dense(self.action_size, activation='linear'))
+        model.compile(loss='mean_squared_error', optimizer=Adam(lr=self.learning_rate, decay=.001))
+        #        model.compile(loss='mean_squared_error', optimizer=Adam(lr=self.learning_rate))
+        return model
+
+    def update_target_model(self):
+        # copy weights from model to target_model
+        self.target_model.set_weights(self.model.get_weights())
+
+    def remember(self, state, action, reward, next_state):
+        self.memory.append((state, action, reward, next_state))
+
+    def act(self, state):
+        if np.random.rand() <= self.epsilon:
+            return random.randrange(self.action_size)
+        act_values = self.model.predict(state)
+        return np.argmax(act_values[0])  # returns action
+
+    def replay(self):
+        minibatch = random.sample(self.memory, self.batch_size)
+        states = list()
+        targets = list()
+        for state, action, reward, next_state in minibatch:
+            target = self.model.predict(state)
+            target_Q = self.target_model.predict(next_state)[0]  # [0] for row matrix to vector
+            target[0][action] = reward + self.alpha * np.max(target_Q)
+            states.append(state[0])
+            targets.append(target[0])
+        self.model.fit(np.reshape(states, [self.batch_size, self.state_dim]),
+                       np.reshape(targets, [self.batch_size, self.action_size]), epochs=1, verbose=0)
+        if self.epsilon > self.epsilon_min:
+            self.epsilon *= self.epsilon_decay
+
+    def load(self, name):
+        self.model.load_weights(name)
+
+    def save(self, name):
+        self.model.save_weights(name)
+
+
+class MyDQNTDMAScheduler(Scheduler):
     """
         A DQN Scheduler producing a TDMA Schedule
     """
     def __init__(self, devices: {}, sensors: [], actuators: [], timeslots: int):
-        super(DQNTDMAScheduler,self).__init__(devices, timeslots)
+        super(MyDQNTDMAScheduler, self).__init__(devices, timeslots)
         self.sensors = sensors
         self.actuators = actuators
 
@@ -146,12 +216,12 @@ class DQNTDMAScheduler(Scheduler):
         return None
 
 
-class DQNCSMAScheduler(Scheduler):
+class MyDQNCSMAScheduler(Scheduler):
     """
         A DQN Scheduler producing a CSMA Schedule
     """
     def __init__(self, devices, timeslots: int):
-        super(DQNCSMAScheduler,self).__init__(devices, timeslots)
+        super(MyDQNCSMAScheduler, self).__init__(devices, timeslots)
         self. result = 0
 
     def next_schedule(self, input):
@@ -210,6 +280,10 @@ class TDMASchedule(Schedule):
         schedule_list = self.string.split(" ")
         logger.debug("endtime is %s", schedule_list[len(schedule_list)-1], sender=self)
         return int(schedule_list[len(schedule_list)-1])
+
+
+
+
 
 
 class CSMASchedule(Schedule):
