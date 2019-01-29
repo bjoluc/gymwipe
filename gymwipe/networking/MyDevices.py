@@ -1,7 +1,7 @@
 import logging
 from typing import Any, Dict, Tuple
 
-from gymwipe.baSimulation.BA import SCHEDULER, PROTOCOL
+from gymwipe.baSimulation.BA import SCHEDULER, PROTOCOL, TIMESLOT_LENGTH
 from gymwipe.control.scheduler import RoundRobinTDMAScheduler, MyDQNTDMAScheduler
 from gymwipe.envs.core import Interpreter
 from gymwipe.networking.devices import NetworkDevice
@@ -158,7 +158,7 @@ class GatewayDevice(NetworkDevice):
         # Connect them with each other
         self._mac.ports["phy"].biConnectWith(self._phy.ports["mac"])
 
-        self._receiving = False
+        self._receiving = True
         self._receiverProcess = None  # a SimPy receiver process
 
         # Connect the "upper" mac layer output to the interpreter
@@ -167,65 +167,10 @@ class GatewayDevice(NetworkDevice):
             senderIndex = self.macToDeviceIndexDict[p.header.sourceMAC]
             self.interpreter.onPacketReceived(senderIndex, p.payload)
         self._mac.gates["networkOut"].nReceives.subscribeCallback(onPacketReceived)
-    
+
+
     # merge __init__ docstrings
     __init__.__doc__ = NetworkDevice.__init__.__doc__ + __init__.__doc__
-
-    RECEIVE_TIMEOUT = 100
-    
-    
-
-    def assignFrequencyBand(self, deviceIndex: bytes, duration: int) -> Tuple[Any, float]:
-        """
-        Makes the RRM assign the frequency band to a certain device for a certain time.
-
-        Args:
-            deviceIndex: The integer id that maps to the MAC address of the device
-                to assign the frequency band to (see :attr:`deviceIndexToMacDict`)
-            duration: The number of time units for the frequency band to be assigned to
-                the device
-        
-        Returns:
-            The :class:`~gymwipe.networking.messages.Signal` object that was
-            used to make the RRM MAC layer assign the frequency band. When the frequency band
-            assignment is over, the signal's
-            :attr:`~gymwipe.networking.messages.Signal.eProcessed` event will
-            succeed.
-        """
-        deviceMac = self.deviceIndexToMacDict[deviceIndex]
-        assignSignal = Message(
-            StackMessageTypes.ASSIGN,
-            {"duration": duration, "dest": deviceMac}
-        )
-        self.interpreter.onFrequencyBandAssignment(duration, deviceIndex)
-        self._mac.gates["networkIn"].send(assignSignal)
-
-        return assignSignal
-
-    def _receiver(self):
-        # A blocking receive loop
-        while self._receiving:
-            receiveCmd = Message(StackMessageTypes.RECEIVE, {"duration": self.RECEIVE_TIMEOUT})
-            self._mac.gates["networkIn"].send(receiveCmd)
-            result = yield receiveCmd.eProcessed
-            if result:
-                self.onReceive(result)
-        # Reset receiver process reference so one can see that the process has
-        # terminated
-        self._receiverProcess = None
-
-    def onReceive(self, packet: Packet):
-        """
-        This method is invoked whenever :attr:`receiving` is ``True`` and a
-        packet has been received.
-
-        Note:
-            After :attr:`receiving` has been set to ``False`` it might still be
-            called within :attr:`RECEIVE_TIMEOUT` seconds.
-
-        Args:
-            packet: The packet that has been received
-        """
 
 
 class Gateway(GatewayDevice):
@@ -251,6 +196,8 @@ class Gateway(GatewayDevice):
         self._n_schedule_created = Notifier("new Schedule created", self)
         self._n_schedule_created.subscribeCallback(self.interpreter.newSchedule)
 
+        SimMan.process(self._gateway())
+
     def _create(self, schedule_name: str):
         creator = self.__getattribute__("_create_"+schedule_name)
         creator()
@@ -265,10 +212,36 @@ class Gateway(GatewayDevice):
                                             self.schedule_timeslots)
         logger.debug("DQNTDMAScheduler created", sender=self)
 
+    def _send_schedule(self, schedule):
+        clock = SimMan.now
+        send_cmd = Message(
+            StackMessageTypes.SEND, {
+                "schedule": schedule,
+                "clock": clock
+            }
+        )
+        self._mac.gates["networkIn"].send(send_cmd)
+        self.nextScheduleCreation = SimMan.now + schedule.get_end_time()* TIMESLOT_LENGTH
+        yield send_cmd.eProcessed
+
     def _gateway(self):
-        if PROTOCOL == 1:
-            if SCHEDULER == 1:
-                pass
+        if PROTOCOL == 1:  # TDMA
+            if SCHEDULER == 1:  # Round Robin
+                while True:
+                    yield SimMan.timeoutUntil(self.nextScheduleCreation)
+                    schedule = self.scheduler.next_schedule()
+                    clock = SimMan.now
+                    send_cmd = Message(
+                        StackMessageTypes.SEND, {
+                            "schedule": schedule,
+                            "clock": clock
+                        }
+                    )
+                    self._mac.gates["networkIn"].send(send_cmd)
+                    self.nextScheduleCreation = SimMan.now + schedule.get_end_time()* TIMESLOT_LENGTH
+                    yield send_cmd.eProcessed
+                    # TODO: wait for control slot and activate controller
+
             elif SCHEDULER == 2:
                 observation = self.interpreter.getObservation()
                 schedule = self.scheduler.next_schedule(observation)
@@ -281,22 +254,8 @@ class Gateway(GatewayDevice):
             elif SCHEDULER == 3:
                 pass
 
-        elif PROTOCOL == 2:
-            while True:
-                yield SimMan.timeoutUntil(self.nextScheduleCreation)
-                observation = self.interpreter.getObservation()
-
-                schedule = self.scheduler.next_schedule()
-
-
-
-    """
-        while True:
-            #if self.nextScheduleCreation == SimMan.t
-            self.state = self._noise(self.plant.getState())
-            self.send(Transmittable(2, self.plant.getAngle()))
-            yield SimMan.timeout(self.sampleInterval)   
-    """
+        elif PROTOCOL == 2:  # CSMA
+            pass
 
 
 class SimpleSensor(ComplexNetworkDevice):
@@ -308,7 +267,6 @@ class SimpleSensor(ComplexNetworkDevice):
         super(SimpleSensor, self).__init__(name, xPos, yPos, frequencyBand, "Sensor")
         self.plant = plant
         self.sampleInterval = sampleInterval
-
 
         SimMan.process(self._sensor())
 
@@ -338,7 +296,8 @@ class SimpleActuator(ComplexNetworkDevice):
 
 
 class Control:
-    pass
+    def __init__(self):
+        name = "bla"
 
 
 class DQNInterpreter(Interpreter):

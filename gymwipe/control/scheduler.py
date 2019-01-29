@@ -57,7 +57,7 @@ class RoundRobinTDMAScheduler(Scheduler):
     A Round Robin Scheduler producing a TDMA Schedule
     """
     def __init__(self, devices: [], sensors: [], actuators: [], timeslots: int):
-        super(RoundRobinTDMAScheduler,self).__init__(devices, timeslots)
+        super(RoundRobinTDMAScheduler, self).__init__(devices, timeslots)
         self.sensors = sensors
         self.actuators = actuators
         self.nextDevice = 0 # position in device list of the first device in the next schedule
@@ -87,6 +87,7 @@ class RoundRobinTDMAScheduler(Scheduler):
 
     def get_next_control_slot(self, last_control_slot) -> [int, str]:
         schedule_list = self.schedule.string
+        # TODO: return next control timeslot
 
 class PaperDQNTDMAScheduler(Scheduler):
     def __init__(self, devices: {}, sensors: [], actuators: [], timeslots: int):

@@ -1,6 +1,7 @@
 import logging
 
 import pytest
+
 from gymwipe.baSimulation.BA import TIMESLOT_LENGTH
 from gymwipe.devices import Device
 from gymwipe.networking.attenuation_models import FsplAttenuation
@@ -14,9 +15,6 @@ from gymwipe.control.scheduler import TDMASchedule
 from gymwipe.networking.simple_stack import SimplePhy
 from typing import Iterable
 from gymwipe.simtools import SimMan
-
-
-from ..fixtures import simman, simple_phy
 
 
 class dotdict(dict):

@@ -1,4 +1,4 @@
-TIMESLOT_LENGTH = 0.002
+TIMESLOT_LENGTH = 0.01
 EPISODES = 200  # number of episodes
 T = 500  # horizon length
 SCHEDULER = 1
