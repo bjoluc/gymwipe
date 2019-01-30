@@ -105,6 +105,8 @@ def test_actuator_mac(caplog, simman):
     packet = Packet(NCSMacHeader(type=controlsendingtype, sourceMAC=mac2, destMAC=mac1), Transmittable("Test"))
     actuator1_mac.gates["phyIn"].send(packet)
 
+    SimMan.runSimulation(1)
+
     assert False
 
 

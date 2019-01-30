@@ -167,18 +167,29 @@ class ActuatorMacTDMA(Module):
                 if header.destMAC == self.addr:  # message for me
                     logger.debug("received control message", sender=self)
                     self.gates["networkOut"].send(packet.payload)
-                    self._n_control_received.trigger()
+                    self._n_control_received.trigger(packet)
 
     @GateListener("networkIn",(Message, Packet), queued = True)
     def networkInGateListener(self, cmd):
         if isinstance(cmd, Message):
             pass
 
-    def _sendcsi(self):
+    def _sendcsi(self, packet):
         self._stopReceiving()
         csisendingtype = bytearray(1)
         csisendingtype[0] = 2
         sendPackage = Packet(NCSMacHeader(csisendingtype, self.addr, self.gatewayAdress), Transmittable("TODO: send csi", 1 ))
+        send_cmd = Message(
+            StackMessageTypes.SEND, {
+                "packet": sendPackage,
+                "power": self._transmissionPower,
+                "mcs": self._mcs
+            }
+        )
+        self.gates["phyOut"].send(send_cmd)
+        logger.debug("sending csi back", sender=self)
+        yield send_cmd.eProcessed
+        self._start_receiving()
 
     def _stopReceiving(self):
         logger.debug("%s: Stopping to receive.", self)
