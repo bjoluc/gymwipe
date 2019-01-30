@@ -17,6 +17,9 @@ from typing import Iterable
 from gymwipe.simtools import SimMan
 
 
+from ..fixtures import simman
+
+
 class dotdict(dict):
     """dot.notation access to dictionary attributes"""
     __getattr__ = dict.get
@@ -62,6 +65,47 @@ def test_sensormac(caplog, simman):
     sensor1_mac.gates["phyIn"].send(packet)
     controller1_mac.gates["phyIn"].send(packet2)  # should appear as relevant
     controller1_mac.gates["phyIn"].send(packet3)  # should appear as irrelevant
+    assert False
+
+
+def test_actuator_mac_sending(caplog, simman):
+    caplog.set_level(logging.DEBUG, logger='gymwipe.networking.construction')
+    caplog.set_level(logging.DEBUG, logger='gymwipe.networking.mac_layers')
+
+    actuator1 = Device("Actuator1", 1, 1)
+    mac1 = newUniqueMacAddress()
+    actuator1_mac = ActuatorMacTDMA("Actuator1MacLayer", actuator1, FrequencyBand([FsplAttenuation]).spec, mac1)
+
+    gateway = Device("Gateway", 0, 0)
+    mac2 = newUniqueMacAddress()
+    gateway_mac = GatewayMac("GW_mac_layer", gateway, FrequencyBand([FsplAttenuation]), mac2)
+
+    ctrlCmd = Message(
+        StackMessageTypes.SENDCONTROL, {
+            "control": 5,
+            "receiver": mac1
+        }
+    )
+    gateway_mac.gates["networkIn"].send(ctrlCmd)
+    SimMan.runSimulation(1)
+    assert False
+
+
+def test_actuator_mac(caplog, simman):
+    caplog.set_level(logging.DEBUG, logger='gymwipe.networking.construction')
+    caplog.set_level(logging.DEBUG, logger='gymwipe.networking.mac_layers')
+
+    actuator1 = Device("Actuator1", 1, 1)
+    mac1 = newUniqueMacAddress()
+    actuator1_mac = ActuatorMacTDMA("Actuator1MacLayer", actuator1, FrequencyBand([FsplAttenuation]).spec, mac1)
+    mac2 = newUniqueMacAddress()
+
+    controlsendingtype = bytearray(1)
+    controlsendingtype[0] = 2
+    packet = Packet(NCSMacHeader(type=controlsendingtype, sourceMAC=mac2, destMAC=mac1), Transmittable("Test"))
+    actuator1_mac.gates["phyIn"].send(packet)
+
+    assert False
 
 
 def test_sending(caplog, my_mac):

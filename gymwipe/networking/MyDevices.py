@@ -18,7 +18,7 @@ from gymwipe.simtools import SimMan, SimTimePrepender, Notifier
 logger = SimTimePrepender(logging.getLogger(__name__))
 
 
-def generatePlant() -> OdePlant:
+def generatePlant():
     """
     Generates random ODEPlant
     """
@@ -263,6 +263,7 @@ class SimpleSensor(ComplexNetworkDevice):
     def _sensor(self):
 
         while True:
+            self.position.x = self.plant.getWagonPos()
             self.state = self._noise(self.plant.getAngle())
             logger.debug("State sampled: " + self.state.__str__(), sender=self)
             self.send(self.state)

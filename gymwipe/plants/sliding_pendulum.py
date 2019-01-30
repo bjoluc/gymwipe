@@ -1,6 +1,7 @@
 """
 A plant, sensor, and actuator implementation for an inverted pendulum.
 """
+import logging
 import pygame
 from pygame import Surface
 
@@ -9,7 +10,9 @@ from gymwipe.networking.devices import SimpleNetworkDevice
 from gymwipe.networking.messages import Packet, Transmittable
 from gymwipe.networking.physical import FrequencyBand
 from gymwipe.plants.core import OdePlant
-from gymwipe.simtools import SimMan
+from gymwipe.simtools import SimMan, SimTimePrepender
+
+logger = SimTimePrepender(logging.getLogger(__name__))
 
 
 class SlidingPendulum(OdePlant):
@@ -59,10 +62,13 @@ class SlidingPendulum(OdePlant):
         if visualized:
             surface = pygame.display.set_mode((640, 480))
             SimMan.process(self._screenUpdater(surface))
+
+        logger.debug("Pendulum initialized")
     
     # Methods for plant value access
 
     def getAngle(self) -> float:
+        logger.debug("angle requested", sender=self)
         self.updateState()
         return self._arm.getAngle()
     

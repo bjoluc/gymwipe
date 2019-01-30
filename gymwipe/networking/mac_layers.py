@@ -144,53 +144,49 @@ class ActuatorMacTDMA(Module):
         self._addPort("phy")
         self._addPort("network")
         self.addr = addr
-        self._lastDatapacket = None
-        self._packetAddedEvent = Event(SimMan.env)
         self._mcs = BpskMcs(frequencyBandSpec)
         self._transmissionPower = 0.0 # dBm
-        self._receiving = False
-        self._receiveCmd = None
-        self._receiveTimeout = None
+        self._receiving = True
+        self.schedule = None
+        self.gatewayAdress = None
+        self._n_control_received = Notifier("new schedule received", self)
+        self._n_control_received.subscribeProcess(self._sendcsi, queued=False)
         logger.debug("Initialization completed, MAC address: %s", self.addr, sender=self)
 
     @GateListener("phyIn", Packet, queued=True)
     def phyInGateListener(self, packet: Packet):
-        header = packet.header
-        if not isinstance(header, NCSMacHeader):
-            raise ValueError("Can only deal with header of type NCSMacHeader. Got %s.", type(header), sender=self)
-        if header.type[0] == 0: # received schedule from gateway
-            self.schedule = packet.payload.value
-            self.gatewayAdress = header.sourceMAC
-            logger.debug("received a schedule", sender=self)
-        if header.type[0] == 1:  # received sensor data
-            if header.destMAC == self.addr:  # sensor data is for me
-                logger.debug("received relevant sensor data", sender=self)
-                self.gates["networkOut"].send(packet.payload)
+        if self._receiving:
+            header = packet.header
+            if not isinstance(header, NCSMacHeader):
+                raise ValueError("Can only deal with header of type NCSMacHeader. Got %s.", type(header), sender=self)
+            if header.type[0] == 0: # received schedule from gateway
+                self.schedule = packet.payload.value
+                self.gatewayAdress = header.sourceMAC
+                logger.debug("received a schedule", sender=self)
+            if header.type[0] == 2: #received control message
+                if header.destMAC == self.addr:  # message for me
+                    logger.debug("received control message", sender=self)
+                    self.gates["networkOut"].send(packet.payload)
+                    self._n_control_received.trigger()
 
     @GateListener("networkIn",(Message, Packet), queued = True)
     def networkInGateListener(self, cmd):
         if isinstance(cmd, Message):
-            if cmd.type is StackMessageTypes.RECEIVE:
-                logger.debug("%s: Entering receive mode.", self)
-                # start receiving
-                self._receiveCmd = cmd
-                # set _receiving and a timeout event
-                self._receiving = True
-                self._receiveTimeout = SimMan.timeout(cmd.args["duration"])
-                self._receiveTimeout.callbacks.append(self._receiveTimeoutCallback)
+            pass
 
-    def _receiveTimeoutCallback(self, event: Event):
-        if event is self._receiveTimeout:
-            # the current receive message has timed out
-            logger.debug("%s: Receive timed out.", self)
-            self._receiveCmd.setProcessed()
-            self._stopReceiving()
-    
+    def _sendcsi(self):
+        self._stopReceiving()
+        csisendingtype = bytearray(1)
+        csisendingtype[0] = 2
+        sendPackage = Packet(NCSMacHeader(csisendingtype, self.addr, self.gatewayAdress), Transmittable("TODO: send csi", 1 ))
+
     def _stopReceiving(self):
         logger.debug("%s: Stopping to receive.", self)
-        self._receiveCmd = None
         self._receiving = False
-        self._receiveTimeout = None
+
+    def _start_receiving(self):
+        logger.debug("%s: Starting to receive.", self)
+        self._receiving = True
 
 
 class GatewayMac(Module):

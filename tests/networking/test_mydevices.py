@@ -50,16 +50,20 @@ def test_gateway(caplog, simman):
 def test_sensor(caplog, simman):
     caplog.set_level(logging.DEBUG, logger='gymwipe.networking.mac_layers')
     caplog.set_level(logging.DEBUG, logger='gymwipe.networking.MyDevices')
+
+    caplog.set_level(logging.DEBUG, logger='gymwipe.plants.sliding_pendulum')
     sensors = []
     sensorAddr = []
     frequencyBand = FrequencyBand([FsplAttenuation])
 
     for i in range(5):
-        sensor = SimpleSensor("Sensor" + i.__str__(), i, frequencyBand, SlidingPendulum(), 0.005)
+        pendulum = SlidingPendulum(visualized=True)
+        pendulum.setMotorVelocity(10)
+        sensor = SimpleSensor("Sensor" + i.__str__(), i, frequencyBand, pendulum, 0.005)
         sensors.append(sensor)
         sensorAddr.append(sensor.mac_address())
 
     Gateway("roundrobinTDMA", sensorAddr, [], "Gateway", 0, 0, frequencyBand, 3)
-    SimMan.runSimulation(0.5)
+    SimMan.runSimulation(1)
 
     assert False

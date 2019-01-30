@@ -29,9 +29,9 @@ class OdePlant(Plant):
         """
         if world is None:
             world = ode.World()
-            world.setGravity((0,-9.81,0))
+            world.setGravity((0, -9.81, 0))
         self.world = world
-        self.maxStepSize = 0.05
+        self.maxStepSize = 0.01
         self._lastUpdateSimTime = SimMan.now
         SimMan.process(self._stateUpdater())
 
