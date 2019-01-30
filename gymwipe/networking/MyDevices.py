@@ -12,14 +12,17 @@ from gymwipe.networking.messages import (Message, Packet, SimpleNetworkHeader,
 from gymwipe.networking.physical import FrequencyBand
 from gymwipe.networking.simple_stack import SimpleMac, SimplePhy
 from gymwipe.plants.core import OdePlant
+from gymwipe.plants.sliding_pendulum import SlidingPendulum
 from gymwipe.simtools import SimMan, SimTimePrepender, Notifier
 
 logger = SimTimePrepender(logging.getLogger(__name__))
+
 
 def generatePlant() -> OdePlant:
     """
     Generates random ODEPlant
     """
+
 
 class ComplexNetworkDevice(NetworkDevice):
     """
@@ -38,11 +41,11 @@ class ComplexNetworkDevice(NetworkDevice):
         self.mac: bytes = newUniqueMacAddress()
         """bytes: The address that is used by the MAC layer to identify this device"""
 
-        if(type == "Sensor"):
+        if type is "Sensor":
             # Initialize PHY and MAC
             self._phy = SimplePhy("phy", self, self.frequencyBand)
             self._mac = SensorMacTDMA("mac", self, self.frequencyBand.spec, self.mac)
-        elif(type == "Controller"):
+        elif type is "Controller":
             # Initialize PHY and MAC
             self._phy = SimplePhy("phy", self, self.frequencyBand)
             self._mac = ActuatorMacTDMA("mac", self, self.frequencyBand.spec, self.mac)
@@ -56,40 +59,12 @@ class ComplexNetworkDevice(NetworkDevice):
     
     # inherit __init__ docstring
     __init__.__doc__ = NetworkDevice.__init__.__doc__
-    
-    RECEIVE_TIMEOUT = 100
-    """
-    int: The timeout in seconds for the simulated blocking MAC layer receive call
-    """
-    
-    @property
-    def receiving(self) -> bool:
-        return self._receiving
-    
-    @receiving.setter
-    def receiving(self, receiving: bool):
-        if receiving != self._receiving:
-            if receiving:
-                # start receiving
-                if self._receiverProcess is None:
-                    self._receiverProcess = SimMan.process(self._receiver())
-            self._receiving = receiving
 
-    def send(self, data: Transmittable, destinationMacAddr: bytes):
-        p = Packet(SimpleNetworkHeader(self.mac, destinationMacAddr), data)
-        self._mac.gates["networkIn"].send(p)
+    def mac_address(self):
+        return self._mac.addr
 
-    def _receiver(self):
-        # A blocking receive loop
-        while self._receiving:
-            receiveCmd = Message(StackMessageTypes.RECEIVE, {"duration": self.RECEIVE_TIMEOUT})
-            self._mac.gates["networkIn"].send(receiveCmd)
-            result = yield receiveCmd.eProcessed
-            if result:
-                self.onReceive(result)
-        # Reset receiver process reference so one can see that the process has
-        # terminated
-        self._receiverProcess = None
+    def send(self, data):
+        raise NotImplementedError
 
     def onReceive(self, packet: Packet):
         """
@@ -103,6 +78,7 @@ class ComplexNetworkDevice(NetworkDevice):
         Args:
             packet: The packet that has been received
         """
+        raise NotImplementedError
 
 
 class GatewayDevice(NetworkDevice):
@@ -262,37 +238,57 @@ class SimpleSensor(ComplexNetworkDevice):
     """
     A sensor that observes the given plant (noise added)
     """
-    def __init__(self, name: str, xPos: float, yPos: float, frequencyBand: FrequencyBand,
-                    plant: OdePlant, sampleInterval: float):
-        super(SimpleSensor, self).__init__(name, xPos, yPos, frequencyBand, "Sensor")
+    def __init__(self, name: str, yPos: float, frequencyBand: FrequencyBand,
+                    plant: SlidingPendulum, sampleInterval: float):
+        super(SimpleSensor, self).__init__(name, plant.getWagonPos(), yPos, frequencyBand, "Sensor")
         self.plant = plant
         self.sampleInterval = sampleInterval
-
+        logger.debug("Sensor initialized", sender=self)
         SimMan.process(self._sensor())
-
 
     def _noise(self, state):
         """
         Adds gaussian white noise to an observed state
         """
-        return 5
+        # TODO: add noise
+        return state
 
-    def send(self, data: Transmittable, destinationMacAddr: bytes = None):
+    def send(self, data):
         """
             Sends the last observed state to the mac layer
         """
-        pass
+        send_cmd = Message(StackMessageTypes.SEND, {"state": data})
+        self._mac.gates["networkIn"].send(send_cmd)
 
     def _sensor(self):
 
         while True:
-            self.state = self._noise(self.plant.getState())
-            self.send(Transmittable(2, self.plant.getAngle()))
+            self.state = self._noise(self.plant.getAngle())
+            logger.debug("State sampled: " + self.state.__str__(), sender=self)
+            self.send(self.state)
             yield SimMan.timeout(self.sampleInterval)
+
+    def onReceive(self, packet: Packet):
+        pass
 
 
 class SimpleActuator(ComplexNetworkDevice):
-    pass
+    def __init__(self, name: str, yPos: float, frequencyBand: FrequencyBand, plant: SlidingPendulum):
+        super(SimpleActuator, self).__init__(name, plant.getWagonPos, yPos, frequencyBand, "Actuator")
+        self.plant = plant
+
+        SimMan.process(self._positionUpdater())
+
+    def _positionUpdater(self):
+        while True:
+            self.position.x = self.plant.getWagonPos()
+            yield SimMan.timeout(1e-3)  # 1 ms
+
+    def send(self, data):
+        pass
+
+    def onReceive(self, packet: Packet):
+        self.plant.setMotorVelocity(packet.payload.value)
 
 
 class Control:

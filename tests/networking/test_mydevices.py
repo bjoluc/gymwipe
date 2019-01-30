@@ -2,18 +2,19 @@ import logging
 
 import pytest
 from gymwipe.devices import Device
-from gymwipe.networking.MyDevices import Gateway
+from gymwipe.networking.MyDevices import Gateway, SimpleSensor
 from gymwipe.networking.attenuation_models import FsplAttenuation
 from gymwipe.networking.mac_layers import SensorMacTDMA, newUniqueMacAddress
 from gymwipe.networking.messages import Message, StackMessageTypes
 from gymwipe.networking.physical import FrequencyBand
 from gymwipe.networking.simple_stack import SimplePhy
+from gymwipe.plants.sliding_pendulum import SlidingPendulum
 from gymwipe.simtools import SimMan
 
 from ..fixtures import simman
 
 
-def test_init(caplog, simman):
+def test_gateway(caplog, simman):
     caplog.set_level(logging.DEBUG, logger='gymwipe.networking.mac_layers')
     caplog.set_level(logging.DEBUG, logger='gymwipe.networking.MyDevices')
     sensors = []
@@ -39,6 +40,24 @@ def test_init(caplog, simman):
         sensorMACS.append(mac)
         sensorAddr.append(mac.addr)
         SimMan.process(receiver(mac))
+
+    Gateway("roundrobinTDMA", sensorAddr, [], "Gateway", 0, 0, frequencyBand, 3)
+    SimMan.runSimulation(0.5)
+
+    assert False
+
+
+def test_sensor(caplog, simman):
+    caplog.set_level(logging.DEBUG, logger='gymwipe.networking.mac_layers')
+    caplog.set_level(logging.DEBUG, logger='gymwipe.networking.MyDevices')
+    sensors = []
+    sensorAddr = []
+    frequencyBand = FrequencyBand([FsplAttenuation])
+
+    for i in range(5):
+        sensor = SimpleSensor("Sensor" + i.__str__(), i, frequencyBand, SlidingPendulum(), 0.005)
+        sensors.append(sensor)
+        sensorAddr.append(sensor.mac_address())
 
     Gateway("roundrobinTDMA", sensorAddr, [], "Gateway", 0, 0, frequencyBand, 3)
     SimMan.runSimulation(0.5)

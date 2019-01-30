@@ -86,8 +86,14 @@ class RoundRobinTDMAScheduler(Scheduler):
         return self.schedule
 
     def get_next_control_slot(self, last_control_slot) -> [int, str]:
-        schedule_list = self.schedule.string
-        # TODO: return next control timeslot
+        schedule_list = self.schedule.string.split(" ")
+        for i in range(len(schedule_list)):
+            if ((i % 4) - 1) == 0:  # is mac address
+                if schedule_list[i] in self.actuators:  # is control line
+                    if schedule_list[i-1] > last_control_slot:  # is next control line
+                        return [schedule_list[i-1], schedule_list[i]]
+        return None
+
 
 class PaperDQNTDMAScheduler(Scheduler):
     def __init__(self, devices: {}, sensors: [], actuators: [], timeslots: int):
@@ -267,7 +273,7 @@ class TDMASchedule(Schedule):
         string = "".join(schedule_list)
         logger.debug("schedule list: %s", string, sender=self)
         for i in range(len(schedule_list)):
-            if ((i % 4) - 1) == 0:
+            if ((i % 4) - 1) == 0:  # is mac adress
                 logger.debug("Found a mac address field, address is: %s", schedule_list[i], sender=self)
                 if schedule_list[i] == mac_address:
                     logger.debug("mac addresses are the same : %s at timestep %s", mac_address, schedule_list[i-1], sender=self)

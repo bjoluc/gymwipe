@@ -17,7 +17,7 @@ class SlidingPendulum(OdePlant):
     Simulates a pendulum, mounted on a motorized slider.
     """
 
-    def __init__(self, world: ode.World = None, visualized = False):
+    def __init__(self, world: ode.World = None, visualized=False):
         super(SlidingPendulum, self).__init__(world)
 
         # Bodies and joints
@@ -26,25 +26,25 @@ class SlidingPendulum(OdePlant):
         M = ode.Mass()
         M.setSphere(2500, 0.05)
         wagon.setMass(M)
-        wagon.setPosition((0,1,0))
+        wagon.setPosition((0, 1, 0))
 
         # Create pendulum
         pendulum = ode.Body(self.world)
         M = ode.Mass()
         M.setSphere(2500, 0.05)
         pendulum.setMass(M)
-        pendulum.setPosition((0,2,0))
+        pendulum.setPosition((0, 2, 0))
 
         # Connect wagon with the static environment using a slider joint
         slider = ode.SliderJoint(self.world)
         slider.attach(ode.environment, wagon)
-        slider.setAxis((1,0,0))
+        slider.setAxis((1, 0, 0))
 
         # Connect pendulum with wagon
         arm = ode.HingeJoint(self.world)
         arm.attach(wagon, pendulum)
         arm.setAnchor(wagon.getPosition())
-        arm.setAxis((0,0,1))
+        arm.setAxis((0, 0, 1))
 
         self._wagon = wagon
         self._pendulum = pendulum
@@ -52,12 +52,12 @@ class SlidingPendulum(OdePlant):
         self._arm = arm
 
         slider.setParam(ode.ParamVel, 0.1)
-        slider.setParam(ode.ParamFMax, 22) # used to be 22
+        slider.setParam(ode.ParamFMax, 22)  # used to be 22
 
         # visualization
         self._visualized = visualized
         if visualized:
-            surface = pygame.display.set_mode((640,480))
+            surface = pygame.display.set_mode((640, 480))
             SimMan.process(self._screenUpdater(surface))
     
     # Methods for plant value access
@@ -90,14 +90,14 @@ class SlidingPendulum(OdePlant):
         return int(320+170*x), int(400-170*y)
     
     def _drawOnSurface(self, surface: Surface):
-        surface.fill((255,255,255))
+        surface.fill((255, 255, 255))
 
         pendulumPos = self._toPixelCoordinate(self._pendulum.getPosition())
         wagonPos = self._toPixelCoordinate(self._wagon.getPosition())
 
-        pygame.draw.circle(surface, (0,0,0), pendulumPos, 20, 0)
-        pygame.draw.circle(surface, (0,0,0), wagonPos, 20, 0)
-        pygame.draw.line(surface, (0,0,0), pendulumPos, wagonPos, 2)
+        pygame.draw.circle(surface, (0, 0, 0), pendulumPos, 20, 0)
+        pygame.draw.circle(surface, (0, 0, 0), wagonPos, 20, 0)
+        pygame.draw.line(surface, (0, 0, 0), pendulumPos, wagonPos, 2)
 
         pygame.display.flip()
 
