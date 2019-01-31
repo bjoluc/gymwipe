@@ -50,7 +50,6 @@ def test_gateway(caplog, simman):
 def test_sensor(caplog, simman):
     caplog.set_level(logging.DEBUG, logger='gymwipe.networking.mac_layers')
     caplog.set_level(logging.DEBUG, logger='gymwipe.networking.MyDevices')
-
     caplog.set_level(logging.DEBUG, logger='gymwipe.plants.sliding_pendulum')
     sensors = []
     sensorAddr = []

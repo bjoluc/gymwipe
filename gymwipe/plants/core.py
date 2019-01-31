@@ -1,9 +1,14 @@
 """
 Core components for plant implementations.
 """
-
+import logging
 import ode
-from gymwipe.simtools import SimMan
+from scipy import signal
+from scipy.signal import dlti, StateSpace
+
+from gymwipe.simtools import SimMan, SimTimePrepender
+
+logger = SimTimePrepender(logging.getLogger(__name__))
 
 
 class Plant:
@@ -12,6 +17,29 @@ class Plant:
     accessible to simulated sensors and modifyable by simulated actuators.
     The :class:`Plant` class itself does not provide any features.
     """
+
+
+class DiscreteStateSpacePlant(Plant):
+    def __init__(self, discrete_state_space: StateSpace):
+        self._state_space_form = discrete_state_space
+        self._sample_interval = self._state_space_form.dt
+        self.input = 0
+        logger.debug("Discrete Plant initialized. Sample interval: %f, State space form: %s", self._sample_interval,
+                     self._state_space_form.__str__(), sender=self)
+
+    def update_state(self):
+        pass
+
+    def get_output(self):
+        pass
+
+    def get_sample_interval(self):
+        return self._sample_interval
+
+    def set_input(self, u: float):
+        self.input = u
+        self.update_state()
+
 
 class OdePlant(Plant):
     """
@@ -47,6 +75,7 @@ class OdePlant(Plant):
         if difference > 0:
             self.world.step(difference)
             self._lastUpdateSimTime = now
+            logger.debug("State updated", sender=self)
     
     def _stateUpdater(self):
         """
