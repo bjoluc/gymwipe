@@ -1,5 +1,3 @@
-
-
 import pytest
 
 from gymwipe.devices import Device
@@ -20,10 +18,7 @@ class dotdict(dict):
     __delattr__ = dict.__delitem__
 
 @pytest.fixture
-def simple_phy():
-    # initialize SimPy environment
-    SimMan.init()
-
+def simple_phy(simman):
     # create a wireless frequency band with FSPL attenuation
     frequencyBand = FrequencyBand([FsplAttenuation])
 
