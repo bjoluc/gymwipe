@@ -177,13 +177,10 @@ class SimplePhy(Module):
         self._receivedBitErrorRate = 0.0
         self._lastReceivedErrorCountTime = SimMan.now
     
-    def _countBitErrors(self, transmit_duration=None):
+    def _countBitErrors(self):
         # Calculate the duration since last time that we counted errors
-        if transmit_duration is not None:
-            duration = transmit_duration
-        else:
-            now = SimMan.now
-            duration = now - self._lastReceivedErrorCountTime
+        now = SimMan.now
+        duration = now - self._lastReceivedErrorCountTime
 
         # Derive the number of bit errors for that duration (as a float,
         # rounding is done in the end)
@@ -240,7 +237,7 @@ class SimplePhy(Module):
             yield t.eHeaderCompletes
 
             # Count errors since the last time that the received power has changed
-            self._countBitErrors(t.headerDuration)
+            self._countBitErrors() 
 
             # Decide whether the header could be received
             if self._decide(self._receivedBitErrorSum, t.headerBits, t.mcsHeader, logSubject="Header"):
@@ -250,7 +247,7 @@ class SimplePhy(Module):
 
                 # Wait for the payload to be transmitted
                 yield t.eCompletes
-                self._countBitErrors(t.payloadDuration)
+                self._countBitErrors()
 
                 logger.debug("{:.3} of {:.3} payload bits were errors.".format(
                                 self._receivedBitErrorSum, t.payloadBits), sender=self)
