@@ -72,13 +72,18 @@ def test_actuator_mac_sending(caplog, simman):
     caplog.set_level(logging.DEBUG, logger='gymwipe.networking.construction')
     caplog.set_level(logging.DEBUG, logger='gymwipe.networking.mac_layers')
 
+    frequency_band = FrequencyBand([FsplAttenuation])
     actuator1 = Device("Actuator1", 1, 1)
     mac1 = newUniqueMacAddress()
-    actuator1_mac = ActuatorMacTDMA("Actuator1MacLayer", actuator1, FrequencyBand([FsplAttenuation]).spec, mac1)
+    actuator1_mac = ActuatorMacTDMA("Actuator1MacLayer", actuator1, frequency_band.spec, mac1)
+    actuator1_phy = SimplePhy("GW phy", actuator1, frequency_band)
+    actuator1_mac.ports["phy"].biConnectWith(actuator1_phy.ports["mac"])
 
     gateway = Device("Gateway", 0, 0)
     mac2 = newUniqueMacAddress()
-    gateway_mac = GatewayMac("GW_mac_layer", gateway, FrequencyBand([FsplAttenuation]), mac2)
+    gateway_mac = GatewayMac("GW_mac_layer", gateway, frequency_band.spec, mac2)
+    gateway_phy = SimplePhy("GW phy", gateway, frequency_band)
+    gateway_mac.ports["phy"].biConnectWith(gateway_phy.ports["mac"])
 
     ctrlCmd = Message(
         StackMessageTypes.SENDCONTROL, {
@@ -105,7 +110,6 @@ def test_actuator_mac(caplog, simman):
     packet = Packet(NCSMacHeader(type=controlsendingtype, sourceMAC=mac2, destMAC=mac1), Transmittable("Test"))
     actuator1_mac.gates["phyIn"].send(packet)
 
-    SimMan.runSimulation(1)
 
     assert False
 

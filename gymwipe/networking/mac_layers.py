@@ -82,6 +82,7 @@ class SensorMacTDMA(Module):
                 schedulestr = self._schedule.get_string()
                 logger.debug("received a schedule: gateway clock: %s schedule: %s", self._lastGatewayClock.__str__(),
                              schedulestr, sender=self)
+                # TODO: save csi, given by phy
             else:
                 pass
         else:
@@ -118,6 +119,7 @@ class SensorMacTDMA(Module):
             logger.debug("%s: next relevant timespan is [%d, %d]", self, relevant_span[0], relevant_span[1])
             for i in range(relevant_span[0], relevant_span[1]):
                 yield SimMan.timeoutUntil(self._lastGatewayClock + i*TIMESLOT_LENGTH)
+                # TODO: put csi in packet
                 send_cmd = Message(
                     StackMessageTypes.SEND, {
                         "packet": self._lastDatapacket,
@@ -140,7 +142,7 @@ class ActuatorMacTDMA(Module):
 
     @GateListener.setup
     def __init__(self, name: str, device: Device, frequencyBandSpec: FrequencyBandSpec, addr: bytes):
-        super(ActuatorMacTDMA, self).__init__(name , owner=device)
+        super(ActuatorMacTDMA, self).__init__(name, owner=device)
         self._addPort("phy")
         self._addPort("network")
         self.addr = addr
@@ -179,6 +181,7 @@ class ActuatorMacTDMA(Module):
         csisendingtype = bytearray(1)
         csisendingtype[0] = 2
         sendPackage = Packet(NCSMacHeader(csisendingtype, self.addr, self.gatewayAdress), Transmittable("TODO: send csi", 1 ))
+        # TODO: send csi, will be in packet
         send_cmd = Message(
             StackMessageTypes.SEND, {
                 "packet": sendPackage,
@@ -230,8 +233,10 @@ class GatewayMac(Module):
         message_type = header.type[0]
         if message_type == 1: #received sensordata
             logger.debug("received sensordata from %s. data is %s", header.sourceMAC, packet.payload.value, sender=self)
+            # TODO: send to network, csi integration
         if message_type == 2: #received Actuator ACK
-            pass
+            logger.debug("received actuator csi from %s. csi is %s", header.sourceMAC, packet.payload.value, sender=self)
+            #TODO: send to network, csi integration
 
     @GateListener("networkIn", Message)
     def networkInGateListener(self, message: Message):

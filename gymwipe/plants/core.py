@@ -19,12 +19,12 @@ class Plant:
     """
 
 
-class DiscreteStateSpacePlant(Plant):
-    def __init__(self, discrete_state_space: StateSpace):
-        self._state_space_form = discrete_state_space
-        self._sample_interval = self._state_space_form.dt
+class StateSpacePlant(Plant):
+    def __init__(self, state_space: StateSpace, dt ):
+        self._state_space_form = state_space
+        self._sample_interval = dt
         self.input = 0
-        logger.debug("Discrete Plant initialized. Sample interval: %f, State space form: %s", self._sample_interval,
+        logger.debug("Plant initialized. Sample interval: %f, State space form: %s", self._sample_interval,
                      self._state_space_form.__str__(), sender=self)
 
     def update_state(self):
