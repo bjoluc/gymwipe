@@ -233,10 +233,24 @@ class GatewayMac(Module):
         message_type = header.type[0]
         if message_type == 1: #received sensordata
             logger.debug("received sensordata from %s. data is %s", header.sourceMAC, packet.payload.value, sender=self)
-            # TODO: send to network, csi integration
+            receive_message = Message(
+                StackMessageTypes.RECEIVED, {
+                    "sender": header.sourceMAC,
+                    "state": packet.payload.value
+                }
+            )
+            self.gates["networkOut"].send(receive_message)
+            # TODO: csi integration
         if message_type == 2: #received Actuator ACK
             logger.debug("received actuator csi from %s. csi is %s", header.sourceMAC, packet.payload.value, sender=self)
-            #TODO: send to network, csi integration
+            receive_message = Message(
+                StackMessageTypes.RECEIVED, {
+                    "sender": header.sourceMAC,
+                    "csiactuator": packet.payload.value
+                }
+            )
+            # TODO: add gateway csi
+            self.gates["networkOut"].send(receive_message)
 
     @GateListener("networkIn", Message)
     def networkInGateListener(self, message: Message):

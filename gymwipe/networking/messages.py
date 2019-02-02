@@ -74,6 +74,7 @@ class Transmittable:
         """
         return self.bitSize / bitrate
 
+
 class FakeTransmittable(Transmittable):
     """
     A :class:`Transmittable` implementation that sets its value to None. It can
@@ -91,6 +92,7 @@ class FakeTransmittable(Transmittable):
     
     def __str__(self):
         return "FakeTransmittable(byteSize={:d})".format(self.byteSize)
+
 
 class Packet(Transmittable):
     """
@@ -130,6 +132,7 @@ class Packet(Transmittable):
     def __str__(self):
         return "({})".format(','.join([str(c) for c in self.value if not c is None]))
 
+
 class SimpleMacHeader(Transmittable):
     """
     A class for representing MAC packet headers
@@ -155,6 +158,7 @@ class SimpleMacHeader(Transmittable):
     
     def __str__(self):
         return "(SimpleMacHeader: source: {}, dest: {}, flag: {:d})".format(self.sourceMAC, self.destMAC, self.flag)
+
 
 class SimpleNetworkHeader(Transmittable):
     """
@@ -227,6 +231,7 @@ class Message:
     def __repr__(self):
         return "Message(type: '{}', args: {})".format(self.type.name, self.args)
 
+
 class StackMessageTypes(Enum):
     """
     An enumeration of control message types to be used for the exchange of
@@ -236,3 +241,4 @@ class StackMessageTypes(Enum):
     SEND = 1
     ASSIGN = 2
     SENDCONTROL = 3
+    RECEIVED = 4

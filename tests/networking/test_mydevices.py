@@ -31,9 +31,9 @@ def test_gateway(caplog, simman):
             yield send_cmd.eProcessed
             i += 1
     for i in range(5):
-        device = Device(("Sensor1" + i.__str__()), (0.2 * i + 0.2), (0.2 * i + 0.2))
-        phy = SimplePhy(("PHY1" + i.__str__()), device, frequencyBand)
-        mac = SensorMacTDMA(("MAC1" + i.__str__()), device, frequencyBand.spec, newUniqueMacAddress())
+        device = Device(("Sensor" + i.__str__()), (0.2 * i + 0.2), (0.2 * i + 0.2))
+        phy = SimplePhy(("PHY" + i.__str__()), device, frequencyBand)
+        mac = SensorMacTDMA(("MAC" + i.__str__()), device, frequencyBand.spec, newUniqueMacAddress())
 
         phy.ports["mac"].biConnectWith(mac.ports["phy"])
         sensors.append(device)
@@ -41,7 +41,7 @@ def test_gateway(caplog, simman):
         sensorAddr.append(mac.addr)
         SimMan.process(receiver(mac))
 
-    Gateway("roundrobinTDMA", sensorAddr, [], "Gateway", 0, 0, frequencyBand, 3)
+    Gateway(sensorAddr, [], "Gateway", 0, 0, frequencyBand, 3)
     SimMan.runSimulation(0.5)
 
     assert False
@@ -62,7 +62,7 @@ def test_sensor(caplog, simman):
         sensors.append(sensor)
         sensorAddr.append(sensor.mac_address())
 
-    Gateway("roundrobinTDMA", sensorAddr, [], "Gateway", 0, 0, frequencyBand, 3)
+    Gateway(sensorAddr, [], "Gateway", 0, 0, frequencyBand, 3)
     SimMan.runSimulation(1)
 
     assert False

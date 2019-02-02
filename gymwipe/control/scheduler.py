@@ -27,6 +27,9 @@ class Schedule:
     def get_string(self):
         raise NotImplementedError
 
+    def get_end_time(self):
+        raise NotImplementedError
+
 
 class Scheduler:
     """
@@ -36,18 +39,20 @@ class Scheduler:
         """
         Args:
             devices: a list of MAC adresses which should be considered while producing a schedule
-            int timeslots: the number of timeslots for which scheduling descisions should be taken
+            int timeslots: the number of timeslots for which scheduling decisions should be taken
         """
-        self.devices = devices # list of sensor/controller mac adresses
-        self.schedule = None # current schedule
-        self.timeslots = timeslots # 
+        self.devices = devices  # list of sensor/controller mac addresses
+        self.schedule = None  # current schedule
+        self.timeslots = timeslots  # length of schedule
 
-    def next_schedule(self, input) -> Schedule:
+    def next_schedule(self, observation, last_reward) -> Schedule:
         """
-            produces the next schedule, possibly given information about the system's state. Raises a NotImplementedError if not overridden by a subclass
+            produces the next schedule, possibly given information about the system's state. Raises a
+            NotImplementedError if not overridden by a subclass
 
             Args:
-                input: a representation of the observed state
+                observation: a representation of the observed state
+                last_reward: the reward for the previous produced schedule
         """
         raise NotImplementedError
 
@@ -63,7 +68,7 @@ class RoundRobinTDMAScheduler(Scheduler):
         self.nextDevice = 0 # position in device list of the first device in the next schedule
         self.wasActuator = False
         
-    def next_schedule(self, input=None):
+    def next_schedule(self, observation=None, last_reward=None):
         action = []
         for i in range(self.timeslots):
             if self.devices[self.nextDevice] in self.actuators:
@@ -116,6 +121,9 @@ class PaperDQNTDMAScheduler(Scheduler):
         self.model = self._build_model()
         self.target_model = self._build_model()
         self.update_target_model()
+
+    def next_schedule(self, observation, last_reward):
+        pass
 
     def _build_model(self):
         # Neural Net for Deep-Q learning Model
@@ -219,7 +227,7 @@ class MyDQNTDMAScheduler(Scheduler):
         act_values = self.model.predict(state)
         return np.argmax(act_values[0])  # returns action
 
-    def next_schedule(self, input):
+    def next_schedule(self, observation, last_reward):
         return None
 
 
@@ -231,7 +239,7 @@ class MyDQNCSMAScheduler(Scheduler):
         super(MyDQNCSMAScheduler, self).__init__(devices, timeslots)
         self. result = 0
 
-    def next_schedule(self, input):
+    def next_schedule(self, observation, last_reward):
         x = tf.Variable(3, name ="x")
         y = tf.Variable(4, name = "y")
 
@@ -289,15 +297,15 @@ class TDMASchedule(Schedule):
         return int(schedule_list[len(schedule_list)-1])
 
 
-
-
-
-
 class CSMASchedule(Schedule):
-    def __init__(self, action):
+    def __init__(self, action, length):
         super(CSMASchedule, self).__init__(action)
+        self.length = length
 
     def get_string(self):
+        pass
+
+    def get_end_time(self):
         pass
 
 
