@@ -236,7 +236,9 @@ class GatewayMac(Module):
             receive_message = Message(
                 StackMessageTypes.RECEIVED, {
                     "sender": header.sourceMAC,
-                    "state": packet.payload.value
+                    "state": packet.payload.value,
+                    "csisensor": "TODO",
+                    "csigateway": "TODO"
                 }
             )
             self.gates["networkOut"].send(receive_message)
@@ -246,7 +248,8 @@ class GatewayMac(Module):
             receive_message = Message(
                 StackMessageTypes.RECEIVED, {
                     "sender": header.sourceMAC,
-                    "csiactuator": packet.payload.value
+                    "csiactuator": packet.payload.value,
+                    "csigateway": "TODO"
                 }
             )
             # TODO: add gateway csi

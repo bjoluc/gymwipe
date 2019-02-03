@@ -313,6 +313,7 @@ class Control:
     def onPacketReceived(self, senderIndex: int, state):
         logger.debug("received current state from sensor %d", senderIndex, sender=self)
 
+
 class MyInterpreter(Interpreter):
     """
     Interpretes the received packages/informations according to the chosen scheduler to get an observation of the

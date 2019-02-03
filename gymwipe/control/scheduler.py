@@ -270,7 +270,7 @@ class TDMASchedule(Schedule):
             last_action = self.action[i]
         self.schedule.append((len(action)+1).__str__())
         self.string = " ".join(self.schedule)
-        logger.debug("Schedule created. Content: " + self.string, sender=self)
+        logger.debug("TDMA Schedule created. Content: " + self.string, sender=self)
 
     def get_string(self):
         return self.string
@@ -298,26 +298,55 @@ class TDMASchedule(Schedule):
 
 
 class CSMASchedule(Schedule):
+    """
+    A CSMA schedule implementation. Each device is assigned a likelihood of starting to send its data when it is
+    currently not receiving data.
+
+    """
     def __init__(self, action, length):
+        """
+
+        :param action: The action chosen by the scheduler. Must have the following format:
+        [(MAC1, p1), (MAC2, p2) ... (MACn, pn)]
+        :param length:  The amount of timeslots in which this schedule is valid
+        """
         super(CSMASchedule, self).__init__(action)
         self.length = length
+        for i in range(len(self.action)):
+            self.schedule.append(self.action[i][0].__str__() + " " + self.action[i][1].__str__())
+        self.schedule.append(self.length.__str__())
+
+        self.string = " ".join(self.schedule)
+        logger.debug("CSMA Schedule created. Content: " + self.string, sender=self)
 
     def get_string(self):
-        pass
+        return self.string
 
     def get_end_time(self):
-        pass
+        return self.length
 
 
-def csma_encode(schedule : CSMASchedule, compressed: bool) -> int:
-    return 0
+def csma_encode(schedule: CSMASchedule) -> int:
+    bytesize = 0
+    for i in range(len(schedule.schedule)-1):
+        bytesize += 7
+    bytesize += 1
+    return bytesize
 
 
 def tdma_encode(schedule: TDMASchedule, compressed: bool) -> int:
+    """
+    Computes the length in bytes of the given schedule. If the compressed option is set to True, a compression
+    of the schedule is simulated.
+    :param schedule: The schedule whose length is to be calculated.
+    :param compressed: Determines, if the schedule should be compressed or not
+    :return: The length of the schedule in number of bytes
+    """
     bytesize = 1  # time byte at the end of the schedule
     if not compressed:
         for i in range((len(schedule.schedule)-1)):
             bytesize += 7
+            # TODO: Change when schedule format is fixed
         return bytesize
     else:
         already_in = []
