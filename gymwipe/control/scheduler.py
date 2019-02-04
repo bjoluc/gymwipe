@@ -4,6 +4,7 @@ import random
 from collections import deque
 from enum import Enum
 
+from gymwipe.baSimulation.BA import EPISODES, T, reset
 import numpy as np
 import tensorflow as tf
 from keras.layers import Dense
@@ -11,7 +12,7 @@ from keras.models import Sequential
 from keras.optimizers import Adam
 
 from gymwipe.simtools import SimMan, SimTimePrepender
-
+import time
 logger = SimTimePrepender(logging.getLogger(__name__))
 
 
@@ -101,10 +102,13 @@ class RoundRobinTDMAScheduler(Scheduler):
 
 
 class PaperDQNTDMAScheduler(Scheduler):
-    def __init__(self, devices: {}, sensors: [], actuators: [], timeslots: int):
+    def __init__(self, devices: {}, sensors: [], actuators: [], timeslots: int, learning: bool):
         super(PaperDQNTDMAScheduler, self).__init__(devices, timeslots)
         self.sensors = sensors
         self.actuators = actuators
+        self.last_observation = None
+        self.last_action = None
+        self.learning = learning
 
         self.state_dim = 3 * len(self.sensors) + 2 * len(self.actuators) + self.timeslots
         self.action_set = list(itertools.combinations_with_replacement(self.devices, self.timeslots))
@@ -121,9 +125,52 @@ class PaperDQNTDMAScheduler(Scheduler):
         self.model = self._build_model()
         self.target_model = self._build_model()
         self.update_target_model()
+        self.episode = 0
+        self.t = 0
+        self.evaluator = None # has to be set after creation
 
     def next_schedule(self, observation, last_reward):
-        pass
+
+        if self.learning:
+            if self.episode <= EPISODES:
+                if self.t == 0:
+                    start_time = time.time()
+                    ave_cost = 0
+                    ave_reward = 0
+                    discard = 0
+                if self.t <= T:
+                    if self.t != 0:
+                        self.remember(self.last_observation, self.last_action, last_reward, observation)
+                        ave_reward += last_reward
+                        ave_cost += -1 * last_reward
+                    self.last_observation = np.reshape(observation, [1, self.state_dim])
+                    action = self.act(self.last_observation)
+                    self.last_action = action
+
+                    if np.mod(self.t, self.c) == 0:
+                        self.update_target_model()
+
+                    if len(self.memory) > self.batch_size:
+                        self.replay()
+                    self.t += 1
+                    if last_reward < -1e4:
+                        discard = 1
+                        logger.debug("discarded learning: episode %d, t %d", self.episode, self.t, sender=self)
+                        self.t = T+1
+
+                else:
+                    if discard == 0:
+                        ave_cost /= T
+                        ave_reward /= T
+                        end_time = time.time()
+                        self.evaluator.episode_results(ave_cost, ave_reward, self.episode, start_time-end_time)
+                    self.episode += 1
+                    self.t = 0
+                    reset()
+            return TDMASchedule(self.last_action)
+        else:
+            # TODO: send simulation results to evaluator
+            return TDMASchedule(self.act(np.reshape(observation, [1, self.state_dim])))
 
     def _build_model(self):
         # Neural Net for Deep-Q learning Model

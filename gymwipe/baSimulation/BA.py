@@ -30,18 +30,22 @@ class Environment:
         self.param_seed = 61
 
 
-class Report:
+
+
+class Evaluator:
     def __init__(self, gateway_mac, sensor_macs:[], actuator_macs: []):
-        self.gateway_mac = gateway_mac
-        self.sensor_macs = sensor_macs
-        self.actuator_macs = actuator_macs
-        self.received_by_count
+        pass
 
-        def onPacketReceived(packet):
-            header = packet.header
-            packet_type = header.type[0]
+    def schedule_results(self):
+        pass
 
-        self.gateway_mac.gates["phyIn"].nReceives.subscribeCallback(onPacketReceived)
+    def episode_results(self, ave_cost, ave_reward, episode, duration):
+        pass
+
+
+
+def reset():
+    pass
 
 if __name__ == "__main__":
 
