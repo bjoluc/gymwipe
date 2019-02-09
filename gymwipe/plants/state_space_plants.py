@@ -1,165 +1,93 @@
-from gymwipe.plants.core import StateSpacePlant
+from gymwipe.plants.core import Plant
 import numpy as np
-from math import sin, cos, pi
-from numpy import matrix, array
-from scipy import signal as sg
-import logging
 import math
-from scipy.signal import StateSpace
-import matplotlib.pyplot as plt
-from gymwipe.simtools import SimTimePrepender
+import logging
+from gymwipe.simtools import SimTimePrepender, SimMan
+import matlab.engine
 
 logger = SimTimePrepender(logging.getLogger(__name__))
 
 
-class RCL(StateSpacePlant):
-    def __init__(self, c, r, l):
-        a_cont = np.array([[0, 1/c],
-                           [-1/l, -r/l]])
-        b_cont = np.array([[0], [1/l]])
-        c_cont = np.array([1, 0])
-        d_cont = 0
-        disc_state_space = sg.cont2discrete((a_cont, b_cont, c_cont, d_cont), dt=0.001)
-        super(RCL, self).__init__(StateSpace(disc_state_space[0], disc_state_space[1], disc_state_space[2],
-                                             disc_state_space[3], dt=disc_state_space[4]))
-
-
-class LinearInvertedPendulum(StateSpacePlant):
-    def __init__(self, m, M, g, l):
-        a_cont = np.array([[0, 0, 1, 0],
-                           [0, 0, 0, 1],
-                           [0, (m*g)/M, 0, 0],
-                           [0, (-(M+m)*g)/(l*m), 0, 0]])
-        b_cont = np.array([[0], [0], [1/M], [(-1)/(l*M)]])
-        c_cont = np.array([0, 1, 0, 0])
-        d_cont = 0
-        dt = 0.001
-        disc_state_space = sg.cont2discrete((a_cont, b_cont, c_cont, d_cont), dt=dt)
-
-        super(LinearInvertedPendulum, self).__init__(StateSpace(disc_state_space[0], disc_state_space[1],
-                                                                disc_state_space[2], disc_state_space[3],
-                                                                dt=disc_state_space[4]), dt)
-
-    def get_impulse_response(self, n):
-        imp_response = sg.dstep(self._state_space_form, [0, math.pi, 0, 0], n=n)
-        angles = imp_response[1][0]
-        logger.debug("angles: %s, len: %d", angles.__str__(), len(angles), sender=self)
-        for i in range(len(angles)):
-            imp_response[1][0][i] = math.degrees(imp_response[1][0][i])
-        logger.debug(" impulse response is %s", imp_response.__str__(), sender=self)
-        plt.close()
-        plt.plot(imp_response[0], imp_response[1][0])
-        plt.xlabel('time')
-        plt.ylabel('pendulum angle')
-        plt.show()
-        return imp_response
-
-
-class Pendulum(StateSpacePlant):
-
-    def __init__(self, dt, init_conds= None):
-        self.M = .6  # mass of cart+pendulum
-        self.m = .3  # mass of pendulum
-        self.Km = 2  # motor torque constant
-        self.Kg = .01  # gear ratio
-        self.R = 6  # armiture resistance
-        self.r = .01  # drive radiu3
-        self.K1 = self.Km * self.Kg / (self.R * self.r)
-        self.K2 = self.Km ** 2 * self.Kg ** 2 / (self.R * self.r ** 2)
-        self.l = .3  # length of pendulum to CG
-        self.I = 0.006  # inertia of the pendulum
-        self.L = (self.I + self.m * self.l ** 2) / (self.m * self.l)
-        self.g = 9.81  # gravity
-        self.Vsat = 20.  # saturation voltage
-
-        self.A11 = -1 * self.Km ** 2 * self.Kg ** 2 / ((self.M - self.m * self.l / self.L) * self.R * self.r ** 2)
-        self.A12 = -1 * self.g * self.m * self.l / (self.L * (self.M - self.m * self.l / self.L))
-        self.A31 = self.Km ** 2 * self.Kg ** 2 / (self.M * (self.L - self.m * self.l / self.M) * self.R * self.r ** 2)
-        self.A32 = self.g / (self.L - self.m * self.l / self.M)
-        self.A = array([
-            [0, 1, 0, 0],
-            [0, self.A11, self.A12, 0],
-            [0, 0, 0, 1],
-            [0, self.A31, self.A32, 0]
-        ])
-
-        self.B1 = self.Km * self.Kg / ((self.M - self.m * self.l / self.L) * self.R * self.r)
-        self.B2 = -1 * self.Km * self.Kg / (self.M * (self.L - self.m * self.l / self.M) * self.R * self.r)
-
-        self.B = array([
-            [0],
-            [self.B1],
-            [0],
-            [self.B2]
-        ])
-
-        self.C = array([0, 0, 1, 0])
-        self.d = 0
+class MatlabPendulum(Plant):
+    def __init__(self, m, M, l, g, dt):
+        self.engine = matlab.engine.start_matlab()
+        self.m = m
+        self.M = M
+        self.l = l
+        self.g = g
         self.dt = dt
-        #self.x = init_conds[:]
-        disc_state_space = sg.cont2discrete((self.A, self.B, self.C, self.d), dt=self.dt)
-        super(Pendulum, self).__init__(StateSpace(disc_state_space[0], disc_state_space[1],
-                                                  disc_state_space[2], disc_state_space[3],
-                                                  dt=disc_state_space[4]))
+        self.u = 0
+        self.state = [0, math.pi, 0, 0]
 
-    def get_impulse_response(self, n):
-        imp_response = sg.dimpulse(self._state_space_form, x0=[0, 0, pi, 0], n=n)
-        angles = imp_response[1][0]
-        logger.debug("angles: %s, len: %d", angles.__str__(), len(angles), sender=self)
-        for i in range(len(angles)):
-            imp_response[1][0][i] = math.degrees(imp_response[1][0][i])
-        logger.debug(" impulse response is %s", imp_response.__str__(), sender=self)
-        plt.close()
-        plt.plot(imp_response[0], imp_response[1][0])
-        plt.xlabel('time')
-        plt.ylabel('pendulum angle')
-        plt.show()
-        return imp_response
+        self._lastUpdateSimTime = 0
+        # linearisiert um obere Ruhelage
+        self.engine.workspace['M'] = self.M
+        self.engine.workspace['m'] = self.m
+        self.engine.workspace['l'] = self.l
+        self.engine.workspace['g'] = self.g
+        self.engine.eval('A = [0,0,1,0;0,0,0,1;0,m*g/M,0,0;0,(M+m)*g/(l*M),0,0];', nargout=0)
+        self.engine.eval('b = [0;0;1/M;1/(l*M)];', nargout=0)
+        self.engine.eval('C=eye(4);', nargout=0)
+        self.engine.eval('d=zeros(4,1);', nargout=0)
+        self.engine.eval('sys=ss(A,b,C,d);', nargout=0)
+        self.engine.eval('sysd = c2d(sys, ' + self.dt.__str__() + ');', nargout=0)
+        A = self.engine.workspace['A']
+        logger.debug("System created, A: %s", A.__str__(), sender=self)
 
+    def impulse(self):
+        self.engine.eval('hold on\nfigure(1)\nstep(sysd,\'--\', sys, \'-\', 10)', nargout=0)
 
-class ThirdPendulum(StateSpacePlant):
-    def __init__(self, dt):
-        M = 0.5
-        m = 0.2
-        b = 0.1
-        I = 0.006
-        g = 9.81
-        l = 0.3
+    def system_reaction(self):
+        self.engine.eval('dt = 0.01', nargout=0)
+        self.engine.workspace['t'] = '0:dt:6;'
+        self.engine.eval('u=zeros(1,length(t));', nargout=0)
+        self.engine.eval('XLin=lsim(sys,u,t)\';', nargout=0)
+        self.engine.eval('figure(1)'
+                         'hold on'
+                         'plot(t,XLin(1,:),\'b--\')'
+                         'plot(t,XLin(2,:),\'r--\')'
+                         'plot(t,XLin(3,:),\'g--\')'
+                         'plot(t,XLin(4,:),\'k--\')', nargout=0)
 
-        p = I*(M + m)+M*m*(l**2)
+    def get_angle(self) -> float:
+        logger.debug("angle requested", sender=self)
+        self.update_state()
+        return self.state[1]
 
-        a1 = (-(I+m*(l**2))*b)/p
-        a2 = ((m**2)*g*(l**2))/p
-        a3 = -(m*l*b)/p
-        a4 = m*g*l*(M+m)/p
-        A = array([[0, 1, 0, 0],
-                   [0, a1, a2, 0],
-                   [0, 0, 0, 1],
-                   [0, a3, a4, 0]])
-        b1 = (I+m*(l**2))/p
-        b2 = m*l/p
-        B = array([
-            [0],
-            [b1],
-            [0],
-            [b2]
-        ])
-        c = array([0, 0, 1, 0])
-        d = 0
-        super(ThirdPendulum, self).__init__(StateSpace(A, B, c, d), dt)
+    def get_angle_rate(self):
+        self.update_state()
+        return self.state[3]
 
-    def get_impulse_response(self, until):
-        t = np.arange(0, until, self._sample_interval)
-        logger.debug("t is: %s", t.__str__(), sender=self)
-        imp_response = sg.impulse(self._state_space_form, T=t)
-        angles = imp_response[1]
-        logger.debug("angles: %s, len: %d", angles.__str__(), len(angles), sender=self)
-        for i in range(len(angles)):
-            imp_response[1][i] = math.degrees(imp_response[1][i])
-        logger.debug(" impulse response is %s", imp_response.__str__(), sender=self)
-        plt.close()
-        plt.plot(imp_response[0], imp_response[1])
-        plt.xlabel('time')
-        plt.ylabel('pendulum angle')
-        plt.show()
-        return imp_response
+    def get_wagon_pos(self) -> float:
+        self.update_state()
+        return self.state[0]
+
+    def get_wagon_velocity(self) -> float:
+        self.update_state()
+        return self.state[2]
+
+    def set_motor_velocity(self, velocity: float):
+        self.update_state()
+        self.u = velocity
+
+    def update_state(self):
+        """
+        Updates the plant's state according to the
+        current simulation time.
+        """
+        now = round(SimMan.now, 9)
+        difference = now - self._lastUpdateSimTime
+        if difference > self.dt:
+            self.engine.workspace['t'] = '0:dt:' + difference.__str__()
+            self.engine.eval('lsim(')
+            self._lastUpdateSimTime = now
+            logger.debug("State updated", sender=self)
+
+    def _state_updater(self):
+        """
+        A SimPy process that regularly performs ODE time steps when no ODE time step
+        was previously taken within maxStepSize
+        """
+        while True:
+            yield SimMan.timeout(self.dt)
+            self.updateState()

@@ -19,28 +19,6 @@ class Plant:
     """
 
 
-class StateSpacePlant(Plant):
-    def __init__(self, state_space: StateSpace, dt ):
-        self._state_space_form = state_space
-        self._sample_interval = dt
-        self.input = 0
-        logger.debug("Plant initialized. Sample interval: %f, State space form: %s", self._sample_interval,
-                     self._state_space_form.__str__(), sender=self)
-
-    def update_state(self):
-        pass
-
-    def get_output(self):
-        pass
-
-    def get_sample_interval(self):
-        return self._sample_interval
-
-    def set_input(self, u: float):
-        self.input = u
-        self.update_state()
-
-
 class OdePlant(Plant):
     """
     A :class:`Plant` implementation that interacts with an ODE world object: It
