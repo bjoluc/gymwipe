@@ -2,17 +2,15 @@ import itertools
 import logging
 import random
 from collections import deque
-from enum import Enum
 
-from gymwipe.baSimulation.BA import EPISODES, T, reset
 import numpy as np
 import tensorflow as tf
 from keras.layers import Dense
 from keras.models import Sequential
 from keras.optimizers import Adam
 
-from gymwipe.simtools import SimMan, SimTimePrepender
-import time
+from gymwipe.simtools import SimTimePrepender
+
 logger = SimTimePrepender(logging.getLogger(__name__))
 
 
@@ -101,123 +99,6 @@ class RoundRobinTDMAScheduler(Scheduler):
         return None
 
 
-class PaperDQNTDMAScheduler(Scheduler):
-    def __init__(self, devices: {}, sensors: [], actuators: [], timeslots: int, learning: bool):
-        super(PaperDQNTDMAScheduler, self).__init__(devices, timeslots)
-        self.sensors = sensors
-        self.actuators = actuators
-        self.last_observation = None
-        self.last_action = None
-        self.learning = learning
-
-        self.state_dim = 3 * len(self.sensors) + 2 * len(self.actuators) + self.timeslots
-        self.action_set = list(itertools.combinations_with_replacement(self.devices, self.timeslots))
-        self.action_size = len(self.action_set)
-
-        self.batch_size = 32  # mini-batch size
-        self.memory = deque(maxlen=20000)  # replay memory
-        self.alpha = 0.95  # discount rate
-        self.epsilon = 1  # exploration rate
-        self.epsilon_min = 0.01
-        self.epsilon_decay = 0.999
-        self.learning_rate = np.exp(-4)
-        self.c = 100  # how many steps to fix target Q
-        self.model = self._build_model()
-        self.target_model = self._build_model()
-        self.update_target_model()
-        self.episode = 0
-        self.t = 0
-        self.evaluator = None # has to be set after creation
-
-    def next_schedule(self, observation, last_reward):
-
-        if self.learning:
-            if self.episode <= EPISODES:
-                if self.t == 0:
-                    start_time = time.time()
-                    ave_cost = 0
-                    ave_reward = 0
-                    discard = 0
-                if self.t <= T:
-                    if self.t != 0:
-                        self.remember(self.last_observation, self.last_action, last_reward, observation)
-                        ave_reward += last_reward
-                        ave_cost += -1 * last_reward
-                    self.last_observation = np.reshape(observation, [1, self.state_dim])
-                    action = self.act(self.last_observation)
-                    self.last_action = action
-
-                    if np.mod(self.t, self.c) == 0:
-                        self.update_target_model()
-
-                    if len(self.memory) > self.batch_size:
-                        self.replay()
-                    self.t += 1
-                    if last_reward < -1e4:
-                        discard = 1
-                        logger.debug("discarded learning: episode %d, t %d", self.episode, self.t, sender=self)
-                        self.t = T+1
-
-                else:
-                    if discard == 0:
-                        ave_cost /= T
-                        ave_reward /= T
-                        end_time = time.time()
-                        self.evaluator.episode_results(ave_cost, ave_reward, self.episode, start_time-end_time)
-                    self.episode += 1
-                    self.t = 0
-                    reset()
-            return TDMASchedule(self.last_action)
-        else:
-            # TODO: send simulation results to evaluator
-            return TDMASchedule(self.act(np.reshape(observation, [1, self.state_dim])))
-
-    def _build_model(self):
-        # Neural Net for Deep-Q learning Model
-        model = Sequential()
-        model.add(Dense(1024, input_dim=self.state_dim, activation='relu'))
-        #        model.add(Dropout(.4))
-        model.add(Dense(1024, activation='relu'))
-        model.add(Dense(self.action_size, activation='linear'))
-        model.compile(loss='mean_squared_error', optimizer=Adam(lr=self.learning_rate, decay=.001))
-        #        model.compile(loss='mean_squared_error', optimizer=Adam(lr=self.learning_rate))
-        return model
-
-    def update_target_model(self):
-        # copy weights from model to target_model
-        self.target_model.set_weights(self.model.get_weights())
-
-    def remember(self, state, action, reward, next_state):
-        self.memory.append((state, action, reward, next_state))
-
-    def act(self, state):
-        if np.random.rand() <= self.epsilon:
-            return random.randrange(self.action_size)
-        act_values = self.model.predict(state)
-        return np.argmax(act_values[0])  # returns action
-
-    def replay(self):
-        minibatch = random.sample(self.memory, self.batch_size)
-        states = list()
-        targets = list()
-        for state, action, reward, next_state in minibatch:
-            target = self.model.predict(state)
-            target_Q = self.target_model.predict(next_state)[0]  # [0] for row matrix to vector
-            target[0][action] = reward + self.alpha * np.max(target_Q)
-            states.append(state[0])
-            targets.append(target[0])
-        self.model.fit(np.reshape(states, [self.batch_size, self.state_dim]),
-                       np.reshape(targets, [self.batch_size, self.action_size]), epochs=1, verbose=0)
-        if self.epsilon > self.epsilon_min:
-            self.epsilon *= self.epsilon_decay
-
-    def load(self, name):
-        self.model.load_weights(name)
-
-    def save(self, name):
-        self.model.save_weights(name)
-
-
 class MyDQNTDMAScheduler(Scheduler):
     """
         A DQN Scheduler producing a TDMA Schedule
@@ -300,6 +181,22 @@ class MyDQNCSMAScheduler(Scheduler):
         return None
 
 
+class TDMAGreedyWaitingTime(Scheduler):
+    def __init__(self, devices: [], sensors: [], actuators: [], timeslots: int):
+        super(TDMAGreedyWaitingTime, self).__init__(devices, timeslots)
+
+    def next_schedule(self, observation, last_reward) -> Schedule:
+        pass
+
+
+class CSMAGreedyWaitingTime(Scheduler):
+    def __init__(self):
+        pass
+
+    def next_schedule(self, observation, last_reward) -> Schedule:
+        pass
+
+
 class TDMASchedule(Schedule):
     """
         A TDMA Schedule implementation. In every timeslot one single device will be allowed to send. 
@@ -317,24 +214,25 @@ class TDMASchedule(Schedule):
             last_action = self.action[i]
         self.schedule.append((len(action)+1).__str__())
         self.string = " ".join(self.schedule)
-        logger.debug("TDMA Schedule created. Content: " + self.string, sender=self)
+        logger.debug("TDMA Schedule created. Content: " + self.string, sender="TDMA Schedule")
 
     def get_string(self):
         return self.string
 
     def get_next_relevant_timespan(self, mac_address: str, last_step):
-        logger.debug("called function with address %s and last step %d", mac_address, last_step, sender=self)
+        logger.debug("called function with address %s and last step %d", mac_address, last_step, sender="TDMA Schedule")
         schedule_list = self.string.split(" ")
         string = "".join(schedule_list)
-        logger.debug("schedule list: %s", string, sender=self)
+        logger.debug("schedule list: %s", string, sender="TDMA Schedule")
         for i in range(len(schedule_list)):
             if ((i % 4) - 1) == 0:  # is mac adress
-                logger.debug("Found a mac address field, address is: %s", schedule_list[i], sender=self)
+                logger.debug("Found a mac address field, address is: %s", schedule_list[i], sender="TDMA Schedule")
                 if schedule_list[i] == mac_address:
-                    logger.debug("mac addresses are the same : %s at timestep %s", mac_address, schedule_list[i-1], sender=self)
+                    logger.debug("mac addresses are the same : %s at timestep %s", mac_address, schedule_list[i-1],
+                                 sender="TDMA Schedule")
                     if int(schedule_list[i-1]) > last_step:
                         logger.debug("relevant span for %s is %s to %s", mac_address, schedule_list[i - 1],
-                                     schedule_list[i+3], sender=self)
+                                     schedule_list[i+3], sender="TDMA Schedule")
                         return [int(schedule_list[i-1]), int(schedule_list[i+3])]
         return None
 
@@ -342,6 +240,34 @@ class TDMASchedule(Schedule):
         schedule_list = self.string.split(" ")
         logger.debug("endtime is %s", schedule_list[len(schedule_list)-1], sender=self)
         return int(schedule_list[len(schedule_list)-1])
+
+
+class CSMAControllerSchedule(Schedule):
+    def __init__(self, action):
+        """
+
+        :param action: The action chosen by the scheduler. Must have the following format:
+        [(ID1, p1), (ID2, p2) ... (IDn, pn)]
+        """
+        super(CSMAControllerSchedule, self).__init__(action)
+        sum = 0.0
+        for i in range(len(self.action)):
+            sum += action[i][1]
+
+        if round(sum, 1) is 1.0:
+            for i in range(len(self.action)):
+                self.schedule.append(self.action[i][0].__str__() + " " + self.action[i][1].__str__())
+
+            self.string = " ".join(self.schedule)
+            logger.debug("CSMA Controller Schedule created. Content: " + self.string, sender="CSMA Schedule")
+        else:
+            logger.debug("p sum is higher than 1", sender=self)
+
+    def get_string(self):
+        return self.string
+
+    def get_end_time(self):
+        return None
 
 
 class CSMASchedule(Schedule):
@@ -364,7 +290,14 @@ class CSMASchedule(Schedule):
         self.schedule.append(self.length.__str__())
 
         self.string = " ".join(self.schedule)
-        logger.debug("CSMA Schedule created. Content: " + self.string, sender=self)
+        logger.debug("CSMA Schedule created. Content: " + self.string, sender="CSMA Schedule")
+
+    def get_my_p(self, addr):
+        for i in range(len(self.schedule)):
+            line = self.schedule[i].split(" ")
+            if addr.__str__() == line[0]:
+                return float(line[1])
+        return 0
 
     def get_string(self):
         return self.string

@@ -7,17 +7,17 @@ from gymwipe.devices import Device
 from gymwipe.networking.attenuation_models import FsplAttenuation
 from gymwipe.networking.mac_headers import NCSMacHeader
 from gymwipe.networking.mac_layers import (ActuatorMacTDMA, GatewayMac,
-                                           SensorMacTDMA, newUniqueMacAddress)
+                                           SensorMacTDMA, newUniqueMacAddress, SensorMacCSMA)
 from gymwipe.networking.messages import Packet, Transmittable, Message, StackMessageTypes
 from gymwipe.networking.physical import FrequencyBand
-from gymwipe.control.scheduler import TDMASchedule
+from gymwipe.control.scheduler import TDMASchedule, CSMASchedule
 
 from gymwipe.networking.simple_stack import SimplePhy
 from typing import Iterable
 from gymwipe.simtools import SimMan
 
 
-from ..fixtures import simman
+from ..fixtures import simman, simple_phy
 
 
 class dotdict(dict):
@@ -28,7 +28,7 @@ class dotdict(dict):
 
 
 @pytest.fixture
-def my_mac(simple_phy):
+def my_mac_tdma(simple_phy):
     s = simple_phy
     s.rrm = Device("RRM", 2, 2)
     s.rrmPhy = SimplePhy("RrmPhy", s.rrm, s.frequencyBand)
@@ -41,6 +41,62 @@ def my_mac(simple_phy):
     s.rrmMac.ports["phy"].biConnectWith(s.rrmPhy.ports["mac"])
 
     return s
+
+@pytest.fixture
+def my_mac_csma(simple_phy):
+    s = simple_phy
+    s.rrm = Device("RRM", 2, 2)
+    s.rrmPhy = SimplePhy("RrmPhy", s.rrm, s.frequencyBand)
+    s.rrmMac = GatewayMac("RrmMac", s.rrm, s.frequencyBand.spec, newUniqueMacAddress())
+    s.device1Mac = SensorMacCSMA("Mac", s.device1, s.frequencyBand.spec, newUniqueMacAddress())
+    s.device2Mac = SensorMacCSMA("Mac", s.device2, s.frequencyBand.spec, newUniqueMacAddress())
+
+    s.device1Mac.ports["phy"].biConnectWith(s.device1Phy.ports["mac"])
+    s.device2Mac.ports["phy"].biConnectWith(s.device2Phy.ports["mac"])
+    s.rrmMac.ports["phy"].biConnectWith(s.rrmPhy.ports["mac"])
+
+    return s
+
+def test_csma(caplog, my_mac_csma):
+    caplog.set_level(logging.DEBUG, logger='gymwipe.networking.mac_layers')
+    caplog.set_level(logging.DEBUG, logger='gymwipe.networking.simple_stack')
+    s = my_mac_csma
+    sen1address = s.device1Mac.addr
+    sen2address = s.device2Mac.addr
+
+    def sender(from_mac_layer: GatewayMac, payloads: Iterable):
+        # send a bunch of schedules
+        for p in payloads:
+            clock = SimMan.now
+            send_cmd = Message(
+                StackMessageTypes.SEND, {
+                    "schedule": p,
+                    "clock": clock
+                }
+            )
+            from_mac_layer.gates["networkIn"].send(send_cmd)
+            yield send_cmd.eProcessed
+            time = SimMan.now
+            endslot = p.get_end_time()
+            endtime = time + (endslot * TIMESLOT_LENGTH)
+            yield SimMan.timeoutUntil(endtime)
+
+    def receiver(mac_layer: SensorMacCSMA):
+        # receive forever
+        i = 1
+        while True:
+            send_cmd = Message(StackMessageTypes.SEND, {"state": i})
+            mac_layer.gates["networkIn"].send(send_cmd)
+            yield send_cmd.eProcessed
+            i += 1
+
+    SimMan.process(sender(s.rrmMac, [CSMASchedule([(sen1address, 0.4), (sen2address, 0.7)], 10) for i in range(10)]))
+    SimMan.process(receiver(s.device1Mac))
+    SimMan.process(receiver(s.device2Mac))
+
+    ROUND_TIME = 1
+    SimMan.runSimulation(ROUND_TIME)
+    assert False
 
 
 def test_sensormac(caplog, simman):
@@ -114,11 +170,11 @@ def test_actuator_mac(caplog, simman):
     assert False
 
 
-def test_sending(caplog, my_mac):
+def test_sending_tdma(caplog, my_mac_tdma):
     caplog.set_level(logging.DEBUG, logger='gymwipe.networking.simple_stack')
     caplog.set_level(logging.DEBUG, logger='gymwipe.networking.mac_layers')
 
-    s = my_mac
+    s = my_mac_tdma
     sen1address = s.device1Mac.addr
     sen2address = s.device2Mac.addr
 

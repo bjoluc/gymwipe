@@ -210,6 +210,9 @@ class SimplePhy(Module):
             self._transmitting = False
             # Indicate that the send command was processed
             cmd.setProcessed()
+        if cmd.type is StackMessageTypes.ISRECEIVING:
+            logger.debug("received ISRECEIVING command", sender=self)
+            cmd.setProcessed(self._receiving)
     
     def _receive(self, t: Transmission):
         # Simulates receiving via the frequency band
@@ -245,6 +248,7 @@ class SimplePhy(Module):
                 # Possibly switch MCS
                 self._currentReceiverMcs = t.mcsPayload
                 self._resetBitErrorCounter()
+                self._updateBitErrorRate(t)
 
                 # Wait for the payload to be transmitted
                 yield t.eCompletes

@@ -41,6 +41,10 @@ def test_encoding(caplog, simman):
     assert tdma_encode(schedule_tdma, False) == 29
     assert tdma_encode(schedule_tdma, True) == 25
     assert csma_encode(schedule_csma) == 22
+    assert False
+
+
+
 
 
 

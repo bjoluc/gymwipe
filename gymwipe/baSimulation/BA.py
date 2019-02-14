@@ -8,6 +8,7 @@ TIMESLOT_LENGTH = 0.01
 EPISODES = 200  # number of episodes
 T = 500  # horizon length
 SCHEDULER = 1
+PLANTCOUNT = 0
 """
 1: Round Robin
 2: My DQN
