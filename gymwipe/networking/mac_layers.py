@@ -14,7 +14,7 @@ from gymwipe.networking.messages import (Message, Packet, StackMessageTypes,
 from gymwipe.networking.physical import BpskMcs, FrequencyBandSpec
 from gymwipe.simtools import Notifier, SimMan, SimTimePrepender
 
-from gymwipe.baSimulation.BA import TIMESLOT_LENGTH
+from gymwipe.baSimulation.constants import TIMESLOT_LENGTH
 
 logger = SimTimePrepender(logging.getLogger(__name__))
 
@@ -257,10 +257,9 @@ class ActuatorMacTDMA(Module):
         self._receiving = True
         self.schedule = None
         self.gatewayAdress = None
-        self._n_phy_is_receiving = Notifier("phy info about channel availability", self)
-        self._n_phy_is_receiving.subscribeCallback()
         self._n_control_received = Notifier("new schedule received", self)
-        self._n_control_received.subscribeProcess(self._sendcsi(), queued=False)
+        self._n_control_received.subscribeProcess(self._sendcsi, queued=False)
+        self._lastGatewayClock = 0
         logger.debug("Initialization completed, MAC address: %s", self.addr, sender=self)
 
     @GateListener("phyIn", Packet, queued=True)
@@ -271,9 +270,11 @@ class ActuatorMacTDMA(Module):
                 raise ValueError("Can only deal with header of type NCSMacHeader. Got %s.", type(header), sender=self)
             if header.type[0] == 0: # received schedule from gateway
                 self.schedule = cmd.payload.value
+                self._lastGatewayClock = cmd.trailer.value
                 self.gatewayAdress = header.sourceMAC
-                logger.debug("received a schedule", sender=self)
+                logger.debug("received a schedule, gateway clock is %f", self._lastGatewayClock, sender=self)
             if header.type[0] == 2: #received control message
+                # TODO: check if timeslot is mine, not if addr is mine
                 if header.destMAC == self.addr:  # message for me
                     logger.debug("received control message", sender=self)
                     self.gates["networkOut"].send(cmd.payload)

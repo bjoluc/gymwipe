@@ -1,7 +1,7 @@
 import logging
 from typing import Any, Dict, Tuple
-
-from gymwipe.baSimulation.BA import SCHEDULER, PROTOCOL, TIMESLOT_LENGTH
+from gymwipe.baSimulation import BAEnivronment as env
+from gymwipe.baSimulation.constants import TIMESLOT_LENGTH, SCHEDULER, PROTOCOL, PLANT_SAMPLE_TIME, SENSOR_SAMPLE_TIME
 from gymwipe.control.scheduler import RoundRobinTDMAScheduler, MyDQNTDMAScheduler
 from gymwipe.envs.core import Interpreter
 from gymwipe.networking.devices import NetworkDevice
@@ -12,16 +12,43 @@ from gymwipe.networking.messages import (Message, Packet, SimpleNetworkHeader,
 from gymwipe.networking.physical import FrequencyBand
 from gymwipe.networking.simple_stack import SimpleMac, SimplePhy
 from gymwipe.plants.core import OdePlant
-from gymwipe.plants.sliding_pendulum import SlidingPendulum
+from gymwipe.plants.state_space_plants import StateSpacePlant
 from gymwipe.simtools import SimMan, SimTimePrepender, Notifier
 
 logger = SimTimePrepender(logging.getLogger(__name__))
 
 
-def generatePlant():
-    """
-    Generates random ODEPlant
-    """
+class Control:
+    def __init__(self, id_to_controller: {}, sensor_id_to_controller_id: {int, int}, controller_id_id_to_actuator: {int, int}, controller_id_to_plant: {}):
+        self.controller_id_to_controller = id_to_controller
+        self.controller_id_to_plant = controller_id_to_plant
+        self.sensor_id_to_controller_id = sensor_id_to_controller_id
+        self.controller_id_to_actuator_id = controller_id_id_to_actuator
+        self.actuator_id_to_controller_id = {y: x for x, y in self.controller_id_to_actuator_id.items()}
+        self.controller_id_to_latest_state = {}
+        self.controller_id_to_latest_state_slot = {}
+        self.gateway = None  # set after init
+        for i in range(len(sensor_id_to_controller_id)):
+            self.controller_id_to_latest_state_slot[i] = 0
+        logger.debug("Control initialized\ncontrollerid: %s\nsensor: %s\nactuator: %s",
+                     self.controller_id_to_controller,
+                     self.sensor_id_to_controller_id,
+                     self.controller_id_to_actuator_id,
+                     sender=self)
+
+    def onPacketReceived(self, senderIndex, state):
+        self.controller_id_to_latest_state_slot[self.sensor_id_to_controller_id[senderIndex]] = self.gateway.simulatedSlot
+        self.controller_id_to_latest_state[self.sensor_id_to_controller_id[senderIndex]] = state
+
+    def getControl(self, actuatorId):
+        controllerId = self.actuator_id_to_controller_id[actuatorId]
+        controller = self.controller_id_to_controller[controllerId]
+        diff = self.gateway.simulatedSlot - self.controller_id_to_latest_state_slot[controllerId]
+
+    def estimateState(self, timeslots, controller_id):
+
+        # TODO: state estimation
+        pass
 
 
 class ComplexNetworkDevice(NetworkDevice):
@@ -167,7 +194,7 @@ class GatewayDevice(NetworkDevice):
 class Gateway(GatewayDevice):
     scheduler = None
 
-    def __init__(self, sensorMACS: [], actuatorMACS: [], name: str, xPos: float, yPos: float,
+    def __init__(self, sensorMACS: [], actuatorMACS: [], control: [], plants: [], name: str, xPos: float, yPos: float,
                  frequencyBand: FrequencyBand, schedule_timeslots: int):
 
         indexToMAC = {}
@@ -175,20 +202,38 @@ class Gateway(GatewayDevice):
         self.last_schedule_creation = 0
         self.schedule_timeslots = schedule_timeslots
         self.schedule = None
+        self.simulatedSlot = 0
 
+        controller_id_to_controller = {}
+        controller_id_to_plant = {}
+        controller_id_to_actuator_id = {}
+        sensor_id_to_controller_id = {}
+        for i in range(len(control)):
+            controller_id_to_controller[i] = control[i]
+            controller_id_to_plant[i] = plants[i]
         for i in range(len(sensorMACS)):
             indexToMAC[i] = sensorMACS[i]
+            sensor_id_to_controller_id[i] = i
 
         for i in range(len(sensorMACS), (len(sensorMACS)+len(actuatorMACS))):
             indexToMAC[i] = actuatorMACS[i-len(sensorMACS)]
+            controller_id_to_actuator_id[i - len(sensorMACS)] = i
+
         super(Gateway, self).__init__(name, xPos, yPos, frequencyBand, indexToMAC, sensorMACS, actuatorMACS,
-                                      MyInterpreter(SCHEDULER), Control())
+                                      MyInterpreter(SCHEDULER), Control(controller_id_to_controller, sensor_id_to_controller_id, controller_id_to_actuator_id, controller_id_to_plant))
+        self.control.gateway = self
 
         self._create_scheduler()
         self._n_schedule_created = Notifier("new Schedule created", self)
         self._n_schedule_created.subscribeCallback(self.interpreter.onFrequencyBandAssignment())
 
         SimMan.process(self._gateway())
+        SimMan.process(self._slotCount())
+
+    def _slotCount(self):
+        yield SimMan.timeout(TIMESLOT_LENGTH)
+        self.simulatedSlot +=1
+        logger.info("simulated Slot num %d", self.simulatedSlot, sender=self)
 
     def _create_scheduler(self):
         if SCHEDULER == 1:  # Round Robin
@@ -251,20 +296,12 @@ class SimpleSensor(ComplexNetworkDevice):
     """
     A sensor that observes the given plant (noise added)
     """
-    def __init__(self, name: str, yPos: float, frequencyBand: FrequencyBand,
-                    plant: SlidingPendulum, sampleInterval: float):
-        super(SimpleSensor, self).__init__(name, plant.getWagonPos(), yPos, frequencyBand, "Sensor")
+    def __init__(self, name: str, xpos: float, yPos: float, frequencyBand: FrequencyBand,
+                    plant: StateSpacePlant):
+        super(SimpleSensor, self).__init__(name, xpos, yPos, frequencyBand, "Sensor")
         self.plant = plant
-        self.sampleInterval = sampleInterval
-        logger.debug("Sensor initialized", sender=self)
+        logger.debug("Sensor initialized, Position is (%f, %f)", xpos, yPos, sender=self)
         SimMan.process(self._sensor())
-
-    def _noise(self, state):
-        """
-        Adds gaussian white noise to an observed state
-        """
-        # TODO: add noise
-        return state
 
     def send(self, data):
         """
@@ -276,42 +313,26 @@ class SimpleSensor(ComplexNetworkDevice):
     def _sensor(self):
 
         while True:
-            self.position.x = self.plant.getWagonPos()
-            self.state = self._noise(self.plant.getAngle())
-            logger.debug("State sampled: " + self.state.__str__(), sender=self)
-            self.send(self.state)
-            yield SimMan.timeout(self.sampleInterval)
+            state = self.plant.get_state()
+            logger.debug("State sampled: " + state.__str__(), sender=self)
+            self.send(state)
+            yield SimMan.timeout(SENSOR_SAMPLE_TIME)
 
     def onReceive(self, packet: Packet):
         pass
 
 
 class SimpleActuator(ComplexNetworkDevice):
-    def __init__(self, name: str, yPos: float, frequencyBand: FrequencyBand, plant: SlidingPendulum):
-        super(SimpleActuator, self).__init__(name, plant.getWagonPos, yPos, frequencyBand, "Actuator")
+    def __init__(self, name: str, xpos: float, yPos: float, frequencyBand: FrequencyBand, plant: StateSpacePlant):
+        super(SimpleActuator, self).__init__(name, xpos, yPos, frequencyBand, "Actuator")
         self.plant = plant
-
-        SimMan.process(self._positionUpdater())
-
-    def _positionUpdater(self):
-        while True:
-            self.position.x = self.plant.getWagonPos()
-            yield SimMan.timeout(1e-3)  # 1 ms
+        logger.debug("Actuator initialized, Position is (%f, %f)", xpos, yPos, sender=self)
 
     def send(self, data):
         pass
 
     def onReceive(self, packet: Packet):
-        self.plant.setMotorVelocity(packet.payload.value)
-
-
-class Control:
-    def __init__(self):
-        self.devices_to_controller = {}
-        self.controller_to_devices = {}
-
-    def onPacketReceived(self, senderIndex: int, state):
-        logger.debug("received current state from sensor %d", senderIndex, sender=self)
+        self.plant.set_control(packet.payload.value)
 
 
 class MyInterpreter(Interpreter):
@@ -355,7 +376,7 @@ class MyInterpreter(Interpreter):
             pass
         elif self.scheduler == 3:  # paper scheduler
             pass
-        return None
+        return 0.0
 
     def getObservation(self):
         if self.scheduler == 2:  # my scheduler
@@ -369,3 +390,5 @@ class MyInterpreter(Interpreter):
 
     def getInfo(self):
         pass
+
+

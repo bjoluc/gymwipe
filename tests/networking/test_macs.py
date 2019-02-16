@@ -2,7 +2,7 @@ import logging
 
 import pytest
 
-from gymwipe.baSimulation.BA import TIMESLOT_LENGTH
+from gymwipe.baSimulation.constants import TIMESLOT_LENGTH
 from gymwipe.devices import Device
 from gymwipe.networking.attenuation_models import FsplAttenuation
 from gymwipe.networking.mac_headers import NCSMacHeader
