@@ -1,14 +1,11 @@
 import logging
-
+import gymwipe.baSimulation.constants as c
+import numpy as np
 import pytest
-from gymwipe.devices import Device
-from gymwipe.networking.MyDevices import Gateway, SimpleSensor
+from gymwipe.networking.MyDevices import Gateway, SimpleSensor, SimpleActuator
 from gymwipe.networking.attenuation_models import FsplAttenuation
-from gymwipe.networking.mac_layers import SensorMacTDMA, newUniqueMacAddress
-from gymwipe.networking.messages import Message, StackMessageTypes
 from gymwipe.networking.physical import FrequencyBand
-from gymwipe.networking.simple_stack import SimplePhy
-from gymwipe.plants.sliding_pendulum import SlidingPendulum
+from gymwipe.plants.state_space_plants import StateSpacePlant
 from gymwipe.simtools import SimMan
 
 from ..fixtures import simman
@@ -17,31 +14,35 @@ from ..fixtures import simman
 def test_gateway(caplog, simman):
     caplog.set_level(logging.DEBUG, logger='gymwipe.networking.mac_layers')
     caplog.set_level(logging.DEBUG, logger='gymwipe.networking.MyDevices')
+    # caplog.set_level(logging.DEBUG, logger='gymwipe.control.scheduler')
+
     sensors = []
-    sensorMACS = []
     sensorAddr = []
-    frequencyBand = FrequencyBand([FsplAttenuation])
+    plants = []
+    controllers = []
+    actuators = []
+    actuatormacs = []
 
-    def receiver(mac_layer: SensorMacTDMA):
-        # receive forever
-        i = 1
-        while True:
-            send_cmd = Message(StackMessageTypes.SEND, {"state": i})
-            mac_layer.gates["networkIn"].send(send_cmd)
-            yield send_cmd.eProcessed
-            i += 1
-    for i in range(5):
-        device = Device(("Sensor" + i.__str__()), (0.2 * i + 0.2), (0.2 * i + 0.2))
-        phy = SimplePhy(("PHY" + i.__str__()), device, frequencyBand)
-        mac = SensorMacTDMA(("MAC" + i.__str__()), device, frequencyBand.spec, newUniqueMacAddress())
+    frequency_band = FrequencyBand([FsplAttenuation])
 
-        phy.ports["mac"].biConnectWith(mac.ports["phy"])
-        sensors.append(device)
-        sensorMACS.append(mac)
-        sensorAddr.append(mac.addr)
-        SimMan.process(receiver(mac))
+    for i in range(c.NUM_PLANTS):
+        np.random.seed(c.POSITION_SEED)
+        plant = StateSpacePlant(2, 1, c.PLANT_SAMPLE_TIME, name="Plant" + i.__str__())
+        plants.append(plant)
+        controller = plant.generate_controller()
+        controllers.append(controller)
+        sensor = SimpleSensor("Sensor " + i.__str__(), round(np.random.uniform(0.0, 5.0), 2),
+                              round(np.random.uniform(0.0, 5.0), 2),
+                              frequency_band, plant)
+        sensors.append(sensor)
+        sensorAddr.append(sensor.mac)
+        actuator = SimpleActuator("Actuator" + i.__str__(), round(np.random.uniform(0.0, 5.0), 2),
+                                  round(np.random.uniform(0.0, 5.0), 2),
+                                  frequency_band, plant)
+        actuators.append(actuator)
+        actuatormacs.append(actuator.mac)
 
-    Gateway(sensorAddr, [], "Gateway", 0, 0, frequencyBand, 3)
+    Gateway(sensorAddr, actuatormacs, controllers, plants, "Gateway", 0, 0, frequency_band, 3)
     SimMan.runSimulation(0.5)
 
     assert False
@@ -50,19 +51,21 @@ def test_gateway(caplog, simman):
 def test_sensor(caplog, simman):
     caplog.set_level(logging.DEBUG, logger='gymwipe.networking.mac_layers')
     caplog.set_level(logging.DEBUG, logger='gymwipe.networking.MyDevices')
-    caplog.set_level(logging.DEBUG, logger='gymwipe.plants.sliding_pendulum')
+    caplog.set_level(logging.DEBUG, logger='gymwipe.plants.state_space_plants')
     sensors = []
-    sensorAddr = []
-    frequencyBand = FrequencyBand([FsplAttenuation])
-
-    for i in range(5):
-        pendulum = SlidingPendulum(visualized=True)
-        pendulum.setMotorVelocity(10)
-        sensor = SimpleSensor("Sensor" + i.__str__(), i, frequencyBand, pendulum, 0.005)
+    plants = []
+    controllers = []
+    frequency_band = FrequencyBand([FsplAttenuation])
+    for i in range(c.NUM_PLANTS):
+        np.random.seed(c.POSITION_SEED)
+        plant = StateSpacePlant(2, 1, c.PLANT_SAMPLE_TIME, name="Plant" + i.__str__())
+        plants.append(plant)
+        controller = plant.generate_controller()
+        controllers.append(controller)
+        sensor = SimpleSensor("Sensor " + i.__str__(), round(np.random.uniform(0.0, 5.0), 2),
+                              round(np.random.uniform(0.0, 5.0), 2),
+                              frequency_band, plant)
         sensors.append(sensor)
-        sensorAddr.append(sensor.mac_address())
 
-    Gateway(sensorAddr, [], "Gateway", 0, 0, frequencyBand, 3)
-    SimMan.runSimulation(1)
-
+    SimMan.runSimulation(0.005)
     assert False

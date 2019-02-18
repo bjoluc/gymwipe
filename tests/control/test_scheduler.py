@@ -1,8 +1,8 @@
 import logging
 
-from gymwipe.control.scheduler import (MyDQNTDMAScheduler,
-                                       RoundRobinTDMAScheduler,
+from gymwipe.control.scheduler import (RoundRobinTDMAScheduler,
                                        TDMASchedule, CSMASchedule, csma_encode, tdma_encode)
+from gymwipe.control.paper_scheduler import MyDQNTDMAScheduler
 from gymwipe.networking.attenuation_models import FsplAttenuation
 from gymwipe.networking.mac_layers import newUniqueMacAddress
 from gymwipe.networking.MyDevices import Gateway

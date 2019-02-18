@@ -115,7 +115,7 @@ class SensorMacTDMA(Module):
 
     def _senddata(self, packet: Packet):
         self._stopReceiving()
-        relevant_span = self._schedule.get_next_relevant_timespan(self.addr.__str__(), 0)
+        relevant_span = self._schedule.get_next_relevant_timespan(self.addr, 0)
         while relevant_span is not None:
             logger.debug("%s: next relevant timespan is [%d, %d]", self, relevant_span[0], relevant_span[1])
             for i in range(relevant_span[0], relevant_span[1]):
@@ -182,7 +182,7 @@ class SensorMacCSMA(Module):
             logger.debug("received a packet from phy, but not in receiving mode. packet ignored", sender=self)
             pass
 
-    @GateListener("networkIn", Message, queued=False)
+    @GateListener("networkIn", Message)
     def networkInGateListener(self, cmd):
         if isinstance(cmd, Message):
             if cmd.type is StackMessageTypes.SEND:
@@ -262,7 +262,7 @@ class ActuatorMacTDMA(Module):
         self._lastGatewayClock = 0
         logger.debug("Initialization completed, MAC address: %s", self.addr, sender=self)
 
-    @GateListener("phyIn", Packet, queued=True)
+    @GateListener("phyIn", Packet)
     def phyInGateListener(self, cmd):
         if self._receiving:
             header = cmd.header
@@ -280,7 +280,7 @@ class ActuatorMacTDMA(Module):
                     self.gates["networkOut"].send(cmd.payload)
                     self._n_control_received.trigger(cmd)
 
-    @GateListener("networkIn", (Message, Packet), queued = True)
+    @GateListener("networkIn", (Message, Packet))
     def networkInGateListener(self, cmd):
         if isinstance(cmd, Message):
             pass
@@ -333,7 +333,7 @@ class GatewayMac(Module):
         self._receivingMode = False
         logger.debug("Initialization completed, MAC address: %s", self.addr, sender=self)
 
-    @GateListener("phyIn", Packet, queued=True)
+    @GateListener("phyIn", Packet)
     def phyInGateListener(self, packet: Packet):
         logger.debug("%s: received a packet", self)
         header = packet.header
@@ -412,7 +412,7 @@ class GatewayMac(Module):
         type[0] = 0 # schedule
         announcement = Packet(
             NCSMacHeader(bytes(type), self.addr),
-            Transmittable(schedule, tdma_encode(schedule, False)),
+            Transmittable(schedule, tdma_encode(schedule)),
             Transmittable(clock)
         )
         sendCmd = Message(

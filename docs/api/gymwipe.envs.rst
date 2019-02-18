@@ -8,6 +8,7 @@ Submodules
 
    gymwipe.envs.core
    gymwipe.envs.counter_traffic
+   gymwipe.envs.inverted_pendulum
 
 Module contents
 ---------------

@@ -13,7 +13,7 @@ PARAM_SEED = 42
 
 
 class StateSpacePlant:
-    def __init__(self, n, m, dt, marginally_stable=True):
+    def __init__(self, n, m, dt, marginally_stable=True, name: str = "State Space Plant"):
         """
         Generate a random discrete time system.
 
@@ -30,6 +30,7 @@ class StateSpacePlant:
         a : nxn system dynamic matrix
         b : nxm input dynamic matrix
         """
+        self.name = name
         self.dim = n
         if marginally_stable:
             n_integrator = np.int((np.random.random_sample() < 0.1) + np.sum(np.random.random_sample((n-1,)) < 0.01))
@@ -104,7 +105,7 @@ class StateSpacePlant:
         self.reset_state = self.state
         self.control = [0.0]
         self.dt = dt
-        logger.debug("Plant initialized\n A: %s\nB: %s", self.a, self.b, sender="StateSpacePlant")
+        logger.debug("Plant initialized\n A: %s\nB: %s", self.a, self.b, sender=self.name)
         SimMan.process(self.state_update())
 
     def reset(self):
@@ -116,13 +117,13 @@ class StateSpacePlant:
         dare = sp.linalg.solve_discrete_are(self.a, self.b, q_subsystem, r_subsystem)
         controller = (-np.linalg.inv(self.b.transpose() @ dare @ self.b +
                                           r_subsystem) @ self.b.transpose() @ dare @ self.a)
-        logger.debug("controller generated:\n%s", controller, sender="StateSpacePlant")
+        logger.debug("controller generated: %s", controller, sender=self.name)
         return controller
 
     def state_update(self):
         while True:
             self.state = np.einsum('ij,j->i', self.a, self.state) + np.einsum('ij,j->i', self.b, self.control)
-            logger.debug("state updated:\n%s", self.state, sender="StateSpacePlant")
+            logger.debug("state updated: %s", self.state, sender=self.name)
             yield SimMan.timeout(self.dt)
 
     def get_state(self):
@@ -139,17 +140,3 @@ class StateSpacePlant:
     """
     def set_control(self, control: float):
         self.control[0] = control
-
-
-def partition(n, k, sing):
-    # Credits to 'Snakes and Coffee' from stackoverflow.com
-    # n is the integer to partition, k is the length of partitions, l is the min partition element size
-    if k < 1:
-        raise StopIteration
-    if k == 1:
-        if n >= sing:
-            yield (n,)
-        raise StopIteration
-    for i in range(sing, n+1):
-        for result in partition(n-i, k-1, i):
-            yield (i,)+result

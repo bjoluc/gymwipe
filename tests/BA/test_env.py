@@ -1,4 +1,4 @@
-from gymwipe.baSimulation import BAEnivronment
+from gymwipe.baSimulation import BAEnvironment
 import numpy as np
 import pytest
 import logging
@@ -11,7 +11,8 @@ def test_env_creation(caplog, simman):
     caplog.set_level(logging.DEBUG, logger='gymwipe.baSimulation.BA')
     caplog.set_level(logging.DEBUG, logger='gymwipe.plants.state_space_plants')
     caplog.set_level(logging.DEBUG, logger='gymwipe.networking.MyDevices')
+    caplog.set_level(logging.DEBUG, logger='gymwipe.networking.mac_layers')
 
-    BAEnivronment.initialize()
-    #SimMan.runSimulation(0.01)
+    BAEnvironment.initialize()
+    SimMan.runSimulation(0.1)
     assert False

@@ -19,10 +19,18 @@ gateway = None
 
 
 def initialize():
+    """
+    Initializes the simulation environment. Creates plants, their sensors, actuators and controllers and initializes
+    the gateway. The parameters like the amount of plants, used protocol and scheduler, schedule length (for TDMA
+    ) are defined in the module :mod:`~gymwipe.baSimulation.constants`
+    """
     frequency_band = FrequencyBand([FsplAttenuation])
     for i in range(c.NUM_PLANTS):
         np.random.seed(c.POSITION_SEED)
-        plant = StateSpacePlant(2, 1, c.PLANT_SAMPLE_TIME)
+        if i+1 > c.INSTABLE_PLANTS:
+            plant = StateSpacePlant(2, 1, c.PLANT_SAMPLE_TIME, name="Plant" + i.__str__())
+        else:
+            plant = StateSpacePlant(2,1, c.PLANT_SAMPLE_TIME, marginally_stable=False, name="Plant" + i.__str__())
         plants.append(plant)
         controller = plant.generate_controller()
         controllers.append(controller)
@@ -38,8 +46,6 @@ def initialize():
         actuatormacs.append(actuator.mac)
     gateway = Gateway(sensormacs, actuatormacs, controllers, plants, "Gateway", round(np.random.uniform(0.0, 5.0), 2),
                       round(np.random.uniform(0.0, 5.0), 2), frequency_band, c.SCHEDULE_LENGTH)
-
-
 
 
 class Evaluator:
