@@ -103,20 +103,20 @@ class StateSpacePlant:
         self.x0_cov = np.eye(n) * 6
         self.state = np.random.multivariate_normal(self.x0_mean, self.x0_cov)
         self.reset_state = self.state
-        self.control = [0.0]
+        self.control = np.array([0.0])
         self.dt = dt
-        logger.debug("Plant initialized\n A: %s\nB: %s", self.a, self.b, sender=self.name)
+        self.q_subsystem = np.eye(np.shape(self.a)[0])
+        self.r_subsystem = 0.1
+        logger.debug("Plant initialized\n A: %s\nB: %s\n control: %s", self.a, self.b, self.control, sender=self.name)
         SimMan.process(self.state_update())
 
     def reset(self):
         self.state = self.reset_state
 
     def generate_controller(self):
-        q_subsystem = np.eye(np.shape(self.a)[0])
-        r_subsystem = 0.1
-        dare = sp.linalg.solve_discrete_are(self.a, self.b, q_subsystem, r_subsystem)
+        dare = sp.linalg.solve_discrete_are(self.a, self.b, self.q_subsystem, self.r_subsystem)
         controller = (-np.linalg.inv(self.b.transpose() @ dare @ self.b +
-                                          r_subsystem) @ self.b.transpose() @ dare @ self.a)
+                                          self.r_subsystem) @ self.b.transpose() @ dare @ self.a)
         logger.debug("controller generated: %s", controller, sender=self.name)
         return controller
 
@@ -139,4 +139,5 @@ class StateSpacePlant:
     Sets the current control value
     """
     def set_control(self, control: float):
-        self.control[0] = control
+        self.control = np.array([control])
+        logger.debug("set control to %s", self.control.__str__(), sender=self.name)

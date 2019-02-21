@@ -1,7 +1,8 @@
 import logging
 from typing import Any, Dict, Tuple
 import numpy as np
-from gymwipe.baSimulation.constants import TIMESLOT_LENGTH, SCHEDULER, PROTOCOL, PLANT_SAMPLE_TIME, SENSOR_SAMPLE_TIME
+from gymwipe.baSimulation.constants import TIMESLOT_LENGTH, SCHEDULER, PROTOCOL, \
+    PLANT_SAMPLE_TIME, SENSOR_SAMPLE_TIME, SAMPLE_TO_TIMESLOT_RATIO
 from gymwipe.control.scheduler import RoundRobinTDMAScheduler
 from gymwipe.envs.core import Interpreter
 from gymwipe.networking.devices import NetworkDevice
@@ -14,18 +15,27 @@ from gymwipe.networking.simple_stack import SimpleMac, SimplePhy
 from gymwipe.plants.state_space_plants import StateSpacePlant
 from gymwipe.simtools import SimMan, SimTimePrepender, Notifier
 
+from filterpy.kalman import KalmanFilter
+
 logger = SimTimePrepender(logging.getLogger(__name__))
 
 
 class Control:
-    def __init__(self, id_to_controller: {}, sensor_id_to_controller_id: {int, int}, controller_id_id_to_actuator: {int, int}, controller_id_to_plant: {}):
+    def __init__(self, id_to_controller: {}, sensor_id_to_controller_id: {int, int},
+                 controller_id_id_to_actuator: {int, int}, controller_id_to_plant: {int, StateSpacePlant}):
         self.controller_id_to_controller = id_to_controller
         self.controller_id_to_plant = controller_id_to_plant
-        self.sensor_id_to_controller_id = sensor_id_to_controller_id
-        self.controller_id_to_actuator_id = controller_id_id_to_actuator
-        self.actuator_mac_to_controller_id = {y: x for x, y in self.controller_id_to_actuator_id.items()}
         self.controller_id_to_latest_state = {}
         self.controller_id_to_latest_state_slot = {}
+        self.controller_id_to_latest_u = {}
+        for i in range(len(self.controller_id_to_plant)):
+            plant: StateSpacePlant = self.controller_id_to_plant[i]
+            self.controller_id_to_latest_state[i] = plant.state
+            self.controller_id_to_latest_state_slot[i] = 0
+            self.controller_id_to_latest_u[i] = 0.0
+        self.sensor_id_to_controller_id = sensor_id_to_controller_id
+        self.controller_id_to_actuator_id = controller_id_id_to_actuator
+        self.actuator_id_to_controller_id = {y: x for x, y in self.controller_id_to_actuator_id.items()}
         self.gateway = None  # set after init
         for i in range(len(sensor_id_to_controller_id)):
             self.controller_id_to_latest_state_slot[i] = 0
@@ -38,16 +48,34 @@ class Control:
     def onPacketReceived(self, senderIndex, state):
         self.controller_id_to_latest_state_slot[self.sensor_id_to_controller_id[senderIndex]] = self.gateway.simulatedSlot
         self.controller_id_to_latest_state[self.sensor_id_to_controller_id[senderIndex]] = state
+        logger.debug("received a packet with estimated state", sender="Control")
 
-    def getControl(self, actuatorId):
-        controllerId = self.actuator_mac_to_controller_id[actuatorId]
-        controller = self.controller_id_to_controller[controllerId]
-        diff = self.gateway.simulatedSlot - self.controller_id_to_latest_state_slot[controllerId]
+    def getControl(self, actuator_id):
+        controller_id = self.actuator_id_to_controller_id[actuator_id]
+        diff = (self.gateway.simulatedSlot - self.controller_id_to_latest_state_slot[controller_id]) * \
+               SAMPLE_TO_TIMESLOT_RATIO
+        diff = int(diff)
+        estimated_state = self.estimateState(diff, controller_id)
+        controller = self.controller_id_to_controller[controller_id]
+        control = controller @ estimated_state
+        self.controller_id_to_latest_u[controller_id] = control
+        return control
 
     def estimateState(self, timeslots, controller_id):
+        plant: StateSpacePlant = self.controller_id_to_plant[controller_id]
+        last_state = self.controller_id_to_latest_state[controller_id]
 
-        # TODO: state estimation
-        pass
+        last_state = np.array([[last_state[0]], [last_state[1]]])
+        logger.debug("last received state from sensor is %s. This was %d timeslots ago", last_state.__str__(),
+                     timeslots, sender="Control")
+        last_u = self.controller_id_to_latest_u[controller_id]
+
+        for i in range(timeslots):
+            last_state = plant.a @ last_state + plant.b * last_u
+
+        logger.debug("estimated state at timeslot %d for plant %d is %s", self.gateway.simulatedSlot, controller_id,
+                     last_state.__str__())
+        return last_state
 
 
 class ComplexNetworkDevice(NetworkDevice):
@@ -82,6 +110,13 @@ class ComplexNetworkDevice(NetworkDevice):
 
         # Connect them with each other
         self._mac.ports["phy"].biConnectWith(self._phy.ports["mac"])
+
+        def onPacketReceived(payload):
+            if type is "Actuator":
+                logger.debug("received new control command, command is %f", payload.value, sender=self)
+                self.plant.set_control(payload.value)
+
+        self._mac.gates["networkOut"].nReceives.subscribeCallback(onPacketReceived)
     
     # inherit __init__ docstring
     __init__.__doc__ = NetworkDevice.__init__.__doc__
@@ -92,19 +127,6 @@ class ComplexNetworkDevice(NetworkDevice):
     def send(self, data):
         raise NotImplementedError
 
-    def onReceive(self, packet: Packet):
-        """
-        This method is invoked whenever :attr:`receiving` is ``True`` and a
-        packet has been received.
-
-        Note:
-            After :attr:`receiving` has been set to ``False`` it might still be
-            called within :attr:`RECEIVE_TIMEOUT` seconds.
-
-        Args:
-            packet: The packet that has been received
-        """
-        raise NotImplementedError
 
 
 class GatewayDevice(NetworkDevice):
@@ -233,14 +255,25 @@ class Gateway(GatewayDevice):
 
     def _schedule_handler(self, schedule):
         self.interpreter.onFrequencyBandAssignment(schedule)
-        last_control_slot = 0
-        next_control_line = self.scheduler.get_next_control_slot(last_control_slot)
-        while next_control_line is not None:
-            yield SimMan.timeoutUntil(self.last_schedule_creation + TIMESLOT_LENGTH * next_control_line[0])
-            logger.debug("next control line is %s", next_control_line, sender=self)
-            last_control_slot = next_control_line[0]
+        if PROTOCOL == 1:  # TDMA
+            last_control_slot = 0
             next_control_line = self.scheduler.get_next_control_slot(last_control_slot)
-        # TODO: wait for control slots
+            while next_control_line is not None:
+                yield SimMan.timeoutUntil(self.last_schedule_creation + TIMESLOT_LENGTH * next_control_line[0])
+                logger.debug("next control line is %s", next_control_line, sender=self)
+                actuator_id = self.macToDeviceIndexDict[next_control_line[1]]
+                control = self.control.getControl(actuator_id)
+                logger.debug("will send control message %f to actuator %d", control, actuator_id, sender=self)
+                send_cmd = Message(
+                    StackMessageTypes.SENDCONTROL, {
+                        "control": control[0][0],
+                        "receiver": next_control_line[1]
+                    }
+                )
+                self._mac.gates["networkIn"].send(send_cmd)
+                yield send_cmd.eProcessed
+                last_control_slot = next_control_line[0]
+                next_control_line = self.scheduler.get_next_control_slot(last_control_slot)
 
     def _slotCount(self):
         while True:
@@ -311,9 +344,16 @@ class SimpleSensor(ComplexNetworkDevice):
         super(SimpleSensor, self).__init__(name, xpos, yPos, frequencyBand, "Sensor")
         self.plant = plant
         logger.debug("Sensor initialized, Position is (%f, %f)", xpos, yPos, sender=self)
-        self.c = np.array([0.5, 1.5])
+        self.c = np.array([[0.5, 1.5]])
         self.mean = np.zeros((1,))
         self.cov = np.eye(1) * 0.1
+        self.kalman = KalmanFilter(dim_x= 2, dim_z=1)
+        self.kalman.x = self.plant.state
+        self.kalman.F = self.plant.a
+        self.kalman.H = self.c
+        self.kalman.P = self.plant.x0_cov
+        self.kalman.R = np.array([[self.plant.r_subsystem]])
+        self.kalman.Q = self.plant.q_subsystem
         SimMan.process(self._sensor())
 
     def send(self, data):
@@ -328,8 +368,11 @@ class SimpleSensor(ComplexNetworkDevice):
         while True:
             state = self.plant.get_state()
             output = self.c @ state + np.random.multivariate_normal(self.mean, self.cov)
+            self.kalman.predict()
+            self.kalman.update(output)
             logger.info("output sampled: " + output.__str__(), sender=self)
-            self.send(output)
+            logger.info("filtered state: %s", self.kalman.x.__str__(), sender=self)
+            self.send(self.kalman.x)
             yield SimMan.timeout(SENSOR_SAMPLE_TIME)
 
     def onReceive(self, packet: Packet):
@@ -340,6 +383,8 @@ class SimpleActuator(ComplexNetworkDevice):
     def __init__(self, name: str, xpos: float, yPos: float, frequencyBand: FrequencyBand, plant: StateSpacePlant):
         super(SimpleActuator, self).__init__(name, xpos, yPos, frequencyBand, "Actuator")
         self.plant = plant
+
+
         logger.debug("Actuator initialized, Position is (%f, %f)", xpos, yPos, sender=self)
 
     def send(self, data):

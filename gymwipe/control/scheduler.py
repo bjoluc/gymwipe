@@ -61,20 +61,11 @@ class RoundRobinTDMAScheduler(Scheduler):
     def next_schedule(self, observation=None, last_reward=None):
         action = []
         for i in range(self.timeslots):
-            if self.devices[self.nextDevice] in self.actuators:
-                if self.wasActuator:
-                    action.append([self.devices[self.nextDevice], 0])
-                    self.wasActuator = False
-                else:   
-                    action.append([self.devices[self.nextDevice], 1])
-                    self.wasActuator = True
+            action.append([self.devices[self.nextDevice], 0])
+            if self.nextDevice == (len(self.devices) - 1):
+                self.nextDevice = 0
             else:
-                action.append([self.devices[self.nextDevice], 0])
-            if not self.wasActuator:
-                if self.nextDevice == (len(self.devices) - 1):
-                    self.nextDevice = 0
-                else:
-                    self.nextDevice += 1
+                self.nextDevice += 1
             
         logger.debug("new schedule generated", sender="RoundRobinTDMAScheduler")
         self.schedule = TDMASchedule(action)
