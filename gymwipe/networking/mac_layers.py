@@ -21,10 +21,6 @@ logger = SimTimePrepender(logging.getLogger(__name__))
 macCounter = 0 #global mac counter
 
 
-"""
-float: The length of one time slot in seconds (used for simulating slotted time)
-"""
-
 def newUniqueMacAddress() -> bytes:
         """
         A method for generating unique 6-byte-long MAC addresses (currently counting upwards starting at 1)

@@ -4,7 +4,7 @@ from gymwipe.baSimulation import constants as c
 from gymwipe.networking.attenuation_models import FsplAttenuation
 from gymwipe.networking.physical import FrequencyBand
 from gymwipe.plants.state_space_plants import StateSpacePlant
-from gymwipe.simtools import SimTimePrepender
+from gymwipe.simtools import SimTimePrepender, SimMan, Notifier
 from gymwipe.networking.MyDevices import SimpleSensor, SimpleActuator, Gateway
 
 logger = SimTimePrepender(logging.getLogger(__name__))
@@ -16,6 +16,24 @@ sensormacs = []
 actuators = []
 actuatormacs = []
 gateway = None
+SimMan.init()
+is_done = False
+
+
+def reset():
+    logger.debug("environment resetted", sender="environment")
+
+
+def done(msg):
+    logger.debug("Simulation is done", sender="environment")
+    global is_done
+    is_done = True
+
+
+reset_event = Notifier("reset environment")
+reset_event.subscribeCallback(reset)
+done_event = Notifier("simulation done")
+done_event.subscribeCallback(done)
 
 
 def initialize():
@@ -24,6 +42,7 @@ def initialize():
     the gateway. The parameters like the amount of plants, used protocol and scheduler, schedule length (for TDMA
     ) are defined in the module :mod:`~gymwipe.baSimulation.constants`
     """
+
     frequency_band = FrequencyBand([FsplAttenuation])
     for i in range(c.NUM_PLANTS):
         np.random.seed(c.POSITION_SEED)
@@ -44,8 +63,9 @@ def initialize():
                                   frequency_band, plant)
         actuators.append(actuator)
         actuatormacs.append(actuator.mac)
+
     gateway = Gateway(sensormacs, actuatormacs, controllers, plants, "Gateway", round(np.random.uniform(0.0, 5.0), 2),
-                      round(np.random.uniform(0.0, 5.0), 2), frequency_band, c.SCHEDULE_LENGTH)
+                      round(np.random.uniform(0.0, 5.0), 2), frequency_band, c.SCHEDULE_LENGTH, reset_event, done_event)
 
 
 class Evaluator:
@@ -59,9 +79,7 @@ class Evaluator:
         pass
 
 
-def reset():
-    pass
-
-
 if __name__ == "__main__":
-    pass
+    initialize()
+    while not done:
+        SimMan.runSimulation(c.TIMESLOT_LENGTH*10)

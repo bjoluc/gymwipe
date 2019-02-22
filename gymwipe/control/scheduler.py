@@ -35,14 +35,13 @@ class Scheduler:
         self.schedule = None  # current schedule
         self.timeslots = timeslots  # length of schedule
 
-    def next_schedule(self, observation, last_reward) -> Schedule:
+    def next_schedule(self, observation) -> Schedule:
         """
             produces the next schedule, possibly given information about the system's state. Raises a
             NotImplementedError if not overridden by a subclass
 
             Args:
                 observation: a representation of the observed state
-                last_reward: the reward for the previous produced schedule
         """
         raise NotImplementedError
 
@@ -58,7 +57,7 @@ class RoundRobinTDMAScheduler(Scheduler):
         self.nextDevice = 0 # position in device list of the first device in the next schedule
         self.wasActuator = False
         
-    def next_schedule(self, observation=None, last_reward=None):
+    def next_schedule(self, observation=None):
         action = []
         for i in range(self.timeslots):
             action.append([self.devices[self.nextDevice], 0])
@@ -85,7 +84,7 @@ class TDMAGreedyWaitingTime(Scheduler):
     def __init__(self, devices: [], sensors: [], actuators: [], timeslots: int):
         super(TDMAGreedyWaitingTime, self).__init__(devices, timeslots)
 
-    def next_schedule(self, observation, last_reward) -> Schedule:
+    def next_schedule(self, observation) -> Schedule:
         pass
 
 
