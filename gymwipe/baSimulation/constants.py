@@ -1,8 +1,8 @@
 TIMESLOT_LENGTH = 0.01
-EPISODES = 10  # number of episodes
-T = 500  # horizon length
+EPISODES = 1  # number of episodes
+T = 10  # horizon length
 POSITION_SEED = 42
-SCHEDULER = 1
+SCHEDULER = 3
 """
 scheduler
 1: Round Robin

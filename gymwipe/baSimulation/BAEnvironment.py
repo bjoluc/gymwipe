@@ -1,3 +1,4 @@
+results_save = open("sensor_scheduling.txt", "w")
 import logging
 import numpy as np
 from gymwipe.baSimulation import constants as c
@@ -30,6 +31,13 @@ def done(msg):
     is_done = True
 
 
+def episode_done(info):
+    results_save.write("episode {} finished. Duration: {:.3} mean loss: {:.2}\n".format(info[0], info[1], info[2]))
+    logger.debug("episode %d finished. Duration: %f, mean loss: %f", info[0], info[1], info[2], sender="environment")
+
+
+episode_done_event = Notifier("episode done")
+episode_done_event.subscribeCallback(episode_done)
 reset_event = Notifier("reset environment")
 reset_event.subscribeCallback(reset)
 done_event = Notifier("simulation done")
@@ -65,21 +73,12 @@ def initialize():
         actuatormacs.append(actuator.mac)
 
     gateway = Gateway(sensormacs, actuatormacs, controllers, plants, "Gateway", round(np.random.uniform(0.0, 5.0), 2),
-                      round(np.random.uniform(0.0, 5.0), 2), frequency_band, c.SCHEDULE_LENGTH, reset_event, done_event)
-
-
-class Evaluator:
-    def __init__(self, gateway_mac, sensor_macs:[], actuator_macs: []):
-        pass
-
-    def schedule_results(self):
-        pass
-
-    def episode_results(self, ave_cost, ave_reward, episode, duration):
-        pass
+                      round(np.random.uniform(0.0, 5.0), 2), frequency_band, c.SCHEDULE_LENGTH, reset_event, done_event,
+                      episode_done_event)
 
 
 if __name__ == "__main__":
     initialize()
     while not done:
         SimMan.runSimulation(c.TIMESLOT_LENGTH*10)
+    results_save.close()

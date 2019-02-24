@@ -42,7 +42,7 @@ def test_gateway(caplog, simman):
         actuators.append(actuator)
         actuatormacs.append(actuator.mac)
 
-    Gateway(sensorAddr, actuatormacs, controllers, plants, "Gateway", 0, 0, frequency_band, 3)
+    Gateway(sensorAddr, actuatormacs, controllers, plants, "Gateway", 0, 0, frequency_band, 3, None, None, None)
     SimMan.runSimulation(0.5)
 
     assert False

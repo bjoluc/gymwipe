@@ -1,6 +1,8 @@
 import logging
+import time
 from typing import Any, Dict, Tuple
 import numpy as np
+import math
 from gymwipe.baSimulation.constants import TIMESLOT_LENGTH, SCHEDULER, PROTOCOL, \
     PLANT_SAMPLE_TIME, SENSOR_SAMPLE_TIME, SAMPLE_TO_TIMESLOT_RATIO, EPISODES, T
 from gymwipe.control.scheduler import RoundRobinTDMAScheduler
@@ -51,7 +53,7 @@ class Control:
         self.controller_id_to_latest_state[self.sensor_id_to_controller_id[senderIndex]] = state
         logger.debug("received a packet with estimated state", sender="Control")
 
-    def getControl(self, actuator_id):
+    def getControl(self, actuator_id, hypothetical: bool):
         controller_id = self.actuator_id_to_controller_id[actuator_id]
         diff = (self.gateway.simulatedSlot - self.controller_id_to_latest_state_slot[controller_id]) * \
                SAMPLE_TO_TIMESLOT_RATIO
@@ -59,8 +61,11 @@ class Control:
         estimated_state = self.estimateState(diff, controller_id)
         controller = self.controller_id_to_controller[controller_id]
         control = controller @ estimated_state
-        self.controller_id_to_latest_u[controller_id] = control
-        return control
+        if not hypothetical:
+            self.controller_id_to_latest_u[controller_id] = control
+            return control
+        else:
+            return [control, estimated_state]
 
     def estimateState(self, timeslots, controller_id):
         plant: StateSpacePlant = self.controller_id_to_plant[controller_id]
@@ -143,7 +148,7 @@ class GatewayDevice(NetworkDevice):
 
     def __init__(self, name: str, xPos: float, yPos: float, frequencyBand: FrequencyBand,
                     deviceIndexToMacDict: Dict[int, bytes], sensors, actuators, interpreter, control,
-                 reset_event, done_event):
+                 reset_event, done_event, episode_done_event):
         # No type definition for 'interpreter' to avoid circular dependencies
         """
             deviceIndexToMacDict: A dictionary mapping integer indexes to device
@@ -156,6 +161,7 @@ class GatewayDevice(NetworkDevice):
         """
         self.reset_event = reset_event
         self.done_event = done_event
+        self.episode_done_event = episode_done_event
         self.mac: bytes = newUniqueMacAddress()
         """
         The mac address
@@ -222,7 +228,8 @@ class Gateway(GatewayDevice):
     scheduler = None
 
     def __init__(self, sensorMACS: [], actuatorMACS: [], control: [], plants: [], name: str, xPos: float, yPos: float,
-                 frequencyBand: FrequencyBand, schedule_timeslots: int, reset_event: Notifier, done_event: Notifier):
+                 frequencyBand: FrequencyBand, schedule_timeslots: int, reset_event: Notifier, done_event: Notifier,
+                 episode_done_event: Notifier):
 
         indexToMAC = {}
         self.nextScheduleCreation = 0
@@ -245,13 +252,19 @@ class Gateway(GatewayDevice):
             indexToMAC[i] = actuatorMACS[i-len(sensorMACS)]
             controller_id_to_actuator_id[i - len(sensorMACS)] = i
 
+        interpreter = MyInterpreter(len(sensorMACS)+
+                                    len(actuatorMACS),
+                                    schedule_timeslots)
+
         super(Gateway, self).__init__(name, xPos, yPos, frequencyBand, indexToMAC, sensorMACS, actuatorMACS,
-                                      MyInterpreter(SCHEDULER), Control(controller_id_to_controller,
-                                                                        sensor_id_to_controller_id,
-                                                                        controller_id_to_actuator_id,
-                                                                        controller_id_to_plant),
-                                      reset_event, done_event)
+                                      interpreter,
+                                      Control(controller_id_to_controller,
+                                              sensor_id_to_controller_id,
+                                              controller_id_to_actuator_id,
+                                              controller_id_to_plant),
+                                      reset_event, done_event, episode_done_event)
         self.control.gateway = self
+        self.interpreter.gateway = self
 
         self._create_scheduler()
         self._n_schedule_created = Notifier("new Schedule created", self)
@@ -269,7 +282,7 @@ class Gateway(GatewayDevice):
                 yield SimMan.timeoutUntil(self.last_schedule_creation + TIMESLOT_LENGTH * next_control_line[0])
                 logger.debug("next control line is %s", next_control_line, sender=self)
                 actuator_id = self.macToDeviceIndexDict[next_control_line[1]]
-                control = self.control.getControl(actuator_id)
+                control = self.control.getControl(actuator_id, False)
                 logger.debug("will send control message %f to actuator %d", control, actuator_id, sender=self)
                 send_cmd = Message(
                     StackMessageTypes.SENDCONTROL, {
@@ -314,7 +327,7 @@ class Gateway(GatewayDevice):
         if PROTOCOL == 1:  # TDMA
             if isinstance(self.scheduler, RoundRobinTDMAScheduler):  # Round Robin
                 for i in range(EPISODES):
-                    yield SimMan.timeoutUntil(self.nextScheduleCreation)
+                    start = time.time()
                     schedule = self.scheduler.next_schedule()
                     self.last_schedule_creation = SimMan.now
                     send_cmd = Message(
@@ -327,19 +340,35 @@ class Gateway(GatewayDevice):
                     self.nextScheduleCreation = SimMan.now + schedule.get_end_time() * TIMESLOT_LENGTH
                     self._n_schedule_created.trigger(schedule)
                     yield send_cmd.eProcessed
+                    yield SimMan.timeoutUntil(self.nextScheduleCreation)
+                    end_time = time.time()
                     logger.debug("episode %d is done", i, sender=self)
-                self.done_event.trigger("ende")
+                    if self.episode_done_event is not None:
+                        self.episode_done_event.trigger([i, end_time - start, 0.0])
+                if self.done_event is not None:
+                    self.done_event.trigger(None)
 
             elif SCHEDULER == 2:
                 pass
             elif isinstance(self.scheduler, DQNTDMAScheduler):
+                logger.debug("starting dqn process", sender = self)
+                avgloss = []
                 for e in range(EPISODES):
+                    start = time.time()
                     # TODO: stateinit, first schedule input
                     observation = None
                     cum_loss = 0
                     for t in range(T):
                         schedule = self.scheduler.next_schedule(observation)
                         self.last_schedule_creation = SimMan.now
+                        send_cmd = Message(
+                            StackMessageTypes.SEND, {
+                                "schedule": schedule,
+                                "clock": self.last_schedule_creation
+                            }
+                        )
+                        self._mac.gates["networkIn"].send(send_cmd)
+                        yield send_cmd.eProcessed
                         self.nextScheduleCreation = SimMan.now + schedule.get_end_time() * TIMESLOT_LENGTH
                         self._n_schedule_created.trigger(schedule)
                         yield SimMan.timeoutUntil(self.nextScheduleCreation)
@@ -349,6 +378,16 @@ class Gateway(GatewayDevice):
                         self.scheduler.remember(observation, schedule.action,
                                                 reward, next_observation)
                         observation = next_observation
+                        if np.mod(t, self.scheduler.c) == 0:
+                            self.scheduler.update_target_model()
+                        if len(self.scheduler.memory) > self.scheduler.batch_size:
+                            self.scheduler.replay()
+                    avgloss.append(cum_loss/T)
+                    end_time = time.time()
+                    logger.debug("episode %d done. Average loss is %f", e, cum_loss/T)
+                    self.episode_done_event.trigger([e, end_time - start, cum_loss/T])
+                self.done_event.trigger(avgloss)
+
         elif PROTOCOL == 2:  # CSMA
             pass
 
@@ -416,32 +455,39 @@ class MyInterpreter(Interpreter):
     systems state and a reward for the last schedule round.
     """
 
-    def __init__(self, scheduler):
-        self.scheduler = scheduler
+    def __init__(self, device_amount, schedule_length):
         self.gateway = None  # set after gateway creation
-        self.timestepResults = {}  # received information from every timestep in the last schedule round
+        self.timestep_success = np.zeros(schedule_length, dtype=int)  # received information from every timestep in the last schedule round
+        self.last_update = np.zeros(device_amount, dtype=int)
+        self.observation_size = device_amount + schedule_length
+        self.device_amount = device_amount
 
     def onPacketReceived(self, message, senderIndex: int, receiverIndex= None, payload=None):
         logger.debug("received arrived packet information", sender="Interpreter")
         # TODO: compute current timestep to save received data in timestepResults dict
         # TODO: action for different schedulers same?
-        if self.scheduler == 2:
+        if SCHEDULER == 2:
             pass
-        elif self.scheduler == 3:
-            pass
-        # nothing to to for round robin scheduler
+        elif SCHEDULER == 3:  # dqn scheduler
+            time_since_schedule = SimMan.now - self.gateway.last_schedule_creation
+            schedule_timeslot = math.trunc(time_since_schedule/TIMESLOT_LENGTH)
+            self.timestep_success[schedule_timeslot] = 1
+            self.last_update[senderIndex] = self.gateway.simulatedSlot
+            logger.debug("got received packet information. Sender %d sent %s", senderIndex, message.__repr__(),
+                         sender=self)
+        # nothing to do for round robin scheduler
 
     def onScheduleCreated(self, schedule):
         """
         is called whenever a new schedule has been created. Resets the timestep results
         :param schedule: the new schedule given by the gateway
         """
-        logger.debug("received a new schedule", sender="Interpreter")
-        self.timestepResults = {}
+        logger.debug("received a new schedule, resetting timestep info", sender="Interpreter")
+        self.timestep_success = np.zeros(len(self.timestep_success), dtype=int)
 
     def onFrequencyBandAssignment(self, deviceIndex=None, duration=None):
 
-        self.timestepResults = {}
+        self.timestep_success = {}
         logger.debug("received a new schedule", sender="Interpreter")
 
     def getReward(self) -> float:
@@ -452,18 +498,34 @@ class MyInterpreter(Interpreter):
 
         :return: The computed reward
         """
-        if self.scheduler == 2:   # my scheduler
+        reward = 0.0
+        if SCHEDULER == 2:   # my scheduler
             pass
-        elif self.scheduler == 3:  # paper scheduler
-            pass
-        return 0.0
+        elif SCHEDULER == 3:  # paper scheduler
+            id_to_plant = self.gateway.control.controller_id_to_plant
+            for i in range(len(id_to_plant)):
+                plant: StateSpacePlant = id_to_plant[i]
+                q = plant.q_subsystem
+                r = plant.r_subsystem
+                control_output = self.gateway.control.getControl(self.gateway.control.controller_id_to_actuator_id[i], True)
+                control = control_output[0]
+                state = control_output[1]
+                reward += -(state.transpose()@q@state + control.transpose()@r@control)
+        logger.debug("computed reward is %f", reward, sender="Interpreter")
+        return reward
 
     def getObservation(self):
-        if self.scheduler == 2:  # my scheduler
+        observation = None
+        if SCHEDULER == 2:  # my scheduler
             pass
-        elif self.scheduler == 3:  # paper scheduler
-            pass
-        return None
+        elif SCHEDULER == 3:  # DQN scheduler
+            current_slot = self.gateway.simulatedSlot
+            tau = np.zeros(len(self.last_update), dtype=int)
+            for i in range(len(self.last_update)):
+                tau[i] = current_slot-self.last_update[i]
+            observation = np.hstack(tau, self.timestep_success)
+        logger.debug("computed observation: %s", observation.__str__(), sender="Interpreter")
+        return observation
 
     def getDone(self):
         return False

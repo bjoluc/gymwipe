@@ -10,9 +10,10 @@ simpy = "*"
 scipy = "*"
 pytest = "*"
 pytest-benchmark = "*"
+numpy = "*"
 
 [dev-packages]
-gymwipe = {editable = true, path = "."}
+gymwipe = {editable = true,path = "."}
 pylint = "*"
 sphinx = "*"
 sphinx-autobuild = "*"
