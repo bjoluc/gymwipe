@@ -48,6 +48,16 @@ class Control:
                      self.controller_id_to_actuator_id,
                      sender="Control")
 
+    def reset(self):
+        self.controller_id_to_latest_state = {}
+        self.controller_id_to_latest_state_slot = {}
+        self.controller_id_to_latest_u = {}
+        for i in range(len(self.controller_id_to_plant)):
+            plant: StateSpacePlant = self.controller_id_to_plant[i]
+            self.controller_id_to_latest_state[i] = plant.state
+            self.controller_id_to_latest_state_slot[i] = 0
+            self.controller_id_to_latest_u[i] = 0.0
+
     def onPacketReceived(self, senderIndex, state):
         self.controller_id_to_latest_state_slot[self.sensor_id_to_controller_id[senderIndex]] = self.gateway.simulatedSlot
         self.controller_id_to_latest_state[self.sensor_id_to_controller_id[senderIndex]] = state
@@ -274,7 +284,7 @@ class Gateway(GatewayDevice):
         SimMan.process(self._slotCount())
 
     def _schedule_handler(self, schedule):
-        self.interpreter.onFrequencyBandAssignment(schedule)
+        self.interpreter.onScheduleCreated(schedule)
         if PROTOCOL == 1:  # TDMA
             last_control_slot = 0
             next_control_line = self.scheduler.get_next_control_slot(last_control_slot)
@@ -317,7 +327,7 @@ class Gateway(GatewayDevice):
                 pass
         elif SCHEDULER == 3:  # paper DQN
             if PROTOCOL == 1:  # TDMA
-                self.schedule = DQNTDMAScheduler(list(self.deviceIndexToMacDict.values()), self.sensor_macs,
+                self.scheduler = DQNTDMAScheduler(list(self.deviceIndexToMacDict.values()), self.sensor_macs,
                                                  self.actuator_macs, self.schedule_timeslots)
                 logger.debug("DQNTDMAScheduler created", sender=self)
             elif PROTOCOL == 2:  # CSMA
@@ -325,6 +335,7 @@ class Gateway(GatewayDevice):
 
     def _gateway(self):
         if PROTOCOL == 1:  # TDMA
+            logger.debug("protocol is TDMA", sender=self)
             if isinstance(self.scheduler, RoundRobinTDMAScheduler):  # Round Robin
                 for i in range(EPISODES):
                     start = time.time()
@@ -348,15 +359,14 @@ class Gateway(GatewayDevice):
                 if self.done_event is not None:
                     self.done_event.trigger(None)
 
-            elif SCHEDULER == 2:
-                pass
             elif isinstance(self.scheduler, DQNTDMAScheduler):
-                logger.debug("starting dqn process", sender = self)
+                logger.debug("starting dqn process", sender=self)
                 avgloss = []
                 for e in range(EPISODES):
+                    logger.debug("starting episode %d", e, sender=self)
                     start = time.time()
                     # TODO: stateinit, first schedule input
-                    observation = None
+                    observation = self.interpreter.get_first_observation()
                     cum_loss = 0
                     for t in range(T):
                         schedule = self.scheduler.next_schedule(observation)
@@ -384,6 +394,11 @@ class Gateway(GatewayDevice):
                             self.scheduler.replay()
                     avgloss.append(cum_loss/T)
                     end_time = time.time()
+                    for p in range(len(self.control.controller_id_to_plant)):
+                        plant = self.control.controller_id_to_plant[p]
+                        plant.reset()
+                    self.simulatedSlot = 0
+                    self.control.reset()
                     logger.debug("episode %d done. Average loss is %f", e, cum_loss/T)
                     self.episode_done_event.trigger([e, end_time - start, cum_loss/T])
                 self.done_event.trigger(avgloss)
@@ -470,7 +485,7 @@ class MyInterpreter(Interpreter):
             pass
         elif SCHEDULER == 3:  # dqn scheduler
             time_since_schedule = SimMan.now - self.gateway.last_schedule_creation
-            schedule_timeslot = math.trunc(time_since_schedule/TIMESLOT_LENGTH)
+            schedule_timeslot = math.trunc(time_since_schedule/TIMESLOT_LENGTH) - 1
             self.timestep_success[schedule_timeslot] = 1
             self.last_update[senderIndex] = self.gateway.simulatedSlot
             logger.debug("got received packet information. Sender %d sent %s", senderIndex, message.__repr__(),
@@ -514,6 +529,16 @@ class MyInterpreter(Interpreter):
         logger.debug("computed reward is %f", reward, sender="Interpreter")
         return reward
 
+    def get_first_observation(self):
+        observation = None
+        if SCHEDULER == 2:  # my scheduler
+            pass
+        elif SCHEDULER == 3:  # DQN scheduler
+            tau = np.zeros(len(self.last_update), dtype=int)
+            observation = np.hstack((tau, self.timestep_success))
+        logger.debug("computed observation: %s", observation.__str__(), sender="Interpreter")
+        return observation
+
     def getObservation(self):
         observation = None
         if SCHEDULER == 2:  # my scheduler
@@ -523,7 +548,7 @@ class MyInterpreter(Interpreter):
             tau = np.zeros(len(self.last_update), dtype=int)
             for i in range(len(self.last_update)):
                 tau[i] = current_slot-self.last_update[i]
-            observation = np.hstack(tau, self.timestep_success)
+            observation = np.hstack((tau, self.timestep_success))
         logger.debug("computed observation: %s", observation.__str__(), sender="Interpreter")
         return observation
 
