@@ -7,6 +7,7 @@ from gymwipe.networking.physical import FrequencyBand
 from gymwipe.plants.state_space_plants import StateSpacePlant
 from gymwipe.simtools import SimTimePrepender, SimMan, Notifier
 from gymwipe.networking.MyDevices import SimpleSensor, SimpleActuator, Gateway
+import matplotlib.pyplot as plt
 
 logger = SimTimePrepender(logging.getLogger(__name__))
 
@@ -26,13 +27,19 @@ def reset():
 
 
 def done(msg):
-    logger.debug("Simulation is done", sender="environment")
+    avgloss = msg
+    plt.close()
+    plt.plot(range(1, c.EPISODES + 1), avgloss)
+    plt.xlabel('Episode')
+    plt.ylabel('Empiricial Average Loss')
+    logger.debug("Simulation is done, loss array is %s", avgloss.__str__(), sender="environment")
     global is_done
     is_done = True
 
 
 def episode_done(info):
     results_save.write("episode {} finished. Duration: {:.3} mean loss: {:.2}\n".format(info[0], info[1], info[2]))
+    print("episode {} finished. Duration: {:.3} mean loss: {:.2}\n".format(info[0], info[1], info[2]))
     logger.debug("episode %d finished. Duration: %f, mean loss: %f", info[0], info[1], info[2], sender="environment")
 
 
@@ -52,12 +59,12 @@ def initialize():
     """
 
     frequency_band = FrequencyBand([FsplAttenuation])
+    np.random.seed(c.POSITION_SEED)
     for i in range(c.NUM_PLANTS):
-        np.random.seed(c.POSITION_SEED)
         if i+1 > c.INSTABLE_PLANTS:
             plant = StateSpacePlant(2, 1, c.PLANT_SAMPLE_TIME, name="Plant" + i.__str__())
         else:
-            plant = StateSpacePlant(2,1, c.PLANT_SAMPLE_TIME, marginally_stable=False, name="Plant" + i.__str__())
+            plant = StateSpacePlant(2, 1, c.PLANT_SAMPLE_TIME, marginally_stable=False, name="Plant" + i.__str__())
         plants.append(plant)
         controller = plant.generate_controller()
         controllers.append(controller)

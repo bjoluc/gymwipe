@@ -337,27 +337,43 @@ class Gateway(GatewayDevice):
         if PROTOCOL == 1:  # TDMA
             logger.debug("protocol is TDMA", sender=self)
             if isinstance(self.scheduler, RoundRobinTDMAScheduler):  # Round Robin
+                avgloss = []
                 for i in range(EPISODES):
+                    logger.debug("starting episode %d", i, sender=self)
                     start = time.time()
-                    schedule = self.scheduler.next_schedule()
-                    self.last_schedule_creation = SimMan.now
-                    send_cmd = Message(
-                        StackMessageTypes.SEND, {
-                            "schedule": schedule,
-                            "clock": self.last_schedule_creation
-                        }
-                    )
-                    self._mac.gates["networkIn"].send(send_cmd)
-                    self.nextScheduleCreation = SimMan.now + schedule.get_end_time() * TIMESLOT_LENGTH
-                    self._n_schedule_created.trigger(schedule)
-                    yield send_cmd.eProcessed
-                    yield SimMan.timeoutUntil(self.nextScheduleCreation)
-                    end_time = time.time()
+                    cum_loss = 0
+                    for t in range(T):
+                        schedule = self.scheduler.next_schedule()
+                        self.last_schedule_creation = SimMan.now
+                        send_cmd = Message(
+                            StackMessageTypes.SEND, {
+                                "schedule": schedule,
+                                "clock": self.last_schedule_creation
+                            }
+                        )
+                        self._mac.gates["networkIn"].send(send_cmd)
+                        self.nextScheduleCreation = SimMan.now + schedule.get_end_time() * TIMESLOT_LENGTH
+                        self._n_schedule_created.trigger(schedule)
+                        yield send_cmd.eProcessed
+                        yield SimMan.timeoutUntil(self.nextScheduleCreation)
+                        reward = self.interpreter.getReward()
+                        cum_loss += -reward
                     logger.debug("episode %d is done", i, sender=self)
+                    avgloss.append(cum_loss / T)
+                    end_time = time.time()
+                    for p in range(len(self.control.controller_id_to_plant)):
+                        plant = self.control.controller_id_to_plant[p]
+                        plant.reset()
+                    self.simulatedSlot = 0
+                    self.control.reset()
+
+                    info = [i, end_time-start, cum_loss/T]
+                    logger.debug("episode %d done. Average loss is %f", i, cum_loss/T)
                     if self.episode_done_event is not None:
-                        self.episode_done_event.trigger([i, end_time - start, 0.0])
+                        self.episode_done_event.trigger(info)
+
                 if self.done_event is not None:
-                    self.done_event.trigger(None)
+                    self.done_event.trigger(avgloss)
 
             elif isinstance(self.scheduler, DQNTDMAScheduler):
                 logger.debug("starting dqn process", sender=self)
@@ -365,7 +381,6 @@ class Gateway(GatewayDevice):
                 for e in range(EPISODES):
                     logger.debug("starting episode %d", e, sender=self)
                     start = time.time()
-                    # TODO: stateinit, first schedule input
                     observation = self.interpreter.get_first_observation()
                     cum_loss = 0
                     for t in range(T):
@@ -385,7 +400,8 @@ class Gateway(GatewayDevice):
                         next_observation = self.interpreter.getObservation()
                         reward = self.interpreter.getReward()
                         cum_loss += -reward
-                        self.scheduler.remember(observation, schedule.action,
+                        action_id = self.scheduler.action_id
+                        self.scheduler.remember(observation, action_id,
                                                 reward, next_observation)
                         observation = next_observation
                         if np.mod(t, self.scheduler.c) == 0:
@@ -399,8 +415,11 @@ class Gateway(GatewayDevice):
                         plant.reset()
                     self.simulatedSlot = 0
                     self.control.reset()
+
+                    info = [e, end_time-start, cum_loss/T]
                     logger.debug("episode %d done. Average loss is %f", e, cum_loss/T)
-                    self.episode_done_event.trigger([e, end_time - start, cum_loss/T])
+
+                    self.episode_done_event.trigger(info)
                 self.done_event.trigger(avgloss)
 
         elif PROTOCOL == 2:  # CSMA
@@ -481,15 +500,13 @@ class MyInterpreter(Interpreter):
         logger.debug("received arrived packet information", sender="Interpreter")
         # TODO: compute current timestep to save received data in timestepResults dict
         # TODO: action for different schedulers same?
-        if SCHEDULER == 2:
-            pass
-        elif SCHEDULER == 3:  # dqn scheduler
-            time_since_schedule = SimMan.now - self.gateway.last_schedule_creation
-            schedule_timeslot = math.trunc(time_since_schedule/TIMESLOT_LENGTH) - 1
-            self.timestep_success[schedule_timeslot] = 1
-            self.last_update[senderIndex] = self.gateway.simulatedSlot
-            logger.debug("got received packet information. Sender %d sent %s", senderIndex, message.__repr__(),
-                         sender=self)
+
+        time_since_schedule = SimMan.now - self.gateway.last_schedule_creation
+        schedule_timeslot = math.trunc(time_since_schedule/TIMESLOT_LENGTH) - 1
+        self.timestep_success[schedule_timeslot] = 1
+        self.last_update[senderIndex] = self.gateway.simulatedSlot
+        logger.debug("got received packet information. Sender %d sent %s", senderIndex, message.__repr__(),
+                     sender=self)
         # nothing to do for round robin scheduler
 
     def onScheduleCreated(self, schedule):
@@ -513,21 +530,22 @@ class MyInterpreter(Interpreter):
 
         :return: The computed reward
         """
-        reward = 0.0
-        if SCHEDULER == 2:   # my scheduler
-            pass
-        elif SCHEDULER == 3:  # paper scheduler
-            id_to_plant = self.gateway.control.controller_id_to_plant
-            for i in range(len(id_to_plant)):
-                plant: StateSpacePlant = id_to_plant[i]
-                q = plant.q_subsystem
-                r = plant.r_subsystem
-                control_output = self.gateway.control.getControl(self.gateway.control.controller_id_to_actuator_id[i], True)
-                control = control_output[0]
-                state = control_output[1]
-                reward += -(state.transpose()@q@state + control.transpose()@r@control)
+        reward = 0.0  # paper scheduler
+        id_to_plant = self.gateway.control.controller_id_to_plant
+        for i in range(len(id_to_plant)):
+            plant: StateSpacePlant = id_to_plant[i]
+            q = plant.q_subsystem
+            r = plant.r_subsystem
+            control_output = self.gateway.control.getControl(self.gateway.control.controller_id_to_actuator_id[i], True)
+            control = control_output[0]
+            state = control_output[1]
+            logger.debug("plant i: last control is %s, estimated state is %s", control.__str__(), state.__str__(),
+                         sender="Interpreter")
+            single_reward = -(state.transpose()@q@state + control.transpose()*r*control)
+            logger.debug("single reward is %f", single_reward, sender="Interpreter")
+            reward += single_reward
         logger.debug("computed reward is %f", reward, sender="Interpreter")
-        return reward
+        return reward[0][0]
 
     def get_first_observation(self):
         observation = None
