@@ -1,6 +1,6 @@
 TIMESLOT_LENGTH = 0.01
-EPISODES = 5  # number of episodes
-T = 100  # horizon length
+EPISODES = 100  # number of episodes
+T = 500  # horizon length
 POSITION_SEED = 42
 SCHEDULER = 3
 """

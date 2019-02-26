@@ -68,7 +68,7 @@ class SensorMacTDMA(Module):
             logger.debug("received a packet from phy, am in receiving mode", sender=self)
             header = packet.header
             if not isinstance(header, NCSMacHeader):
-                raise ValueError("Can only deal with header of type NCSMacHeader. Got %s.", type(header), sender=self)
+                raise ValueError("Can only deal with header of type NCSMacHeader. Got %s.", type(header))
             if header.type[0] == 0: # received schedule from gateway
                 self._schedule = packet.payload.value
                 trailer = packet.trailer.value
@@ -96,7 +96,7 @@ class SensorMacTDMA(Module):
                 sensorsendingtype[0] = 1
                 datapacket = Packet(
                     NCSMacHeader(bytes(sensorsendingtype), self.addr),
-                    Transmittable(data)
+                    Transmittable(data, 4)
                 )
                 self._lastDatapacket = datapacket
                 logger.debug("%s received new sensordata: %s , saved it", self, data)

@@ -309,7 +309,7 @@ class Gateway(GatewayDevice):
         while True:
             yield SimMan.timeout(TIMESLOT_LENGTH)
             self.simulatedSlot += 1
-            logger.info("simulated Slot num %d", self.simulatedSlot, sender=self)
+            #logger.info("simulated Slot num %d", self.simulatedSlot, sender=self)
 
     def _create_scheduler(self):
         if SCHEDULER == 1:  # Round Robin
@@ -366,7 +366,7 @@ class Gateway(GatewayDevice):
                         plant.reset()
                     self.simulatedSlot = 0
                     self.control.reset()
-
+                    self.interpreter.reset()
                     info = [i, end_time-start, cum_loss/T]
                     logger.debug("episode %d done. Average loss is %f", i, cum_loss/T)
                     if self.episode_done_event is not None:
@@ -386,6 +386,8 @@ class Gateway(GatewayDevice):
                     for t in range(T):
                         schedule = self.scheduler.next_schedule(observation)
                         self.last_schedule_creation = SimMan.now
+                        self.nextScheduleCreation = SimMan.now + schedule.get_end_time() * TIMESLOT_LENGTH
+                        self._n_schedule_created.trigger(schedule)
                         send_cmd = Message(
                             StackMessageTypes.SEND, {
                                 "schedule": schedule,
@@ -394,10 +396,10 @@ class Gateway(GatewayDevice):
                         )
                         self._mac.gates["networkIn"].send(send_cmd)
                         yield send_cmd.eProcessed
-                        self.nextScheduleCreation = SimMan.now + schedule.get_end_time() * TIMESLOT_LENGTH
-                        self._n_schedule_created.trigger(schedule)
                         yield SimMan.timeoutUntil(self.nextScheduleCreation)
                         next_observation = self.interpreter.getObservation()
+                        logger.debug("last observation was %s\nnext observation is %s", str(observation),
+                                     str(next_observation), sender=self)
                         reward = self.interpreter.getReward()
                         cum_loss += -reward
                         action_id = self.scheduler.action_id
@@ -408,15 +410,16 @@ class Gateway(GatewayDevice):
                             self.scheduler.update_target_model()
                         if len(self.scheduler.memory) > self.scheduler.batch_size:
                             self.scheduler.replay()
-                    avgloss.append(cum_loss/T)
+                    avg = cum_loss/T
+                    avgloss.append(avg)
                     end_time = time.time()
                     for p in range(len(self.control.controller_id_to_plant)):
                         plant = self.control.controller_id_to_plant[p]
                         plant.reset()
                     self.simulatedSlot = 0
                     self.control.reset()
-
-                    info = [e, end_time-start, cum_loss/T]
+                    self.interpreter.reset()
+                    info = [e, end_time-start, avg]
                     logger.debug("episode %d done. Average loss is %f", e, cum_loss/T)
 
                     self.episode_done_event.trigger(info)
@@ -460,7 +463,7 @@ class SimpleSensor(ComplexNetworkDevice):
             output = self.c @ state + np.random.multivariate_normal(self.mean, self.cov)
             self.kalman.predict()
             self.kalman.update(output)
-            logger.info("output sampled: " + output.__str__(), sender=self)
+            #logger.info("output sampled: " + output.__str__(), sender=self)
             logger.info("filtered state: %s", self.kalman.x.__str__(), sender=self)
             self.send(self.kalman.x)
             yield SimMan.timeout(SENSOR_SAMPLE_TIME)
@@ -490,11 +493,17 @@ class MyInterpreter(Interpreter):
     """
 
     def __init__(self, device_amount, schedule_length):
+        self.device_amount = device_amount
+        self.schedule_length = schedule_length
         self.gateway = None  # set after gateway creation
         self.timestep_success = np.zeros(schedule_length, dtype=int)  # received information from every timestep in the last schedule round
         self.last_update = np.zeros(device_amount, dtype=int)
         self.observation_size = device_amount + schedule_length
         self.device_amount = device_amount
+
+    def reset(self):
+        self.timestep_success = np.zeros(self.schedule_length, dtype=int)
+        self.last_update = np.zeros(self.device_amount, dtype=int)
 
     def onPacketReceived(self, message, senderIndex: int, receiverIndex= None, payload=None):
         logger.debug("received arrived packet information", sender="Interpreter")
@@ -539,7 +548,7 @@ class MyInterpreter(Interpreter):
             control_output = self.gateway.control.getControl(self.gateway.control.controller_id_to_actuator_id[i], True)
             control = control_output[0]
             state = control_output[1]
-            logger.debug("plant i: last control is %s, estimated state is %s", control.__str__(), state.__str__(),
+            logger.debug("plant %d: last control is %s, estimated state is %s", i, control.__str__(), state.__str__(),
                          sender="Interpreter")
             single_reward = -(state.transpose()@q@state + control.transpose()*r*control)
             logger.debug("single reward is %f", single_reward, sender="Interpreter")
