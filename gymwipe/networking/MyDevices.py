@@ -448,6 +448,8 @@ class SimpleSensor(ComplexNetworkDevice):
         self.kalman.R = np.array([[self.plant.r_subsystem]])
         self.kalman.Q = self.plant.q_subsystem
         SimMan.process(self._sensor())
+        self.outputs = []
+        self.inputs = []
 
     def send(self, data):
         """
@@ -461,6 +463,8 @@ class SimpleSensor(ComplexNetworkDevice):
         while True:
             state = self.plant.get_state()
             output = self.c @ state + np.random.multivariate_normal(self.mean, self.cov)
+            self.outputs.append(output[0])
+            self.inputs.append(self.plant.control)
             self.kalman.predict()
             self.kalman.update(output)
             #logger.info("output sampled: " + output.__str__(), sender=self)

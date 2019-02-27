@@ -112,6 +112,7 @@ class StateSpacePlant:
 
     def reset(self):
         self.state = self.reset_state
+        self.control = np.array([0.0])
 
     def generate_controller(self):
         dare = sp.linalg.solve_discrete_are(self.a, self.b, self.q_subsystem, self.r_subsystem)

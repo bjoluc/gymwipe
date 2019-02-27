@@ -1,8 +1,9 @@
+#TODO: constants object given to env initialization
 TIMESLOT_LENGTH = 0.01
-EPISODES = 100  # number of episodes
-T = 500  # horizon length
+EPISODES = 1  # number of episodes
+T = 100  # horizon length
 POSITION_SEED = 42
-SCHEDULER = 3
+SCHEDULER = 1
 """
 scheduler
 1: Round Robin
@@ -13,7 +14,7 @@ PLANT_SAMPLE_TIME = 0.01
 SENSOR_SAMPLE_TIME = 0.01
 SAMPLE_TO_TIMESLOT_RATIO = TIMESLOT_LENGTH/PLANT_SAMPLE_TIME
 PARAM_SEED = 42
-NUM_PLANTS = 2
+NUM_PLANTS = 5
 INSTABLE_PLANTS = 0
 SCHEDULE_LENGTH = 2
 PROTOCOL = 1

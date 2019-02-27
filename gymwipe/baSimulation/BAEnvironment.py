@@ -29,6 +29,7 @@ savestring = "scheduler_{}_protocol_{}_plants_{}_length_{}_seed_{}_{}.txt".forma
                                                                                   int(time.time()))
 episode_results_save = open("results_" + savestring, "w")
 loss_save = open("episode_loss_" + savestring, "w")
+plants_save = open("plant_structure_" + savestring, "w")
 
 
 def reset():
@@ -45,6 +46,23 @@ def done(msg):
     plt.savefig(picstr)
     plt.close()
     logger.debug("Simulation is done, loss array is %s", avgloss.__str__(), sender="environment")
+    for i in range(len(sensors)):
+        sensor: SimpleSensor = sensors[i]
+        outputs = sensor.outputs
+        inputs = sensor.inputs
+        logger.debug("data for sensor %d is %s", i, outputs.__str__(), sender="environment")
+        plt.plot(range(0, len(outputs)), outputs)
+        plt.xlabel('timestep')
+        plt.ylabel('sensed output')
+        sensorstr = "Sensor_" + str(i) + "_" + savestring + ".png"
+        plt.savefig(sensorstr)
+        plt.close()
+        plt.plot(range(0, len(outputs)), outputs)
+        plt.xlabel('timestep')
+        plt.ylabel('input')
+        sensorstr = "Actuator_" + str(i) + "_" + savestring + ".png"
+        plt.savefig(sensorstr)
+        plt.close()
     global is_done
     is_done = True
 
@@ -82,19 +100,21 @@ def initialize():
         plants.append(plant)
         controller = plant.generate_controller()
         controllers.append(controller)
-        sensor = SimpleSensor("Sensor " + i.__str__(), round(np.random.uniform(0.0, 3.5), 2),
-                              round(np.random.uniform(0.0, 3.5), 2),
+        plantstr = "Plant {}: \nA:\n {} \nB:\n{} \ncontrol: {}\n".format(i, plant.a, plant.b, controller)
+        plants_save.write(plantstr)
+        sensor = SimpleSensor("Sensor " + i.__str__(), round(np.random.uniform(0.0, 3), 2),
+                              round(np.random.uniform(0.0, 3), 2),
                               frequency_band, plant)
         sensors.append(sensor)
         sensormacs.append(sensor.mac)
-        actuator = SimpleActuator("Actuator" + i.__str__(), round(np.random.uniform(0.0, 3.5), 2),
-                                  round(np.random.uniform(0.0, 3.5), 2),
+        actuator = SimpleActuator("Actuator" + i.__str__(), round(np.random.uniform(0.0, 3), 2),
+                                  round(np.random.uniform(0.0, 3), 2),
                                   frequency_band, plant)
         actuators.append(actuator)
         actuatormacs.append(actuator.mac)
 
-    gateway = Gateway(sensormacs, actuatormacs, controllers, plants, "Gateway", round(np.random.uniform(0.0, 3.5), 2),
-                      round(np.random.uniform(0.0, 3.5), 2), frequency_band, c.SCHEDULE_LENGTH, reset_event, done_event,
+    gateway = Gateway(sensormacs, actuatormacs, controllers, plants, "Gateway", round(np.random.uniform(0.0, 3), 2),
+                      round(np.random.uniform(0.0, 3), 2), frequency_band, c.SCHEDULE_LENGTH, reset_event, done_event,
                       episode_done_event)
 
 
