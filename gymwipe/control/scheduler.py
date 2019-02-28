@@ -1,13 +1,26 @@
+import itertools
 import logging
+import random
+from enum import Enum
 
 from gymwipe.simtools import SimTimePrepender
 
 logger = SimTimePrepender(logging.getLogger(__name__))
 
 
+class SendOrReceive(Enum):
+    """
+    An enumeration of control message types to be used for the exchange of
+    `Message` objects between network stack layers.
+    """
+    SEND = 0
+    RECEIVE = 1
+
+
 class Schedule:
     """
-        A framework for schedule classes. A implemented schedule will produce and contain the specific schedule for a scheduling descision taken by a scheduler
+        A framework for schedule classes. A implemented schedule will produce and contain the specific schedule for
+        a scheduling descision taken by a scheduler
     """
     def __init__(self, action):
         self.action = action # Action output from Scheduler
@@ -21,92 +34,17 @@ class Schedule:
         raise NotImplementedError
 
 
-class Scheduler:
-    """
-        A framework for a Scheduler class, which will produce channel allocation schedules
-    """
-    def __init__(self, devices, timeslots: int):
-        """
-        Args:
-            devices: a list of MAC adresses which should be considered while producing a schedule
-            int timeslots: the number of timeslots for which scheduling decisions should be taken
-        """
-        self.devices = devices  # list of sensor/controller mac addresses
-        self.schedule = None  # current schedule
-        self.timeslots = timeslots  # length of schedule
-
-    def next_schedule(self, observation) -> Schedule:
-        """
-            produces the next schedule, possibly given information about the system's state. Raises a
-            NotImplementedError if not overridden by a subclass
-
-            Args:
-                observation: a representation of the observed state
-        """
-        raise NotImplementedError
-
-
-class RoundRobinTDMAScheduler(Scheduler):
-    """
-    A Round Robin Scheduler producing a TDMA Schedule
-    """
-    def __init__(self, devices: [], sensors: [], actuators: [], timeslots: int):
-        super(RoundRobinTDMAScheduler, self).__init__(devices, timeslots)
-        self.sensors = sensors
-        self.actuators = actuators
-        self.nextDevice = 0 # position in device list of the first device in the next schedule
-        self.wasActuator = False
-        
-    def next_schedule(self, observation=None):
-        action = []
-        for i in range(self.timeslots):
-            action.append([self.devices[self.nextDevice], 0])
-            if self.nextDevice == (len(self.devices) - 1):
-                self.nextDevice = 0
-            else:
-                self.nextDevice += 1
-            
-        logger.debug("new schedule generated", sender="RoundRobinTDMAScheduler")
-        self.schedule = TDMASchedule(action)
-        return self.schedule
-
-    def get_next_control_slot(self, last_control_slot) -> [int, str]:
-        for i in range(len(self.schedule.schedule)-1):
-            line = self.schedule.schedule[i]
-            logger.debug("found line %s", line.__str__(), sender="RoundRobinTDMAScheduler")
-            if line[1] in self.actuators:  # is control line
-                if line[0] > last_control_slot:  # is next control line
-                    return [line[0], line[1]]
-        return None
-
-
-class TDMAGreedyWaitingTime(Scheduler):
-    def __init__(self, devices: [], sensors: [], actuators: [], timeslots: int):
-        super(TDMAGreedyWaitingTime, self).__init__(devices, timeslots)
-
-    def next_schedule(self, observation) -> Schedule:
-        pass
-
-
-# class CSMAGreedyWaitingTime(Scheduler):
-#   def __init__(self):
-#      pass
-
-    #def next_schedule(self, observation, last_reward) -> Schedule:
-        #pass
-
-
 class TDMASchedule(Schedule):
     """
-        A TDMA Schedule implementation. In every timeslot one single device will be allowed to send. 
-        If multiple consecutive timeslots are assigned to the same device, 
-        the device won't be written down a second time but the time in the next line will be increased 
+        A TDMA Schedule implementation. In every timeslot one single device will be allowed to send.
+        If multiple consecutive timeslots are assigned to the same device,
+        the device won't be written down a second time but the time in the next line will be increased
         by the amount of the consecutive timeslots
     """
     def __init__(self, action):
         super(TDMASchedule, self).__init__(action)
         last_action = None
-        for i in range(len(self.action)):            
+        for i in range(len(self.action)):
             if self.action[i] != last_action:
                 self.schedule.append([i+1, self.action[i][0],
                                      self.action[i][1], 1])
@@ -197,6 +135,150 @@ class CSMASchedule(Schedule):
 
     def get_end_time(self):
         return self.length
+
+
+class Scheduler:
+    """
+        A framework for a Scheduler class, which will produce channel allocation schedules
+    """
+    def __init__(self, devices, actuators, timeslots: int):
+        """
+        Args:
+            devices: a list of MAC adresses which should be considered while producing a schedule
+            int timeslots: the number of timeslots for which scheduling decisions should be taken
+        """
+        self.devices = devices  # list of sensor/controller mac addresses
+        self.actuators = actuators
+        self.schedule = None  # current schedule
+        self.timeslots = timeslots  # length of schedule
+
+    def next_schedule(self, observation) -> Schedule:
+        """
+            produces the next schedule, possibly given information about the system's state. Raises a
+            NotImplementedError if not overridden by a subclass
+
+            Args:
+                observation: a representation of the observed state
+        """
+        raise NotImplementedError
+
+    def get_next_control_slot(self, last_control_slot) -> [int, str]:
+        for i in range(len(self.schedule.schedule)-1):
+            line = self.schedule.schedule[i]
+            logger.debug("found line %s", line.__str__(), sender="Scheduler")
+            if line[1] in self.actuators:  # is control line
+                if line[0] > last_control_slot:  # is next control line
+                    return [line[0], line[1]]
+        return None
+
+
+class RandomTDMAScheduler(Scheduler):
+    def __init__(self, devices: [], actuators: [], timeslots: int):
+        super(RandomTDMAScheduler, self).__init__(devices, actuators, timeslots)
+        self.action_set = self.action_set = list(itertools.permutations(range(len(devices)), timeslots))
+        self.action_size = len(self.action_set)
+
+    def next_schedule(self, observation):
+        action = []
+        devices = self.action_set[random.randrange(self.action_size)]
+        for i in range(len(devices)):
+            device = self.devices[devices[i]]
+            if device in self.actuators:
+                action.append([device, SendOrReceive.RECEIVE])
+            else:
+                action.append([device, SendOrReceive.SEND])
+        logger.debug("new schedule generated", sender="RandomTDMAScheduler")
+        self.schedule = TDMASchedule(action)
+
+
+class RoundRobinTDMAScheduler(Scheduler):
+    """
+    A implementation of the :class:`~gymwipe.networking.scheduler.Scheduler` class that realizes a round robin
+    approach. That means, that every device gets one slot in a fixed order.
+    """
+    def __init__(self, devices: [], sensors: [], actuators: [], timeslots: int):
+        super(RoundRobinTDMAScheduler, self).__init__(devices, actuators, timeslots)
+        self.sensors = sensors
+        self.nextDevice = 0 # position in device list of the first device in the next schedule
+        self.wasActuator = False
+
+    def next_schedule(self, observation=None) -> TDMASchedule:
+        """
+        Returns the next TDMA schedule. The :class:`~gymwipe.networking.scheduler.RoundRobinTDMAScheduler` doesn't
+        need an observation, since it just remembers the first next device, which should be given a timeslot and then
+        assigns a slot to the next T devices.
+        :return The generated TDMA schedule
+        """
+        action = []
+        for i in range(self.timeslots):
+            device = self.devices[self.nextDevice]
+            if device in self.actuators:
+                action.append([device, SendOrReceive.RECEIVE])
+            else:
+                action.append([device, SendOrReceive.SEND])
+            if self.nextDevice == (len(self.devices) - 1):
+                self.nextDevice = 0
+            else:
+                self.nextDevice += 1
+            
+        logger.debug("new schedule generated", sender="RoundRobinTDMAScheduler")
+        self.schedule = TDMASchedule(action)
+        return self.schedule
+
+
+class GreedyWaitingTimeTDMAScheduler(Scheduler):
+    """
+    A implementation of the :class:`~gymwipe.networking.scheduler.Scheduler` class that realizes a greedy waiting time
+    approach. That means, that the devices that waited the most slots since their last successful transmission are
+    scheduled next.
+    """
+    def __init__(self, devices: [], actuators: [], timeslots: int):
+        super(GreedyWaitingTimeTDMAScheduler, self).__init__(devices, actuators, timeslots)
+
+    def next_schedule(self, observation: list) -> TDMASchedule:
+        """
+        Returns the next TDMA Schedule, based on the given observation. The observation contains for every device
+        the amount of slots that have passed since their last successful transmission.
+        :param observation: The given observation. Needs to be an array filled with the waiting time of every device,
+        where the index represents the device's id
+        :return The generated TDMA schedule
+        """
+        action = []
+        for i in range(self.timeslots):
+            max_value = max(observation)
+            max_index = observation.index(max_value)
+            device = self.devices[max_index]
+            if device in self.actuators:
+                action.append([device, SendOrReceive.RECEIVE])
+            else:
+                action.append([device, SendOrReceive.SEND])
+            observation[max_index] = -1
+
+        logger.debug("new schedule generated", sender="TDMAGreedyWaitingTime")
+        self.schedule = TDMASchedule(action)
+        return self.schedule
+
+
+class GreedyErrorTDMAScheduler(Scheduler):
+    def __init__(self, devices: [], actuators: [], timeslots: int):
+        super(GreedyErrorTDMAScheduler, self).__init__(devices, actuators, timeslots)
+
+    def next_schedule(self, observation: list) -> TDMASchedule:
+        """
+        Returns the next TDMA Schedule, based on the given observation. The observation contains for every device
+        the computed error.
+        :param observation: The given observation. Needs to be an array filled with the error of every device,
+        where the index represents the device's id
+        :return The generated TDMA schedule
+        """
+        pass
+
+# class CSMAGreedyWaitingTime(Scheduler):
+#   def __init__(self):
+#      pass
+
+    #def next_schedule(self, observation, last_reward) -> Schedule:
+        #pass
 
 
 def csma_encode(schedule: CSMASchedule) -> int:

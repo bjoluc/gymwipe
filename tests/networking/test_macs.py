@@ -6,8 +6,8 @@ from gymwipe.baSimulation.constants import TIMESLOT_LENGTH
 from gymwipe.devices import Device
 from gymwipe.networking.attenuation_models import FsplAttenuation
 from gymwipe.networking.mac_headers import NCSMacHeader
-from gymwipe.networking.mac_layers import (ActuatorMacTDMA, GatewayMac,
-                                           SensorMacTDMA, newUniqueMacAddress, SensorMacCSMA)
+from gymwipe.networking.mac_layers import (ActuatorMac, GatewayMac,
+                                           SensorMac, newUniqueMacAddress, SensorMacCSMA)
 from gymwipe.networking.messages import Packet, Transmittable, Message, StackMessageTypes
 from gymwipe.networking.physical import FrequencyBand
 from gymwipe.control.scheduler import TDMASchedule, CSMASchedule
@@ -33,8 +33,8 @@ def my_mac_tdma(simple_phy):
     s.rrm = Device("RRM", 2, 2)
     s.rrmPhy = SimplePhy("RrmPhy", s.rrm, s.frequencyBand)
     s.rrmMac = GatewayMac("RrmMac", s.rrm, s.frequencyBand.spec, newUniqueMacAddress())
-    s.device1Mac = SensorMacTDMA("Mac", s.device1, s.frequencyBand.spec, newUniqueMacAddress())
-    s.device2Mac = SensorMacTDMA("Mac", s.device2, s.frequencyBand.spec, newUniqueMacAddress())
+    s.device1Mac = SensorMac("Mac", s.device1, s.frequencyBand.spec, newUniqueMacAddress())
+    s.device2Mac = SensorMac("Mac", s.device2, s.frequencyBand.spec, newUniqueMacAddress())
 
     s.device1Mac.ports["phy"].biConnectWith(s.device1Phy.ports["mac"])
     s.device2Mac.ports["phy"].biConnectWith(s.device2Phy.ports["mac"])
@@ -107,8 +107,8 @@ def test_sensormac(caplog, simman):
     actuator1 = Device("Actuator1", 1, 1)
     mac1 = newUniqueMacAddress()
     mac2 = newUniqueMacAddress()
-    sensor1_mac = SensorMacTDMA("Sensor1MacLayer", sensor1, FrequencyBand([FsplAttenuation]).spec, mac1)
-    controller1_mac = ActuatorMacTDMA("Actuator1MacLayer", actuator1, FrequencyBand([FsplAttenuation]).spec, mac2)
+    sensor1_mac = SensorMac("Sensor1MacLayer", sensor1, FrequencyBand([FsplAttenuation]).spec, mac1)
+    controller1_mac = ActuatorMac("Actuator1MacLayer", actuator1, FrequencyBand([FsplAttenuation]).spec, mac2)
 
     message_type = bytearray(1)
     message_type[0] = 0  # schedule
@@ -131,7 +131,7 @@ def test_actuator_mac_sending(caplog, simman):
     frequency_band = FrequencyBand([FsplAttenuation])
     actuator1 = Device("Actuator1", 1, 1)
     mac1 = newUniqueMacAddress()
-    actuator1_mac = ActuatorMacTDMA("Actuator1MacLayer", actuator1, frequency_band.spec, mac1)
+    actuator1_mac = ActuatorMac("Actuator1MacLayer", actuator1, frequency_band.spec, mac1)
     actuator1_phy = SimplePhy("GW phy", actuator1, frequency_band)
     actuator1_mac.ports["phy"].biConnectWith(actuator1_phy.ports["mac"])
 
@@ -158,7 +158,7 @@ def test_actuator_mac(caplog, simman):
 
     actuator1 = Device("Actuator1", 1, 1)
     mac1 = newUniqueMacAddress()
-    actuator1_mac = ActuatorMacTDMA("Actuator1MacLayer", actuator1, FrequencyBand([FsplAttenuation]).spec, mac1)
+    actuator1_mac = ActuatorMac("Actuator1MacLayer", actuator1, FrequencyBand([FsplAttenuation]).spec, mac1)
     mac2 = newUniqueMacAddress()
 
     controlsendingtype = bytearray(1)
@@ -195,7 +195,7 @@ def test_sending_tdma(caplog, my_mac_tdma):
             endtime = time + (endslot * TIMESLOT_LENGTH)
             yield SimMan.timeoutUntil(endtime)
 
-    def receiver(mac_layer: SensorMacTDMA):
+    def receiver(mac_layer: SensorMac):
         # receive forever
         i = 1
         while True:

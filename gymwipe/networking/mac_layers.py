@@ -14,7 +14,7 @@ from gymwipe.networking.messages import (Message, Packet, StackMessageTypes,
 from gymwipe.networking.physical import BpskMcs, FrequencyBandSpec
 from gymwipe.simtools import Notifier, SimMan, SimTimePrepender
 
-from gymwipe.baSimulation.constants import TIMESLOT_LENGTH
+from gymwipe.baSimulation.constants import TIMESLOT_LENGTH, ProtocolType, PROTOCOL, Configuration
 
 logger = SimTimePrepender(logging.getLogger(__name__))
 
@@ -33,7 +33,7 @@ def newUniqueMacAddress() -> bytes:
         return bytes(addr)
 
 
-class SensorMacTDMA(Module):
+class SensorMac(Module):
     """
         A sensor's mac layer implementation using a :class:`~gymwipe.control.scheduler.TDMASchedule` object.
         It sends its most recent sensordata if the next timeslot is reserved according to the schedule.
@@ -41,20 +41,29 @@ class SensorMacTDMA(Module):
     """
 
     @GateListener.setup
-    def __init__(self, name: str, device: Device,frequencyBandSpec: FrequencyBandSpec, addr: bytes):
-        super(SensorMacTDMA, self).__init__(name, owner=device)
+    def __init__(self, name: str, device: Device,frequencyBandSpec: FrequencyBandSpec, addr: bytes,
+                 configuration: Configuration):
+        super(SensorMac, self).__init__(name, owner=device)
         self._addPort("phy")
         self._addPort("network")
+
+        self.configuration = configuration
+
         self.addr = addr
         self._schedule = None
         self._lastDatapacket = None
         self._nScheduleAdded = Notifier("new schedule received", self)
-        self._nScheduleAdded.subscribeProcess(self._senddata, queued=False)
+        self._nScheduleAdded.subscribeProcess(self._send_data, queued=False)
         self._transmissionPower = 0.0 # dBm
         self._mcs = BpskMcs(frequencyBandSpec)
         self._receiving = True
         self.gateway_address = None
         self._network_cmd: Message = None
+
+        self._nNewP = Notifier("new p received", self)
+        self._nNewP.subscribeProcess(self._send_data, queued=False)
+
+        self._next_receive_time = 0
         """
         The most recent clock signal sent by the gateway. Is sent within a scheduling Packet.
         """
@@ -65,23 +74,43 @@ class SensorMacTDMA(Module):
     def phyInGateListener(self, packet: Packet):
 
         if self._receiving is True:
-            logger.debug("received a packet from phy, am in receiving mode", sender=self)
-            header = packet.header
-            if not isinstance(header, NCSMacHeader):
-                raise ValueError("Can only deal with header of type NCSMacHeader. Got %s.", type(header))
-            if header.type[0] == 0: # received schedule from gateway
-                self._schedule = packet.payload.value
-                trailer = packet.trailer.value
-                self._lastGatewayClock = trailer
-                logger.debug("gateway clock is %f", self._lastGatewayClock, sender=self)
-                self.gateway_address = header.sourceMAC
-                self._nScheduleAdded.trigger(packet)
-                schedulestr = self._schedule.get_string()
-                logger.debug("received a schedule: gateway clock: %s schedule: %s", self._lastGatewayClock.__str__(),
-                             schedulestr, sender=self)
-                # TODO: save csi, given by phy
-            else:
-                pass
+            if self.configuration.protocol_type == ProtocolType.TDMA:
+                logger.debug("received a packet from phy, am in receiving mode", sender=self)
+                header = packet.header
+                if not isinstance(header, NCSMacHeader):
+                    raise ValueError("Can only deal with header of type NCSMacHeader. Got %s.", type(header))
+                if header.type[0] == 0: # received schedule from gateway
+                    self._schedule = packet.payload.value
+                    trailer = packet.trailer.value
+                    self._lastGatewayClock = trailer
+                    logger.debug("gateway clock is %f", self._lastGatewayClock, sender=self)
+                    self.gateway_address = header.sourceMAC
+                    self._nScheduleAdded.trigger(packet)
+                    schedulestr = self._schedule.get_string()
+                    logger.debug("received a schedule: gateway clock: %s schedule: %s", self._lastGatewayClock.__str__(),
+                                 schedulestr, sender=self)
+                    # TODO: save csi, given by phy
+                else:
+                    pass
+            elif self.configuration.protocol_type == ProtocolType.CSMA:
+                logger.debug("received a packet from phy, am in receiving mode", sender=self)
+                header = packet.header
+                if not isinstance(header, NCSMacHeader):
+                    raise ValueError("Can only deal with header of type NCSMacHeader. Got %s.", type(header))
+                if header.type[0] == 0:  # received schedule from gateway
+                    schedule = packet.payload.value
+                    if not isinstance(schedule, CSMASchedule):
+                        raise ValueError("Can only deal with schedule of type CSMASchedule. Got %s.", type(schedule))
+                    logger.debug("received new p value", sender=self)
+                    self._lastGatewayClock = packet.trailer.value
+                    logger.debug("gateway clock is %f", self._lastGatewayClock, sender=self)
+                    self._next_receive_time = schedule.get_end_time()
+                    self.gateway_address = header.sourceMAC
+                    self._nNewP.trigger(schedule.get_my_p(self.addr))
+
+                    # TODO: save csi, given by phy
+                else:
+                    pass
         else:
             logger.debug("received a packet from phy, but not in receiving mode. packet ignored", sender=self)
             pass
@@ -101,98 +130,6 @@ class SensorMacTDMA(Module):
                 self._lastDatapacket = datapacket
                 logger.debug("%s received new sensordata: %s , saved it", self, data)
 
-    def _stopReceiving(self):
-        logger.debug("%s: Stopping to receive.", self)
-        self._receiving = False
-
-    def _start_receiving(self):
-        logger.debug("%s: Starting to receive.", self)
-        self._receiving = True
-
-    def _senddata(self, packet: Packet):
-        self._stopReceiving()
-        relevant_span = self._schedule.get_next_relevant_timespan(self.addr, 0)
-        while relevant_span is not None:
-            logger.debug("%s: next relevant timespan is [%d, %d]", self, relevant_span[0], relevant_span[1])
-            for i in range(relevant_span[0], relevant_span[1]):
-                yield SimMan.timeoutUntil(self._lastGatewayClock + i*TIMESLOT_LENGTH)
-                # TODO: put csi in packet
-                send_cmd = Message(
-                    StackMessageTypes.SEND, {
-                        "packet": self._lastDatapacket,
-                        "power": self._transmissionPower,
-                        "mcs": self._mcs
-                    }
-                )
-                self.gates["phyOut"].send(send_cmd)
-                logger.debug("Transmitting data. Schedule timestep %d", i, sender=self)
-                yield send_cmd.eProcessed
-                self._network_cmd.setProcessed()
-            relevant_span = self._schedule.get_next_relevant_timespan(self.addr, relevant_span[1])
-        self._start_receiving()
-
-
-class SensorMacCSMA(Module):
-    @GateListener.setup
-    def __init__(self, name: str, device: Device, frequencyBandSpec: FrequencyBandSpec, addr: bytes):
-        super(SensorMacCSMA, self).__init__(name, owner=device)
-        self._addPort("phy")
-        self._addPort("network")
-        self.addr = addr
-        self._next_receive_time = 0
-        self._lastDatapacket = None
-        self._schedulecsi = 0.0
-        self._transmissionPower = 0.0  # dBm
-        self._mcs = BpskMcs(frequencyBandSpec)
-        self._receiving = True
-        self.gateway_address = None
-        self._gateway_clock = 0
-        self._network_cmd: Message = None
-        self._nNewP = Notifier("new p received", self)
-        self._nNewP.subscribeProcess(self._send_data, queued=False)
-        logger.debug("Initialization completed, MAC address: %s", self.addr, sender=self)
-
-    @GateListener("phyIn", Packet)
-    def phyInGateListener(self, packet: Packet):
-
-        if self._receiving is True:
-            logger.debug("received a packet from phy, am in receiving mode", sender=self)
-            header = packet.header
-            if not isinstance(header, NCSMacHeader):
-                raise ValueError("Can only deal with header of type NCSMacHeader. Got %s.", type(header), sender=self)
-            if header.type[0] == 0:  # received schedule from gateway
-                schedule = packet.payload.value
-                if not isinstance(schedule, CSMASchedule):
-                    raise ValueError("Can only deal with schedule of type CSMASchedule. Got %s.", type(schedule))
-                logger.debug("received new p value", sender=self)
-                self._gateway_clock = packet.trailer.value
-                logger.debug("gateway clock is %f", self._gateway_clock, sender=self)
-                self._next_receive_time = schedule.get_end_time()
-                self.gateway_address = header.sourceMAC
-                self._nNewP.trigger(schedule.get_my_p(self.addr))
-
-                # TODO: save csi, given by phy
-            else:
-                pass
-        else:
-            logger.debug("received a packet from phy, but not in receiving mode. packet ignored", sender=self)
-            pass
-
-    @GateListener("networkIn", Message)
-    def networkInGateListener(self, cmd):
-        if isinstance(cmd, Message):
-            if cmd.type is StackMessageTypes.SEND:
-                self._network_cmd = cmd
-                data = cmd.args["state"]
-                sensorsendingtype = bytearray(1)
-                sensorsendingtype[0] = 1
-                datapacket = Packet(
-                    NCSMacHeader(bytes(sensorsendingtype), self.addr),
-                    Transmittable(data)
-                )
-                self._lastDatapacket = datapacket
-                logger.debug("%s received new sensordata: %s , saved it", self, data)
-
     def _stop_receiving(self):
         logger.debug("%s: Stopping to receive.", self)
         self._receiving = False
@@ -201,22 +138,15 @@ class SensorMacCSMA(Module):
         logger.debug("%s: Starting to receive.", self)
         self._receiving = True
 
-    def _send_data(self, p):
-        logger.debug("my p is %f", p, sender=self)
-        current_slot = 1
-        while current_slot < self._next_receive_time:
-            yield SimMan.timeoutUntil(self._gateway_clock + current_slot*TIMESLOT_LENGTH)
-            ask_cmd = Message(
-                StackMessageTypes.ISRECEIVING
-            )
-            self.gates["phyOut"].send(ask_cmd)
-            channel_blocked = yield ask_cmd.eProcessed
-            if not channel_blocked:
-                logger.debug("channel is free", sender=self)
-                decide = random.random()
-                if decide <= p: # send
-                    logger.debug("will send now, decide value was %f", decide, sender=self)
-                    self._stop_receiving()
+    def _send_data(self, arg):
+        if self.configuration.protocol_type == ProtocolType.TDMA:
+            self._stop_receiving()
+            relevant_span = self._schedule.get_next_relevant_timespan(self.addr, 0)
+            while relevant_span is not None:
+                logger.debug("%s: next relevant timespan is [%d, %d]", self, relevant_span[0], relevant_span[1])
+                for i in range(relevant_span[0], relevant_span[1]):
+                    yield SimMan.timeoutUntil(self._lastGatewayClock + i*TIMESLOT_LENGTH)
+                    # TODO: put csi in packet
                     send_cmd = Message(
                         StackMessageTypes.SEND, {
                             "packet": self._lastDatapacket,
@@ -225,28 +155,60 @@ class SensorMacCSMA(Module):
                         }
                     )
                     self.gates["phyOut"].send(send_cmd)
-                    logger.debug("Transmitting data. Schedule timestep %d", current_slot, sender=self)
+                    logger.debug("Transmitting data. Schedule timestep %d", i, sender=self)
                     yield send_cmd.eProcessed
-                    self._start_receiving()
                     self._network_cmd.setProcessed()
-                else: # dont send
-                    logger.debug("Passing this timestep. Schedule timestep %d", current_slot, sender=self)
+                relevant_span = self._schedule.get_next_relevant_timespan(self.addr, relevant_span[1])
+            self._start_receiving()
+        elif self.configuration.protocol_type == ProtocolType.CSMA:
+            logger.debug("my p is %f", arg, sender=self)
+            current_slot = 1
+            while current_slot < self._next_receive_time:
+                yield SimMan.timeoutUntil(self._lastGatewayClock + current_slot * TIMESLOT_LENGTH)
+                ask_cmd = Message(
+                    StackMessageTypes.ISRECEIVING
+                )
+                self.gates["phyOut"].send(ask_cmd)
+                channel_blocked = yield ask_cmd.eProcessed
+                if not channel_blocked:
+                    logger.debug("channel is free", sender=self)
+                    decide = random.random()
+                    if decide <= arg:  # send
+                        logger.debug("will send now, decide value was %f", decide, sender=self)
+                        self._stop_receiving()
+                        send_cmd = Message(
+                            StackMessageTypes.SEND, {
+                                "packet": self._lastDatapacket,
+                                "power": self._transmissionPower,
+                                "mcs": self._mcs
+                            }
+                        )
+                        self.gates["phyOut"].send(send_cmd)
+                        logger.debug("Transmitting data. Schedule timestep %d", current_slot, sender=self)
+                        yield send_cmd.eProcessed
+                        self._start_receiving()
+                        self._network_cmd.setProcessed()
+                    else:  # dont send
+                        logger.debug("Passing this timestep. Schedule timestep %d", current_slot, sender=self)
 
-            else:
-                logger.debug("channel is not free", sender=self)
-            current_slot += 1
+                else:
+                    logger.debug("channel is not free", sender=self)
+                current_slot += 1
 
 
-class ActuatorMacTDMA(Module):
+class ActuatorMac(Module):
     """
         An actuator's mac layer implementation using a :class:`~gymwipe.control.scheduler.TDMASchedule` object.
     """
 
     @GateListener.setup
-    def __init__(self, name: str, device: Device, frequencyBandSpec: FrequencyBandSpec, addr: bytes):
-        super(ActuatorMacTDMA, self).__init__(name, owner=device)
+    def __init__(self, name: str, device: Device, frequencyBandSpec: FrequencyBandSpec, addr: bytes,
+                 configuration: Configuration):
+        super(ActuatorMac, self).__init__(name, owner=device)
         self._addPort("phy")
         self._addPort("network")
+
+        self.configuration = configuration
         self.addr = addr
         self._mcs = BpskMcs(frequencyBandSpec)
         self._transmissionPower = 0.0 # dBm
@@ -314,11 +276,17 @@ class GatewayMac(Module):
     """
 
     @GateListener.setup
-    def __init__(self, name: str, device: Device, frequencyBandSpec: FrequencyBandSpec, addr: bytes):
+    def __init__(self, name: str,
+                 device: Device,
+                 frequencyBandSpec: FrequencyBandSpec,
+                 addr: bytes,
+                 configuration: Configuration):
         super(GatewayMac, self).__init__(name, owner=device)
         self._addPort("phy")
         self._addPort("network")
         self.addr = addr
+
+        self.configuration = configuration
 
         self._mcs = BpskMcs(frequencyBandSpec)
         self._transmissionPower = 0.0 # dBm

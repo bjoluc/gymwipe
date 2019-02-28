@@ -26,7 +26,7 @@ def test_gateway(caplog, simman):
     frequency_band = FrequencyBand([FsplAttenuation])
 
     for i in range(c.NUM_PLANTS):
-        np.random.seed(c.POSITION_SEED)
+        np.random.seed(c.SEED)
         plant = StateSpacePlant(2, 1, c.PLANT_SAMPLE_TIME, name="Plant" + i.__str__())
         plants.append(plant)
         controller = plant.generate_controller()
@@ -57,7 +57,7 @@ def test_sensor(caplog, simman):
     controllers = []
     frequency_band = FrequencyBand([FsplAttenuation])
     for i in range(c.NUM_PLANTS):
-        np.random.seed(c.POSITION_SEED)
+        np.random.seed(c.SEED)
         plant = StateSpacePlant(2, 1, c.PLANT_SAMPLE_TIME, name="Plant" + i.__str__())
         plants.append(plant)
         controller = plant.generate_controller()
