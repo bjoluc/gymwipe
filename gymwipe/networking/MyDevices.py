@@ -32,9 +32,12 @@ class Control:
         self.controller_id_to_latest_state = {}
         self.controller_id_to_latest_state_slot = {}
         self.controller_id_to_latest_u = {}
+        self.controller_id_to_estimated_state = {}
         for i in range(len(self.controller_id_to_plant)):
             plant: StateSpacePlant = self.controller_id_to_plant[i]
             self.controller_id_to_latest_state[i] = plant.state
+            self.controller_id_to_estimated_state[i] = [plant.state]
+            # TODO: fill estimated state slots
             self.controller_id_to_latest_state_slot[i] = 0
             self.controller_id_to_latest_u[i] = 0.0
         self.sensor_id_to_controller_id = sensor_id_to_controller_id
@@ -318,7 +321,7 @@ class Gateway(GatewayDevice):
             if self.configuration.protocol_type == ProtocolType.TDMA:
                 self.scheduler = RoundRobinTDMAScheduler(list(self.deviceIndexToMacDict.values()), self.sensor_macs,
                                                          self.actuator_macs,
-                                                         self.schedule_timeslots)
+                                                         self.configuration.schedule_length)
                 logger.debug("RoundRobinTDMAScheduler created", sender=self)
             elif self.configuration.protocol_type == ProtocolType.CSMA:
                 pass
@@ -332,7 +335,7 @@ class Gateway(GatewayDevice):
         elif self.configuration.scheduler_type == SchedulerType.DQN:
             if self.configuration.protocol_type == ProtocolType.TDMA:
                 self.scheduler = DQNTDMAScheduler(list(self.deviceIndexToMacDict.values()), self.sensor_macs,
-                                                  self.actuator_macs, self.schedule_timeslots)
+                                                  self.actuator_macs, self.configuration.schedule_length)
                 logger.debug("DQNTDMAScheduler created", sender=self)
             elif self.configuration.protocol_type == ProtocolType.CSMA:
                 pass
@@ -340,7 +343,7 @@ class Gateway(GatewayDevice):
         elif self.configuration.scheduler_type == SchedulerType.RANDOM:
             if self.configuration.protocol_type == ProtocolType.TDMA:
                 self.scheduler = RandomTDMAScheduler(list(self.deviceIndexToMacDict.values()), self.actuator_macs,
-                                                     self.schedule_timeslots)
+                                                     self.configuration.schedule_length)
                 logger.debug("RandomTDMA Scheduler created")
             elif self.configuration.protocol_type == ProtocolType.CSMA:
                 pass
@@ -349,7 +352,7 @@ class Gateway(GatewayDevice):
             if self.configuration.protocol_type == ProtocolType.TDMA:
                 self.scheduler = GreedyWaitingTimeTDMAScheduler(list(self.deviceIndexToMacDict.values()),
                                                                 self.actuator_macs,
-                                                                self.schedule_timeslots)
+                                                                self.configuration.schedule_length)
                 logger.debug("Greedy waiting time TDMA Scheduler created")
             elif self.configuration.protocol_type == ProtocolType.CSMA:
                 pass
@@ -358,12 +361,13 @@ class Gateway(GatewayDevice):
         if PROTOCOL == ProtocolType.TDMA:
             logger.debug("protocol is TDMA", sender=self)
             if isinstance(self.scheduler, RoundRobinTDMAScheduler):  # Round Robin
+                logger.debug("scheduler is round robin scheduler", sender=self)
                 avgloss = []
-                for i in range(EPISODES):
+                for i in range(self.configuration.episodes):
                     logger.debug("starting episode %d", i, sender=self)
                     start = time.time()
                     cum_loss = 0
-                    for t in range(T):
+                    for t in range(self.configuration.horizon):
                         schedule = self.scheduler.next_schedule()
                         self.last_schedule_creation = SimMan.now
                         send_cmd = Message(
@@ -380,7 +384,7 @@ class Gateway(GatewayDevice):
                         reward = self.interpreter.getReward()
                         cum_loss += -reward
                     logger.debug("episode %d is done", i, sender=self)
-                    avgloss.append(cum_loss / T)
+                    avgloss.append(cum_loss / self.configuration.horizon)
                     end_time = time.time()
                     for p in range(len(self.control.controller_id_to_plant)):
                         plant = self.control.controller_id_to_plant[p]
@@ -388,8 +392,11 @@ class Gateway(GatewayDevice):
                     self.simulatedSlot = 0
                     self.control.reset()
                     self.interpreter.reset()
-                    info = [i, end_time-start, cum_loss/T]
-                    logger.debug("episode %d done. Average loss is %f", i, cum_loss/T)
+                    self.scheduler = RoundRobinTDMAScheduler(list(self.deviceIndexToMacDict.values()), self.sensor_macs,
+                                                             self.actuator_macs,
+                                                             self.configuration.schedule_length) # to reset scheduler
+                    info = [i, end_time-start, cum_loss/self.configuration.horizon]
+                    logger.debug("episode %d done. Average loss is %f", i, cum_loss/self.configuration.horizon)
                     if self.episode_done_event is not None:
                         self.episode_done_event.trigger(info)
 
@@ -397,7 +404,7 @@ class Gateway(GatewayDevice):
                     self.done_event.trigger(avgloss)
 
             elif isinstance(self.scheduler, DQNTDMAScheduler):
-                logger.debug("starting dqn process", sender=self)
+                logger.debug("scheduler is dqn scheduler", sender=self)
                 avgloss = []
                 for e in range(self.configuration.episodes):
                     logger.debug("starting episode %d", e, sender=self)
@@ -566,8 +573,9 @@ class MyInterpreter(Interpreter):
         :return: The computed reward
         """
 
-        reward = 0.0  # paper scheduler
-        if self.configuration.scheduler_type == SchedulerType.DQN:
+        reward = [[0.0]]  # paper scheduler
+        if self.configuration.scheduler_type == SchedulerType.DQN or \
+                self.configuration.scheduler_type == SchedulerType.ROUNDROBIN:
             id_to_plant = self.gateway.control.controller_id_to_plant
             for i in range(len(id_to_plant)):
                 plant: StateSpacePlant = id_to_plant[i]

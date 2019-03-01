@@ -1,4 +1,4 @@
-
+import os
 import logging
 import time
 import numpy as np
@@ -12,6 +12,8 @@ import matplotlib.pyplot as plt
 
 logger = SimTimePrepender(logging.getLogger(__name__))
 
+savepath = 'simulationresults/'
+folder = ""
 plants = []
 controllers = []
 sensors = []
@@ -19,7 +21,6 @@ sensormacs = []
 actuators = []
 actuatormacs = []
 gateway = None
-SimMan.init()
 is_done = False
 savestring = ""
 episode_results_save = None
@@ -39,7 +40,7 @@ def done(msg):
     plt.plot(range(1, config.episodes + 1), avgloss)
     plt.xlabel('Episode')
     plt.ylabel('Empiricial Average Loss')
-    picstr = "average_loss_" + savestring + ".png"
+    picstr = os.path.join(savepath, folder, "average_loss_" + savestring + ".png")
     plt.savefig(picstr)
     plt.close()
     logger.debug("Simulation is done, loss array is %s", avgloss.__str__(), sender="environment")
@@ -52,13 +53,13 @@ def done(msg):
             plt.plot(range(0, len(outputs)), outputs)
             plt.xlabel('timestep')
             plt.ylabel('sensed output')
-            sensorstr = "Sensor_" + str(i) + "_" + savestring + ".png"
+            sensorstr = os.path.join(savepath, folder, "Sensor_" + str(i) + "_" + savestring + ".png")
             plt.savefig(sensorstr)
             plt.close()
             plt.plot(range(0, len(outputs)), outputs)
             plt.xlabel('timestep')
             plt.ylabel('input')
-            sensorstr = "Actuator_" + str(i) + "_" + savestring + ".png"
+            sensorstr = os.path.join(savepath, folder, "Actuator_" + str(i) + "_" + savestring + ".png")
             plt.savefig(sensorstr)
             plt.close()
     episode_results_save.close()
@@ -66,6 +67,25 @@ def done(msg):
 
     global is_done
     is_done = True
+
+
+def reset_env():
+    global plants
+    plants = []
+    global controllers
+    controllers = []
+    global sensors
+    sensors = []
+    global sensormacs
+    sensormacs = []
+    global actuators
+    actuators = []
+    global actuatormacs
+    actuatormacs = []
+    global gateway
+    gateway = None
+    global is_done
+    is_done = False
 
 
 def episode_done(info):
@@ -90,19 +110,32 @@ def initialize(configuration: Configuration):
     the gateway. The parameters like the amount of plants, used protocol and scheduler, schedule length (for TDMA
     ) are defined in the module :mod:`~gymwipe.baSimulation.constants`
     """
+    SimMan.init()
+    timestamp = int(time.time())
     global savestring
-    savestring = "scheduler_{}_protocol_{}_plants_{}_length_{}_seed_{}_{}.txt".format(configuration.scheduler_type,
-                                                                                  configuration.protocol_type,
-                                                                                  configuration.num_plants,
-                                                                                  configuration.schedule_length,
-                                                                                  configuration.seed,
-                                                                                  int(time.time()))
+    global folder
+    folder = "{}/{}/{}/".format(configuration.protocol_type.name, configuration.scheduler_type.name, timestamp)
+    savestring = "{}_{}_plants_{}_length_{}_seed_{}_{}.txt".format(configuration.scheduler_type.name,
+                                                                   configuration.protocol_type.name,
+                                                                   configuration.num_plants,
+                                                                   configuration.schedule_length,
+                                                                   configuration.seed,
+                                                                   timestamp)
     global episode_results_save
-    episode_results_save = open("results_" + savestring, "w")
+    complete_name = os.path.join(savepath, folder, "results_" + savestring)
+    os.makedirs(os.path.dirname(complete_name), exist_ok=True)
+    episode_results_save = open(complete_name, "w")
+
     global loss_save
-    loss_save = open("episode_loss_" + savestring, "w")
+    complete_name = os.path.join(savepath, folder, "episode_loss_" + savestring)
+    os.makedirs(os.path.dirname(complete_name), exist_ok=True)
+    loss_save = open(complete_name, "w")
+
     global plants_save
-    plants_save = open("plant_structure_" + savestring, "w")
+    complete_name = os.path.join(savepath, folder, "plant_structure_" + savestring)
+    os.makedirs(os.path.dirname(complete_name), exist_ok=True)
+    plants_save = open(complete_name, "w")
+
     global config
     config = configuration
 
@@ -126,7 +159,7 @@ def initialize(configuration: Configuration):
         plants_save.write(plantstr)
         sensor = SimpleSensor("Sensor " + i.__str__(), round(np.random.uniform(0.0, 3), 2),
                               round(np.random.uniform(0.0, 3), 2),
-                              frequency_band, plant,configuration)
+                              frequency_band, plant, configuration)
         sensors.append(sensor)
         sensormacs.append(sensor.mac)
         actuator = SimpleActuator("Actuator" + i.__str__(), round(np.random.uniform(0.0, 3), 2),
