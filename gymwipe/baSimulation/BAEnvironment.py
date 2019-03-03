@@ -1,13 +1,18 @@
 import os
+import gc
 import logging
 import time
 import numpy as np
-from gymwipe.baSimulation.constants import Configuration
+import random
+from gymwipe.control.scheduler import RoundRobinTDMAScheduler
+
+from gymwipe.baSimulation.constants import Configuration, SchedulerType, ProtocolType
 from gymwipe.networking.attenuation_models import FsplAttenuation
+from gymwipe.networking.mac_layers import SensorMac, ActuatorMac
 from gymwipe.networking.physical import FrequencyBand
 from gymwipe.plants.state_space_plants import StateSpacePlant
 from gymwipe.simtools import SimTimePrepender, SimMan, Notifier
-from gymwipe.networking.MyDevices import SimpleSensor, SimpleActuator, Gateway
+from gymwipe.networking.MyDevices import SimpleSensor, SimpleActuator, Gateway, Control, MyInterpreter
 import matplotlib.pyplot as plt
 
 logger = SimTimePrepender(logging.getLogger(__name__))
@@ -20,13 +25,12 @@ sensors = []
 sensormacs = []
 actuators = []
 actuatormacs = []
-gateway = None
+gateway: Gateway = None
 is_done = False
 savestring = ""
 episode_results_save = None
 loss_save = None
 plants_save = None
-
 config: Configuration = None
 
 
@@ -53,17 +57,56 @@ def done(msg):
             plt.plot(range(0, len(outputs)), outputs)
             plt.xlabel('timestep')
             plt.ylabel('sensed output')
-            sensorstr = os.path.join(savepath, folder, "Sensor_" + str(i) + "_" + savestring + ".png")
+            sensorstr = os.path.join(savepath, folder, "Sensoroutputs/Sensor_" + str(i) + "_" + savestring + ".png")
+            os.makedirs(os.path.dirname(sensorstr), exist_ok=True)
             plt.savefig(sensorstr)
             plt.close()
-            plt.plot(range(0, len(outputs)), outputs)
+            plt.plot(range(0, len(inputs)), inputs)
             plt.xlabel('timestep')
             plt.ylabel('input')
-            sensorstr = os.path.join(savepath, folder, "Actuator_" + str(i) + "_" + savestring + ".png")
+            sensorstr = os.path.join(savepath, folder, "Actuatorinputs/Actuator_" + str(i) + "_" + savestring + ".png")
+            os.makedirs(os.path.dirname(sensorstr), exist_ok=True)
             plt.savefig(sensorstr)
+            plt.close()
+
+    if config.show_error_rates is True:
+        for i in range(len(sensors)):
+            sensor: SimpleSensor = sensors[i]
+            mac: SensorMac = sensor._mac
+            error = mac.error_rates
+            logger.debug("error rated for sensor %d is %s", i, error.__str__(), sender="environment")
+            plt.plot(range(0, len(error)), error)
+            plt.xlabel('received schedule')
+            plt.ylabel('error rate')
+            sensorstr = os.path.join(savepath, folder, "Sensorerror/Sensor_" + str(i) + "_errorrate_" + savestring +
+                                     ".png")
+            os.makedirs(os.path.dirname(sensorstr), exist_ok=True)
+            plt.savefig(sensorstr)
+            plt.close()
+
+            actuator: SimpleActuator = actuators[i]
+            mac: ActuatorMac = actuator._mac
+            error_schedule = mac.error_rates_schedule
+            error_control = mac.error_rates_control
+            plt.plot(range(0, len(error_schedule)), error_schedule)
+            plt.xlabel('received schedule')
+            plt.ylabel('error rate')
+            actuatorstr = os.path.join(savepath, folder,
+                                       "Actuatorerror/Actuator_" + str(i) + "_schedule_errorrate_" + savestring + ".png")
+            os.makedirs(os.path.dirname(actuatorstr), exist_ok=True)
+            plt.savefig(actuatorstr)
+            plt.close()
+            plt.plot(range(0, len(error_control)), error_control)
+            plt.xlabel('received control message')
+            plt.ylabel('error rate')
+            actuatorstr = os.path.join(savepath, folder,
+                                       "Actuatorerror/Actuator_" + str(i) + "_control_errorrate_" + savestring + ".png")
+            os.makedirs(os.path.dirname(actuatorstr), exist_ok=True)
+            plt.savefig(actuatorstr)
             plt.close()
     episode_results_save.close()
     loss_save.close()
+    gc.collect()
 
     global is_done
     is_done = True
@@ -86,14 +129,60 @@ def reset_env():
     gateway = None
     global is_done
     is_done = False
+    gc.collect()
 
 
 def episode_done(info):
+    global gateway
+    if config.scheduler_type == SchedulerType.ROUNDROBIN:
+        for i in range(len(plants)):
+            plant: StateSpacePlant = plants[i]
+            plant.reset()
+        gateway.simulatedSlot = 0
+        gateway.control.reset()
+        for i in range(len(sensors)):
+            sensor: SimpleSensor = sensors[i]
+            sensor.reset()
+
+        gateway.interpreter = MyInterpreter(config)
+        gateway.interpreter.gateway = gateway
+
+        gateway.scheduler = RoundRobinTDMAScheduler(list(gateway.deviceIndexToMacDict.values()),
+                                                    gateway.sensor_macs,
+                                                    gateway.actuator_macs,
+                                                    config.schedule_length)
+    elif config.scheduler_type == SchedulerType.DQN:
+        for i in range(len(plants)):
+            plant: StateSpacePlant = plants[i]
+            plant.reset()
+
+        gateway.simulatedSlot = 0
+        gateway.control.reset()
+        for i in range(len(sensors)):
+            sensor: SimpleSensor = sensors[i]
+            sensor.reset()
+
+        gateway.interpreter = MyInterpreter(config)
+        gateway.interpreter.gateway = gateway
+
+    elif config.scheduler_type == SchedulerType.RANDOM:
+        for i in range(len(plants)):
+            plant: StateSpacePlant = plants[i]
+            plant.reset()
+        gateway.simulatedSlot = 0
+        gateway.control.reset()
+        for i in range(len(sensors)):
+            sensor: SimpleSensor = sensors[i]
+            sensor.reset()
+
+        gateway.interpreter = MyInterpreter(config)
+        gateway.interpreter.gateway = gateway
     episode_results_save.write("episode {} finished. Duration: {:.3} mean loss: {:.2}\n".format(info[0],
                                                                                                 info[1],
                                                                                                 info[2]))
     print("episode {} finished. Duration: {:.3} mean loss: {:.2}\n".format(info[0], info[1], info[2]))
     logger.debug("episode %d finished. Duration: %f, mean loss: %f", info[0], info[1], info[2], sender="environment")
+    gc.collect()
 
 
 episode_done_event = Notifier("episode done")
@@ -115,12 +204,15 @@ def initialize(configuration: Configuration):
     global savestring
     global folder
     folder = "{}/{}/{}/".format(configuration.protocol_type.name, configuration.scheduler_type.name, timestamp)
-    savestring = "{}_{}_plants_{}_length_{}_seed_{}_{}.txt".format(configuration.scheduler_type.name,
-                                                                   configuration.protocol_type.name,
-                                                                   configuration.num_plants,
-                                                                   configuration.schedule_length,
-                                                                   configuration.seed,
-                                                                   timestamp)
+    savestring = "{}_{}_plants_{}_length_{}_seed_{}_episodes_{}_horizon_{}_{}.txt".format(
+        configuration.scheduler_type.name,
+        configuration.protocol_type.name,
+        configuration.num_plants,
+        configuration.schedule_length,
+        configuration.seed,
+        configuration.episodes,
+        configuration.horizon,
+        timestamp)
     global episode_results_save
     complete_name = os.path.join(savepath, folder, "results_" + savestring)
     os.makedirs(os.path.dirname(complete_name), exist_ok=True)
@@ -136,9 +228,28 @@ def initialize(configuration: Configuration):
     os.makedirs(os.path.dirname(complete_name), exist_ok=True)
     plants_save = open(complete_name, "w")
 
+    complete_name = os.path.join(savepath, folder, "configuration_" + savestring)
+    os.makedirs(os.path.dirname(complete_name), exist_ok=True)
+    config_save = open(complete_name, "w")
+
     global config
     config = configuration
+    configstr = "{}\n{}\ntimeslot length: {}\nepisodes: {}\nhorizon: {}\nplant sample time: {}\nsensor sample time: {}\n" \
+                "num plants: {}\nnum instable plants: {}\nschedule length: {}\nseed: {}".format(
+        config.protocol_type.name,
+        config.scheduler_type.name,
+        config.timeslot_length,
+        config.episodes,
+        config.horizon,
+        config.plant_sample_time,
+        config.sensor_sample_time,
+        config.num_plants,
+        config.num_instable_plants,
+        config.schedule_length,
+        config.seed)
 
+    config_save.write(configstr)
+    config_save.close()
     frequency_band = FrequencyBand([FsplAttenuation])
     np.random.seed(configuration.seed)
     for i in range(configuration.num_plants):
@@ -168,10 +279,13 @@ def initialize(configuration: Configuration):
         actuators.append(actuator)
         actuatormacs.append(actuator.mac)
 
+    global gateway
     gateway = Gateway(sensormacs, actuatormacs, controllers, plants, "Gateway", round(np.random.uniform(0.0, 3), 2),
                       round(np.random.uniform(0.0, 3), 2), frequency_band, reset_event, done_event,
                       episode_done_event, configuration)
     plants_save.close()
+    np.random.seed()
+    gc.collect()
 
 
 if __name__ == "__main__":

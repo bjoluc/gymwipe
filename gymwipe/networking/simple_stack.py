@@ -29,6 +29,7 @@ TIME_SLOT_LENGTH = 1e-6
 float: The length of one time slot in seconds (used for simulating slotted time)
 """
 
+
 class SimplePhy(Module):
     """
     A physical layer implementation that does not take propagation delays into
@@ -59,7 +60,7 @@ class SimplePhy(Module):
 
     @GateListener.setup
     def __init__(self, name: str, device: Device, frequencyBand: FrequencyBand):
-        super(SimplePhy, self).__init__(name , owner=device)
+        super(SimplePhy, self).__init__(name, owner=device)
         self.device = device
         self.frequencyBand = frequencyBand
         self._addPort("mac")
@@ -236,7 +237,7 @@ class SimplePhy(Module):
             self._nReceivedPowerChanges.subscribeCallback(onReceivedPowerChange)
 
             self._updateBitErrorRate(t) # Calculate initial bitErrorRate
-            
+            average_error = self._receivedBitErrorRate
             # Wait for the header to be transmitted
             yield t.eHeaderCompletes
 
@@ -249,6 +250,7 @@ class SimplePhy(Module):
                 self._currentReceiverMcs = t.mcsPayload
                 self._resetBitErrorCounter()
                 self._updateBitErrorRate(t)
+                average_error += self._receivedBitErrorRate
 
                 # Wait for the payload to be transmitted
                 yield t.eCompletes
@@ -259,8 +261,13 @@ class SimplePhy(Module):
                 
                 # Decide whether the payload could be received
                 if self._decide(self._receivedBitErrorSum, t.payloadBits, t.mcsPayload, logSubject="Payload"):
+                    average_error /= 2
                     # Send the packet via the mac gate
-                    self.gates["macOut"].send(t.packet)
+                    msg = Message(StackMessageTypes.RECEIVED, {
+                        "packet": t.packet,
+                        "error_rate": average_error
+                    })
+                    self.gates["macOut"].send(msg)
                 else:
                     logger.info("Receiving transmission payload failed for %s", t, sender=self)
             

@@ -49,6 +49,7 @@ class Configuration:
                  num_instable_plants,
                  schedule_length,
                  show_inputs_and_outputs,
+                 show_error_rates,
                  seed):
         self.scheduler_type = scheduler_type
         self.protocol_type = protocol_type
@@ -56,11 +57,13 @@ class Configuration:
         self.episodes = episodes
         self.horizon = horizon
         self.plant_sample_time = plant_sample_time
+        self.sample_to_timeslot_ratio = self.timeslot_length/self.plant_sample_time
         self.sensor_sample_time = sensor_sample_time
         self.num_plants = num_plants
         self.num_instable_plants = num_instable_plants
         self.schedule_length = schedule_length
         self.show_inputs_and_outputs = show_inputs_and_outputs
+        self.show_error_rates = show_error_rates
         self.seed = seed
 
 

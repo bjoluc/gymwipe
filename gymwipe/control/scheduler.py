@@ -117,18 +117,18 @@ class CSMASchedule(Schedule):
         super(CSMASchedule, self).__init__(action)
         self.length = length
         for i in range(len(self.action)):
-            self.schedule.append(self.action[i][0].__str__() + " " + self.action[i][1].__str__())
-        self.schedule.append(self.length.__str__())
+            self.schedule.append([self.action[i][0], self.action[i][1]])
+        self.schedule.append([self.length])
 
-        self.string = " ".join(self.schedule)
+        self.string = self.schedule.__str__()
         logger.debug("CSMA Schedule created. Content: " + self.string, sender="CSMA Schedule")
 
     def get_my_p(self, addr):
         for i in range(len(self.schedule)):
-            line = self.schedule[i].split(" ")
-            if addr.__str__() == line[0]:
-                return float(line[1])
-        return 0
+            line = self.schedule[i]
+            if addr == line[0]:
+                return line[1]
+        return 0.0
 
     def get_string(self):
         return self.string
@@ -137,7 +137,7 @@ class CSMASchedule(Schedule):
         return self.length
 
 
-class Scheduler:
+class TDMAScheduler:
     """
         A framework for a Scheduler class, which will produce channel allocation schedules
     """
@@ -172,26 +172,40 @@ class Scheduler:
         return None
 
 
-class RandomTDMAScheduler(Scheduler):
+class CSMAScheduler:
+    def __init__(self, sensors, timeslots:int):
+        self.sensors = sensors
+        self.timeslots = timeslots
+        self.sensor_schedule = None
+        self.controller_schedule = None
+
+    def next_schedule(self, observation) -> [CSMASchedule, CSMAControllerSchedule]:
+        raise NotImplementedError
+
+
+class RandomTDMAScheduler(TDMAScheduler):
     def __init__(self, devices: [], actuators: [], timeslots: int):
         super(RandomTDMAScheduler, self).__init__(devices, actuators, timeslots)
         self.action_set = self.action_set = list(itertools.permutations(range(len(devices)), timeslots))
         self.action_size = len(self.action_set)
 
-    def next_schedule(self, observation):
+    def next_schedule(self, observation=None):
         action = []
         devices = self.action_set[random.randrange(self.action_size)]
+        logger.debug("chosen devices are %s", devices.__str__(), sender=self)
         for i in range(len(devices)):
             device = self.devices[devices[i]]
             if device in self.actuators:
                 action.append([device, SendOrReceive.RECEIVE])
             else:
                 action.append([device, SendOrReceive.SEND])
-        logger.debug("new schedule generated", sender="RandomTDMAScheduler")
         self.schedule = TDMASchedule(action)
+        logger.debug("new random schedule generated, content is %s", self.schedule.schedule.__str__(),
+                     sender="RandomTDMAScheduler")
+        return self.schedule
 
 
-class RoundRobinTDMAScheduler(Scheduler):
+class RoundRobinTDMAScheduler(TDMAScheduler):
     """
     A implementation of the :class:`~gymwipe.networking.scheduler.Scheduler` class that realizes a round robin
     approach. That means, that every device gets one slot in a fixed order.
@@ -226,7 +240,7 @@ class RoundRobinTDMAScheduler(Scheduler):
         return self.schedule
 
 
-class GreedyWaitingTimeTDMAScheduler(Scheduler):
+class GreedyWaitingTimeTDMAScheduler(TDMAScheduler):
     """
     A implementation of the :class:`~gymwipe.networking.scheduler.Scheduler` class that realizes a greedy waiting time
     approach. That means, that the devices that waited the most slots since their last successful transmission are
@@ -259,7 +273,7 @@ class GreedyWaitingTimeTDMAScheduler(Scheduler):
         return self.schedule
 
 
-class GreedyErrorTDMAScheduler(Scheduler):
+class GreedyErrorTDMAScheduler(TDMAScheduler):
     def __init__(self, devices: [], actuators: [], timeslots: int):
         super(GreedyErrorTDMAScheduler, self).__init__(devices, actuators, timeslots)
 
@@ -273,12 +287,35 @@ class GreedyErrorTDMAScheduler(Scheduler):
         """
         pass
 
-# class CSMAGreedyWaitingTime(Scheduler):
-#   def __init__(self):
-#      pass
 
-    #def next_schedule(self, observation, last_reward) -> Schedule:
-        #pass
+class GreedyWaitingTimeCSMAScheduler(CSMAScheduler):
+    def __init__(self, sensors: [], timeslots: int):
+        super(GreedyWaitingTimeCSMAScheduler, self).__init__(sensors, timeslots)
+
+    def next_schedule(self, observation) -> [CSMASchedule, CSMAControllerSchedule]:
+        action_sensors = []
+        action_controllers = []
+        for i in range(len(self.sensors)):
+            pass
+
+
+class RandomCSMAScheduler(CSMAScheduler):
+    def __init__(self, sensors: [], timeslots: int):
+        super(RandomCSMAScheduler, self).__init__(sensors, timeslots)
+
+    def next_schedule(self, observation) -> [CSMASchedule, CSMAControllerSchedule]:
+        action_sensors = []
+        action_controllers = []
+        p_left = 1
+        for i in range(len(self.sensors)):
+            action_sensors.append(random.uniform(0, 1))
+            controller_p = random.uniform(0, p_left)
+            p_left -= controller_p
+            action_controllers.append(controller_p)
+        random.shuffle(action_controllers)
+        self.sensor_schedule = CSMASchedule(action_sensors, self.timeslots)
+        self.controller_schedule = CSMAControllerSchedule(action_controllers)
+        return [self.sensor_schedule, self.controller_schedule]
 
 
 def csma_encode(schedule: CSMASchedule) -> int:

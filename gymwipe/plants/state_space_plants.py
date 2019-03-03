@@ -9,7 +9,6 @@ import logging
 from gymwipe.simtools import SimTimePrepender, SimMan
 
 logger = SimTimePrepender(logging.getLogger(__name__))
-PARAM_SEED = 42
 
 
 class StateSpacePlant:

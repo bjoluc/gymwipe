@@ -3,10 +3,9 @@ import time
 from typing import Any, Dict, Tuple
 import numpy as np
 import math
-from gymwipe.baSimulation.constants import TIMESLOT_LENGTH, SCHEDULER, PROTOCOL, \
-    PLANT_SAMPLE_TIME, SENSOR_SAMPLE_TIME, SAMPLE_TO_TIMESLOT_RATIO, EPISODES, T, ProtocolType, SchedulerType, \
-    Configuration
-from gymwipe.control.scheduler import RoundRobinTDMAScheduler, RandomTDMAScheduler, GreedyWaitingTimeTDMAScheduler
+from gymwipe.baSimulation.constants import ProtocolType, SchedulerType, Configuration
+from gymwipe.control.scheduler import RoundRobinTDMAScheduler, RandomTDMAScheduler, GreedyWaitingTimeTDMAScheduler, \
+    RandomCSMAScheduler
 from gymwipe.control.paper_scheduler import DQNTDMAScheduler
 from gymwipe.envs.core import Interpreter
 from gymwipe.networking.devices import NetworkDevice
@@ -18,7 +17,6 @@ from gymwipe.networking.physical import FrequencyBand
 from gymwipe.networking.simple_stack import SimpleMac, SimplePhy
 from gymwipe.plants.state_space_plants import StateSpacePlant
 from gymwipe.simtools import SimMan, SimTimePrepender, Notifier
-from simpy.events import Event
 from filterpy.kalman import KalmanFilter
 
 logger = SimTimePrepender(logging.getLogger(__name__))
@@ -70,7 +68,7 @@ class Control:
     def getControl(self, actuator_id, hypothetical: bool):
         controller_id = self.actuator_id_to_controller_id[actuator_id]
         diff = (self.gateway.simulatedSlot - self.controller_id_to_latest_state_slot[controller_id]) * \
-               SAMPLE_TO_TIMESLOT_RATIO
+               self.gateway.configuration.sample_to_timeslot_ratio
         diff = int(diff) + 1
         estimated_state = self.estimateState(diff, controller_id)
         controller = self.controller_id_to_controller[controller_id]
@@ -253,29 +251,29 @@ class Gateway(GatewayDevice):
         self.last_schedule_creation = 0
         self.simulatedSlot = 0
 
-        controller_id_to_controller = {}
-        controller_id_to_plant = {}
-        controller_id_to_actuator_id = {}
-        sensor_id_to_controller_id = {}
+        self.controller_id_to_controller = {}
+        self.controller_id_to_plant = {}
+        self.controller_id_to_actuator_id = {}
+        self.sensor_id_to_controller_id = {}
         for i in range(len(control)):
-            controller_id_to_controller[i] = control[i]
-            controller_id_to_plant[i] = plants[i]
+            self.controller_id_to_controller[i] = control[i]
+            self.controller_id_to_plant[i] = plants[i]
         for i in range(len(sensorMACS)):
             indexToMAC[i] = sensorMACS[i]
-            sensor_id_to_controller_id[i] = i
+            self.sensor_id_to_controller_id[i] = i
 
         for i in range(len(sensorMACS), (len(sensorMACS)+len(actuatorMACS))):
             indexToMAC[i] = actuatorMACS[i-len(sensorMACS)]
-            controller_id_to_actuator_id[i - len(sensorMACS)] = i
+            self.controller_id_to_actuator_id[i - len(sensorMACS)] = i
 
         interpreter = MyInterpreter(configuration)
 
         super(Gateway, self).__init__(name, xPos, yPos, frequencyBand, indexToMAC, sensorMACS, actuatorMACS,
                                       interpreter,
-                                      Control(controller_id_to_controller,
-                                              sensor_id_to_controller_id,
-                                              controller_id_to_actuator_id,
-                                              controller_id_to_plant),
+                                      Control(self.controller_id_to_controller,
+                                              self.sensor_id_to_controller_id,
+                                              self.controller_id_to_actuator_id,
+                                              self.controller_id_to_plant),
                                       reset_event, done_event, episode_done_event, configuration)
         self.control.gateway = self
         self.interpreter.gateway = self
@@ -312,7 +310,7 @@ class Gateway(GatewayDevice):
 
     def _slotCount(self):
         while True:
-            yield SimMan.timeout(TIMESLOT_LENGTH)
+            yield SimMan.timeout(self.configuration.timeslot_length)
             self.simulatedSlot += 1
             # logger.info("simulated Slot num %d", self.simulatedSlot, sender=self)
 
@@ -346,7 +344,7 @@ class Gateway(GatewayDevice):
                                                      self.configuration.schedule_length)
                 logger.debug("RandomTDMA Scheduler created")
             elif self.configuration.protocol_type == ProtocolType.CSMA:
-                pass
+                self.scheduler = RandomCSMAScheduler(self.sensor_macs, self.configuration.schedule_length)
 
         elif self.configuration.scheduler_type == SchedulerType.GREEDYWAIT:
             if self.configuration.protocol_type == ProtocolType.TDMA:
@@ -358,7 +356,7 @@ class Gateway(GatewayDevice):
                 pass
 
     def _gateway(self):
-        if PROTOCOL == ProtocolType.TDMA:
+        if self.configuration.protocol_type == ProtocolType.TDMA:
             logger.debug("protocol is TDMA", sender=self)
             if isinstance(self.scheduler, RoundRobinTDMAScheduler):  # Round Robin
                 logger.debug("scheduler is round robin scheduler", sender=self)
@@ -377,7 +375,8 @@ class Gateway(GatewayDevice):
                             }
                         )
                         self._mac.gates["networkIn"].send(send_cmd)
-                        self.nextScheduleCreation = SimMan.now + schedule.get_end_time() * TIMESLOT_LENGTH
+                        self.nextScheduleCreation = SimMan.now + schedule.get_end_time() * \
+                                                    self.configuration.timeslot_length
                         self._n_schedule_created.trigger(schedule)
                         yield send_cmd.eProcessed
                         yield SimMan.timeoutUntil(self.nextScheduleCreation)
@@ -386,15 +385,6 @@ class Gateway(GatewayDevice):
                     logger.debug("episode %d is done", i, sender=self)
                     avgloss.append(cum_loss / self.configuration.horizon)
                     end_time = time.time()
-                    for p in range(len(self.control.controller_id_to_plant)):
-                        plant = self.control.controller_id_to_plant[p]
-                        plant.reset()
-                    self.simulatedSlot = 0
-                    self.control.reset()
-                    self.interpreter.reset()
-                    self.scheduler = RoundRobinTDMAScheduler(list(self.deviceIndexToMacDict.values()), self.sensor_macs,
-                                                             self.actuator_macs,
-                                                             self.configuration.schedule_length) # to reset scheduler
                     info = [i, end_time-start, cum_loss/self.configuration.horizon]
                     logger.debug("episode %d done. Average loss is %f", i, cum_loss/self.configuration.horizon)
                     if self.episode_done_event is not None:
@@ -414,7 +404,8 @@ class Gateway(GatewayDevice):
                     for t in range(self.configuration.horizon):
                         schedule = self.scheduler.next_schedule(observation)
                         self.last_schedule_creation = SimMan.now
-                        self.nextScheduleCreation = SimMan.now + schedule.get_end_time() * TIMESLOT_LENGTH
+                        self.nextScheduleCreation = SimMan.now + schedule.get_end_time() * \
+                                                    self.configuration.timeslot_length
                         self._n_schedule_created.trigger(schedule)
                         send_cmd = Message(
                             StackMessageTypes.SEND, {
@@ -441,20 +432,86 @@ class Gateway(GatewayDevice):
                     avg = cum_loss/self.configuration.horizon
                     avgloss.append(avg)
                     end_time = time.time()
-                    for p in range(len(self.control.controller_id_to_plant)):
-                        plant = self.control.controller_id_to_plant[p]
-                        plant.reset()
-                    self.simulatedSlot = 0
-                    self.control.reset()
-                    self.interpreter.reset()
                     info = [e, end_time-start, avg]
                     logger.debug("episode %d done. Average loss is %f", e, cum_loss/self.configuration.horizon)
 
                     self.episode_done_event.trigger(info)
                 self.done_event.trigger(avgloss)
 
+            elif isinstance(self.scheduler, RandomTDMAScheduler):
+                logger.debug("scheduler is random scheduler", sender=self)
+                avgloss = []
+                for i in range(self.configuration.episodes):
+                    logger.debug("starting episode %d", i, sender=self)
+                    start = time.time()
+                    cum_loss = 0
+                    for t in range(self.configuration.horizon):
+                        schedule = self.scheduler.next_schedule()
+                        self.last_schedule_creation = SimMan.now
+                        send_cmd = Message(
+                            StackMessageTypes.SEND, {
+                                "schedule": schedule,
+                                "clock": self.last_schedule_creation
+                            }
+                        )
+                        self._mac.gates["networkIn"].send(send_cmd)
+                        self.nextScheduleCreation = SimMan.now + schedule.get_end_time() * \
+                                                    self.configuration.timeslot_length
+                        self._n_schedule_created.trigger(schedule)
+                        yield send_cmd.eProcessed
+                        yield SimMan.timeoutUntil(self.nextScheduleCreation)
+                        reward = self.interpreter.getReward()
+                        cum_loss += -reward
+                    logger.debug("episode %d is done", i, sender=self)
+                    avgloss.append(cum_loss / self.configuration.horizon)
+                    end_time = time.time()
+                    info = [i, end_time-start, cum_loss/self.configuration.horizon]
+                    logger.debug("episode %d done. Average loss is %f", i, cum_loss/self.configuration.horizon)
+                    if self.episode_done_event is not None:
+                        self.episode_done_event.trigger(info)
+
+                if self.done_event is not None:
+                    self.done_event.trigger(avgloss)
+
+            elif isinstance(self.scheduler, GreedyWaitingTimeTDMAScheduler):
+                logger.debug("scheduler is dqn scheduler", sender=self)
+                avgloss = []
+                for e in range(self.configuration.episodes):
+                    logger.debug("starting episode %d", e, sender=self)
+                    start = time.time()
+                    observation = self.interpreter.get_first_observation()
+                    cum_loss = 0
+                    for t in range(self.configuration.horizon):
+                        schedule = self.scheduler.next_schedule(observation)
+                        self.last_schedule_creation = SimMan.now
+                        self.nextScheduleCreation = SimMan.now + schedule.get_end_time() * \
+                                                    self.configuration.timeslot_length
+                        self._n_schedule_created.trigger(schedule)
+                        send_cmd = Message(
+                            StackMessageTypes.SEND, {
+                                "schedule": schedule,
+                                "clock": self.last_schedule_creation
+                            }
+                        )
+                        self._mac.gates["networkIn"].send(send_cmd)
+                        yield send_cmd.eProcessed
+                        yield SimMan.timeoutUntil(self.nextScheduleCreation)
+                        observation = self.interpreter.getObservation()
+                        logger.debug("last observation was %s", str(observation), sender=self)
+                        reward = self.interpreter.getReward()
+                        cum_loss += -reward
+                    avg = cum_loss / self.configuration.horizon
+                    avgloss.append(avg)
+                    end_time = time.time()
+                    info = [e, end_time - start, avg]
+                    logger.debug("episode %d done. Average loss is %f", e, cum_loss / self.configuration.horizon)
+
+                    self.episode_done_event.trigger(info)
+                self.done_event.trigger(avgloss)
+
         elif self.configuration.protocol_type == ProtocolType.CSMA:
-            pass
+            if self.configuration.protocol_type == SchedulerType.GREEDYWAIT:
+                pass
 
 
 class SimpleSensor(ComplexNetworkDevice):
@@ -479,6 +536,15 @@ class SimpleSensor(ComplexNetworkDevice):
         self.outputs = []
         self.inputs = []  # just for evaluation, the sensor usually doesn't know these
 
+    def reset(self):
+        self.kalman = KalmanFilter(dim_x=2, dim_z=1)
+        self.kalman.x = self.plant.state
+        self.kalman.F = self.plant.a
+        self.kalman.H = self.c
+        self.kalman.P = self.plant.x0_cov
+        self.kalman.R = np.array([[self.plant.r_subsystem]])
+        self.kalman.Q = self.plant.q_subsystem
+
     def send(self, data):
         """
             Sends the last observed state to the mac layer
@@ -491,8 +557,9 @@ class SimpleSensor(ComplexNetworkDevice):
         while True:
             state = self.plant.get_state()
             output = self.c @ state + np.random.multivariate_normal(self.mean, self.cov)
-            self.outputs.append(output[0])
-            self.inputs.append(self.plant.control)
+            if self.configuration.show_inputs_and_outputs is True:
+                self.outputs.append(output[0])
+                self.inputs.append(self.plant.control)
             self.kalman.predict()
             self.kalman.update(output)
             # logger.info("output sampled: " + output.__str__(), sender=self)
@@ -544,7 +611,7 @@ class MyInterpreter(Interpreter):
         # TODO: action for different schedulers same?
 
         time_since_schedule = SimMan.now - self.gateway.last_schedule_creation
-        schedule_timeslot = math.trunc(time_since_schedule/TIMESLOT_LENGTH) - 1
+        schedule_timeslot = math.trunc(time_since_schedule/self.configuration.timeslot_length) - 1
         self.timestep_success[schedule_timeslot] = 1
         self.last_update[senderIndex] = self.gateway.simulatedSlot
         logger.debug("got received packet information. Sender %d sent %s", senderIndex, message.__repr__(),
@@ -560,9 +627,7 @@ class MyInterpreter(Interpreter):
         self.timestep_success = np.zeros(len(self.timestep_success), dtype=int)
 
     def onFrequencyBandAssignment(self, deviceIndex=None, duration=None):
-
-        self.timestep_success = {}
-        logger.debug("received a new schedule", sender="Interpreter")
+        pass
 
     def getReward(self) -> float:
         """
@@ -574,22 +639,21 @@ class MyInterpreter(Interpreter):
         """
 
         reward = [[0.0]]  # paper scheduler
-        if self.configuration.scheduler_type == SchedulerType.DQN or \
-                self.configuration.scheduler_type == SchedulerType.ROUNDROBIN:
-            id_to_plant = self.gateway.control.controller_id_to_plant
-            for i in range(len(id_to_plant)):
-                plant: StateSpacePlant = id_to_plant[i]
-                q = plant.q_subsystem
-                r = plant.r_subsystem
-                control_output = self.gateway.control.getControl(self.gateway.control.controller_id_to_actuator_id[i], True)
-                control = control_output[0]
-                state = control_output[1]
-                logger.debug("plant %d: last control is %s, estimated state is %s", i, control.__str__(), state.__str__(),
-                             sender="Interpreter")
-                single_reward = -(state.transpose()@q@state + control.transpose()*r*control)
-                logger.debug("single reward is %f", single_reward, sender="Interpreter")
-                reward += single_reward
-            logger.debug("computed reward is %f", reward, sender="Interpreter")
+
+        id_to_plant = self.gateway.control.controller_id_to_plant
+        for i in range(len(id_to_plant)):
+            plant: StateSpacePlant = id_to_plant[i]
+            q = plant.q_subsystem
+            r = plant.r_subsystem
+            control_output = self.gateway.control.getControl(self.gateway.control.controller_id_to_actuator_id[i], True)
+            control = control_output[0]
+            state = control_output[1]
+            logger.debug("plant %d: last control is %s, estimated state is %s", i, control.__str__(), state.__str__(),
+                         sender="Interpreter")
+            single_reward = -(state.transpose()@q@state + control.transpose()*r*control)
+            logger.debug("single reward is %f", single_reward, sender="Interpreter")
+            reward += single_reward
+        logger.debug("computed reward is %f", reward, sender="Interpreter")
         return reward[0][0]
 
     def get_first_observation(self):
@@ -599,6 +663,8 @@ class MyInterpreter(Interpreter):
         elif self.configuration.scheduler_type == SchedulerType.DQN:
             tau = np.zeros(len(self.last_update), dtype=int)
             observation = np.hstack((tau, self.timestep_success))
+        elif self.configuration.scheduler_type == SchedulerType.GREEDYWAIT:
+            observation = np.zeros(len(self.last_update), dtype=int)
         logger.debug("computed observation: %s", observation.__str__(), sender="Interpreter")
         return observation
 
@@ -616,6 +682,12 @@ class MyInterpreter(Interpreter):
             observation = []
             for i in range(len(self.gateway.deviceIndexToMacDict)):
                 pass
+        elif self.configuration.scheduler_type == SchedulerType.GREEDYWAIT:
+            current_slot = self.gateway.simulatedSlot
+            tau = np.zeros(len(self.last_update), dtype=int)
+            for i in range(len(self.last_update)):
+                tau[i] = current_slot - self.last_update[i]
+            observation = tau
         logger.debug("computed observation: %s", observation.__str__(), sender="Interpreter")
         return observation
 

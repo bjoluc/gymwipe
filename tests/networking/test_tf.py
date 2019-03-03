@@ -1,6 +1,6 @@
 import logging
 
-from gymwipe.control.scheduler import (RoundRobinTDMAScheduler, Scheduler,
+from gymwipe.control.scheduler import (RoundRobinTDMAScheduler, TDMAScheduler,
                                        TDMASchedule, tdma_encode)
 from gymwipe.control.paper_scheduler import MyDQNTDMAScheduler, MyDQNCSMAScheduler
 
