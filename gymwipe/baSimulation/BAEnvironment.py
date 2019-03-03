@@ -32,6 +32,7 @@ episode_results_save = None
 loss_save = None
 plants_save = None
 config: Configuration = None
+duration = 0.0
 
 
 def reset():
@@ -40,7 +41,10 @@ def reset():
 
 def done(msg):
     avgloss = msg
+    total_average = sum(msg)/len(msg)
     loss_save.write("{}".format(avgloss))
+    episode_results_save.write("Simulation done. Total duration: {:.3} Total average loss: {:.3}".format(duration,
+                                                                                                         total_average))
     plt.plot(range(1, config.episodes + 1), avgloss)
     plt.xlabel('Episode')
     plt.ylabel('Empiricial Average Loss')
@@ -130,6 +134,8 @@ def reset_env():
     global is_done
     is_done = False
     gc.collect()
+    global duration
+    duration = 0.0
 
 
 def episode_done(info):
@@ -180,6 +186,8 @@ def episode_done(info):
     episode_results_save.write("episode {} finished. Duration: {:.3} mean loss: {:.2}\n".format(info[0],
                                                                                                 info[1],
                                                                                                 info[2]))
+    global duration
+    duration += info[1]
     print("episode {} finished. Duration: {:.3} mean loss: {:.2}\n".format(info[0], info[1], info[2]))
     logger.debug("episode %d finished. Duration: %f, mean loss: %f", info[0], info[1], info[2], sender="environment")
     gc.collect()
@@ -234,7 +242,7 @@ def initialize(configuration: Configuration):
 
     global config
     config = configuration
-    configstr = "{}\n{}\ntimeslot length: {}\nepisodes: {}\nhorizon: {}\nplant sample time: {}\nsensor sample time: {}\n" \
+    configstr = "{}\n{}\ntimeslot length: {}\nepisodes: {}\nhorizon: {}\nplant sample time: {}\nsensor sample time: {}\nkalman reset: {}" \
                 "num plants: {}\nnum instable plants: {}\nschedule length: {}\nseed: {}".format(
         config.protocol_type.name,
         config.scheduler_type.name,
@@ -243,6 +251,7 @@ def initialize(configuration: Configuration):
         config.horizon,
         config.plant_sample_time,
         config.sensor_sample_time,
+        config.kalman_reset,
         config.num_plants,
         config.num_instable_plants,
         config.schedule_length,

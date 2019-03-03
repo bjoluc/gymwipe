@@ -255,6 +255,7 @@ class Gateway(GatewayDevice):
         self.controller_id_to_plant = {}
         self.controller_id_to_actuator_id = {}
         self.sensor_id_to_controller_id = {}
+        self.send_schedule_amount = 0
         for i in range(len(control)):
             self.controller_id_to_controller[i] = control[i]
             self.controller_id_to_plant[i] = plants[i]
@@ -287,6 +288,7 @@ class Gateway(GatewayDevice):
 
     def _schedule_handler(self, schedule):
         self.interpreter.onScheduleCreated(schedule)
+        self.send_schedule_amount += 1
         if self.configuration.protocol_type == ProtocolType.TDMA:
             last_control_slot = 0
             next_control_line = self.scheduler.get_next_control_slot(last_control_slot)
@@ -307,6 +309,8 @@ class Gateway(GatewayDevice):
                 yield send_cmd.eProcessed
                 last_control_slot = next_control_line[0]
                 next_control_line = self.scheduler.get_next_control_slot(last_control_slot)
+
+
 
     def _slotCount(self):
         while True:
@@ -344,7 +348,7 @@ class Gateway(GatewayDevice):
                                                      self.configuration.schedule_length)
                 logger.debug("RandomTDMA Scheduler created")
             elif self.configuration.protocol_type == ProtocolType.CSMA:
-                self.scheduler = RandomCSMAScheduler(self.sensor_macs, self.configuration.schedule_length)
+                self.scheduler = RandomCSMAScheduler(self.sensor_macs, self.mac, self.configuration.schedule_length)
 
         elif self.configuration.scheduler_type == SchedulerType.GREEDYWAIT:
             if self.configuration.protocol_type == ProtocolType.TDMA:
@@ -510,6 +514,44 @@ class Gateway(GatewayDevice):
                 self.done_event.trigger(avgloss)
 
         elif self.configuration.protocol_type == ProtocolType.CSMA:
+            if isinstance(self.scheduler, RandomCSMAScheduler):
+                logger.debug("scheduler is random scheduler", sender=self)
+                avgloss = []
+                for i in range(self.configuration.episodes):
+                    logger.debug("starting episode %d", i, sender=self)
+                    start = time.time()
+                    cum_loss = 0
+                    for t in range(self.configuration.horizon):
+                        schedules = self.scheduler.next_schedule()
+                        sensor_schedule = schedules[0]
+                        controller_schedule = schedules[1]
+                        self.last_schedule_creation = SimMan.now
+                        send_cmd = Message(
+                            StackMessageTypes.SEND, {
+                                "schedule": sensor_schedule,
+                                "controller_schedule": controller_schedule,
+                                "clock": self.last_schedule_creation
+                            }
+                        )
+                        self._mac.gates["networkIn"].send(send_cmd)
+                        self.nextScheduleCreation = SimMan.now + sensor_schedule.get_end_time() * \
+                                                    self.configuration.timeslot_length
+                        self._n_schedule_created.trigger(controller_schedule)
+                        yield send_cmd.eProcessed
+                        yield SimMan.timeoutUntil(self.nextScheduleCreation)
+                        reward = self.interpreter.getReward()
+                        cum_loss += -reward
+                    logger.debug("episode %d is done", i, sender=self)
+                    avgloss.append(cum_loss / self.configuration.horizon)
+                    end_time = time.time()
+                    info = [i, end_time-start, cum_loss/self.configuration.horizon]
+                    logger.debug("episode %d done. Average loss is %f", i, cum_loss/self.configuration.horizon)
+                    if self.episode_done_event is not None:
+                        self.episode_done_event.trigger(info)
+
+                if self.done_event is not None:
+                    self.done_event.trigger(avgloss)
+
             if self.configuration.protocol_type == SchedulerType.GREEDYWAIT:
                 pass
 
@@ -537,13 +579,14 @@ class SimpleSensor(ComplexNetworkDevice):
         self.inputs = []  # just for evaluation, the sensor usually doesn't know these
 
     def reset(self):
-        self.kalman = KalmanFilter(dim_x=2, dim_z=1)
-        self.kalman.x = self.plant.state
-        self.kalman.F = self.plant.a
-        self.kalman.H = self.c
-        self.kalman.P = self.plant.x0_cov
-        self.kalman.R = np.array([[self.plant.r_subsystem]])
-        self.kalman.Q = self.plant.q_subsystem
+        if self.configuration.kalman_reset:
+            self.kalman = KalmanFilter(dim_x=2, dim_z=1)
+            self.kalman.x = self.plant.state
+            self.kalman.F = self.plant.a
+            self.kalman.H = self.c
+            self.kalman.P = self.plant.x0_cov
+            self.kalman.R = np.array([[self.plant.r_subsystem]])
+            self.kalman.Q = self.plant.q_subsystem
 
     def send(self, data):
         """

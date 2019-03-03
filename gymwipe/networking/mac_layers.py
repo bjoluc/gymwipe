@@ -5,7 +5,7 @@ import logging
 import random
 from simpy.events import Event
 
-from gymwipe.control.scheduler import tdma_encode, CSMASchedule
+from gymwipe.control.scheduler import tdma_encode, CSMASchedule, CSMAControllerSchedule
 from gymwipe.devices import Device
 from gymwipe.networking.construction import GateListener, Module
 from gymwipe.networking.mac_headers import NCSMacHeader
@@ -305,43 +305,53 @@ class GatewayMac(Module):
         self._mcs = BpskMcs(frequencyBandSpec)
         self._transmissionPower = 0.0 # dBm
         self._nControlReceived = Notifier("New control message received", self)
-        self._nControlReceived.subscribeProcess(self._sendControl, queued= True)
+        self._nControlReceived.subscribeProcess(self._sendControl, queued=True)
         self._nAnnouncementReceived = Notifier("new schedule message received", self)
         self._nAnnouncementReceived.subscribeProcess(self._sendAnnouncement, queued=True)
-        self._receivingMode = False
+        self._nAnnouncementReceived.subscribeProcess(self._handle_controller_schedule)
+        self._receivingMode = True
         logger.debug("Initialization completed, MAC address: %s", self.addr, sender=self)
+
+    def _stop_receiving(self):
+        logger.debug("%s: Stopping to receive.", self)
+        self._receivingMode = False
+
+    def _start_receiving(self):
+        logger.debug("%s: Starting to receive.", self)
+        self._receivingMode = True
 
     @GateListener("phyIn", Message)
     def phyInGateListener(self, cmd: Message):
-        logger.debug("%s: received a packet", self)
-        packet = cmd.args["packet"]
-        header = packet.header
-        if not isinstance(header, NCSMacHeader):
-            raise ValueError("Can only deal with header of type NCSMacHeader. Got %s.", type(header), sender=self)
-        message_type = header.type[0]
-        if message_type == 1: #received sensordata
-            logger.debug("received sensordata from %s. data is %s", header.sourceMAC, packet.payload.value, sender=self)
-            receive_message = Message(
-                StackMessageTypes.RECEIVED, {
-                    "sender": header.sourceMAC,
-                    "state": packet.payload.value,
-                    "csisensor": "TODO",
-                    "csigateway": "TODO"
-                }
-            )
-            self.gates["networkOut"].send(receive_message)
-            # TODO: csi integration
-        if message_type == 2: #received Actuator ACK
-            logger.debug("received actuator csi from %s. csi is %s", header.sourceMAC, packet.payload.value, sender=self)
-            receive_message = Message(
-                StackMessageTypes.RECEIVED, {
-                    "sender": header.sourceMAC,
-                    "csiactuator": packet.payload.value,
-                    "csigateway": "TODO"
-                }
-            )
-            # TODO: add gateway csi
-            self.gates["networkOut"].send(receive_message)
+        if self._receivingMode is True:
+            logger.debug("%s: received a packet", self)
+            packet = cmd.args["packet"]
+            header = packet.header
+            if not isinstance(header, NCSMacHeader):
+                raise ValueError("Can only deal with header of type NCSMacHeader. Got %s.", type(header), sender=self)
+            message_type = header.type[0]
+            if message_type == 1: #received sensordata
+                logger.debug("received sensordata from %s. data is %s", header.sourceMAC, packet.payload.value, sender=self)
+                receive_message = Message(
+                    StackMessageTypes.RECEIVED, {
+                        "sender": header.sourceMAC,
+                        "state": packet.payload.value,
+                        "csisensor": "TODO",
+                        "csigateway": "TODO"
+                    }
+                )
+                self.gates["networkOut"].send(receive_message)
+                # TODO: csi integration
+            if message_type == 2: #received Actuator ACK
+                logger.debug("received actuator csi from %s. csi is %s", header.sourceMAC, packet.payload.value, sender=self)
+                receive_message = Message(
+                    StackMessageTypes.RECEIVED, {
+                        "sender": header.sourceMAC,
+                        "csiactuator": packet.payload.value,
+                        "csigateway": "TODO"
+                    }
+                )
+                # TODO: add gateway csi
+                self.gates["networkOut"].send(receive_message)
 
     @GateListener("networkIn", Message)
     def networkInGateListener(self, message: Message):
@@ -353,12 +363,53 @@ class GatewayMac(Module):
             logger.debug("%s: Got the control message %s.", self, message)
             self._nControlReceived.trigger(message)
 
+    def _handle_controller_schedule(self, message: Message):
+        if self.configuration.protocol_type == ProtocolType.CSMA:
+            controller_schedule: CSMAControllerSchedule = message.args["controller_schedule"]
+            sensor_schedule: CSMASchedule = message.args["schedule"]
+            gateway_p = sensor_schedule.get_my_p(self.addr)
+            current_slot = 1
+            while current_slot < sensor_schedule.get_end_time():
+                yield SimMan.timeoutUntil(SimMan.now + current_slot * TIMESLOT_LENGTH)
+                ask_cmd = Message(
+                    StackMessageTypes.ISRECEIVING
+                )
+                self.gates["phyOut"].send(ask_cmd)
+                channel_blocked = yield ask_cmd.eProcessed
+                if not channel_blocked:
+                    logger.debug("channel is free", sender=self)
+                    decide = random.random()
+                    if decide <= gateway_p:  # send
+                        logger.debug("will send now, decide value was %f", decide, sender=self)
+                        self._stop_receiving()
+                        controller_decide = random.randrange(0, 1)
+                        controller = controller_schedule.get_chosen_controller(controller_decide)
+                        send_cmd = Message(
+                            StackMessageTypes.SEND, {
+                                "packet": self._lastDatapacket,
+                                "power": self._transmissionPower,
+                                "mcs": self._mcs
+                            }
+                        )
+                        self.gates["phyOut"].send(send_cmd)
+                        logger.debug("Transmitting data. Schedule timestep %d", current_slot, sender=self)
+                        yield send_cmd.eProcessed
+                        self._start_receiving()
+                        self._network_cmd.setProcessed()
+                    else:  # dont send
+                        logger.debug("Passing this timestep. Schedule timestep %d", current_slot, sender=self)
+
+                else:
+                    logger.debug("channel is not free", sender=self)
+                current_slot += 1
+
     def _sendControl(self, message: Message):
         """
         Is executed by the `_nAnnouncementReceived` notifier in a blocking and
         queued way for every control Packet that is received on the `networkIn`
         gate.
         """
+        self._stop_receiving()
         control = message.args["control"]
         receiver = message.args["receiver"]
         type = bytearray(1)
@@ -378,6 +429,7 @@ class GatewayMac(Module):
         self.gates["phyOut"].send(sendCmd)
         yield sendCmd.eProcessed
         message.setProcessed()
+        self._start_receiving()
 
     def _sendAnnouncement(self, message: Message):
         """
@@ -385,6 +437,7 @@ class GatewayMac(Module):
         queued way for every schedule that is received on the `networkIn`
         gate.
         """
+        self._stop_receiving()
         schedule = message.args["schedule"]
         clock = message.args["clock"]
         type = bytearray(1)
@@ -405,3 +458,4 @@ class GatewayMac(Module):
         self.gates["phyOut"].send(sendCmd)
         yield sendCmd.eProcessed
         message.setProcessed()
+        self._start_receiving()

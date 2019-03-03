@@ -50,6 +50,7 @@ class Configuration:
                  schedule_length,
                  show_inputs_and_outputs,
                  show_error_rates,
+                 kalman_reset,
                  seed):
         self.scheduler_type = scheduler_type
         self.protocol_type = protocol_type
@@ -64,6 +65,7 @@ class Configuration:
         self.schedule_length = schedule_length
         self.show_inputs_and_outputs = show_inputs_and_outputs
         self.show_error_rates = show_error_rates
+        self.kalman_reset = kalman_reset
         self.seed = seed
 
 
