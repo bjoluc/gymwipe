@@ -18,8 +18,8 @@ def test_env_creation(caplog):
     # caplog.set_level(logging.DEBUG, logger='gymwipe.control.paper_scheduler')
     caplog.set_level(logging.DEBUG, logger='gymwipe.control.scheduler')
 
-    roundrobin_config = [Configuration(SchedulerType.RANDOM,
-                                       ProtocolType.CSMA,
+    roundrobin_config = [Configuration(SchedulerType.ROUNDROBIN,
+                                       ProtocolType.TDMA,
                                        timeslot_length=0.01,
                                        episodes=1,
                                        horizon=50,
