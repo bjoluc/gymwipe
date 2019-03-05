@@ -86,7 +86,7 @@ class CSMAControllerSchedule(Schedule):
         for i in range(len(self.action)):
             sum += action[i][1]
 
-        if round(sum, 1) is 1.0:
+        if round(sum, 1) <= 1:
             for i in range(len(self.action)):
                 self.schedule.append([self.action[i][0], self.action[i][1]])
 
@@ -95,13 +95,16 @@ class CSMAControllerSchedule(Schedule):
         else:
             logger.debug("p sum is higher than 1", sender=self)
 
-    def get_chosen_controller(self, decide:float):
+    def get_chosen_controller(self, decide: float):
         chosen_controller = None
-        controllers_p = 0.0
+        current_p = 0.0
         for i in range(len(self.schedule)):
-            current_p = self.schedule[i][1]
-            if current_p <= decide:
-                pass
+            current_p += self.schedule[i][1]
+            if decide <= current_p:
+                chosen_controller = self.schedule[i][0]
+                break
+        return chosen_controller
+
     def get_string(self):
         return self.string
 
@@ -194,7 +197,9 @@ class CSMAScheduler:
 class RandomTDMAScheduler(TDMAScheduler):
     def __init__(self, devices: [], actuators: [], timeslots: int):
         super(RandomTDMAScheduler, self).__init__(devices, actuators, timeslots)
-        self.action_set = self.action_set = list(itertools.permutations(range(len(devices)), timeslots))
+        logger.debug("given devices are %s", devices.__str__())
+        self.action_set = list(itertools.permutations(range(len(devices)), timeslots))
+        logger.debug("action set is %s", self.action_set.__str__())
         self.action_size = len(self.action_set)
 
     def next_schedule(self, observation=None):
@@ -312,18 +317,26 @@ class RandomCSMAScheduler(CSMAScheduler):
         super(RandomCSMAScheduler, self).__init__(sensors, gatewaymac, timeslots)
 
     def next_schedule(self, observation=None) -> [CSMASchedule, CSMAControllerSchedule]:
+        random.seed()
         action_sensors = []
         action_controllers = []
         p_left = 1
         for i in range(len(self.sensors)):
             action_sensors.append([self.sensors[i], random.uniform(0, 1)])
-            controller_p = random.uniform(0, p_left)
-            p_left -= controller_p
-            action_controllers.append([i, controller_p])
+            if i == (len(self.sensors)-1):
+                action_controllers.append([i, p_left])
+            else:
+                controller_p = random.uniform(0, p_left)
+                p_left -= controller_p
+                action_controllers.append([i, controller_p])
         random.shuffle(action_controllers)
         action_sensors.append([self.gatewaymac, random.uniform(0, 1)])
         self.sensor_schedule = CSMASchedule(action_sensors, self.timeslots)
         self.controller_schedule = CSMAControllerSchedule(action_controllers)
+        logger.debug("created a new schedule. Controllerschedule: %s\nSensorschedule: %s",
+                     self.controller_schedule.string,
+                     self.sensor_schedule.string,
+                     sender="RandomCSMAScheduler")
         return [self.sensor_schedule, self.controller_schedule]
 
 

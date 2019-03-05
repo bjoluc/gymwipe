@@ -51,6 +51,8 @@ class Configuration:
                  show_inputs_and_outputs,
                  show_error_rates,
                  kalman_reset,
+                 show_statistics,
+                 show_assigned_p_values,
                  seed):
         self.scheduler_type = scheduler_type
         self.protocol_type = protocol_type
@@ -66,6 +68,8 @@ class Configuration:
         self.show_inputs_and_outputs = show_inputs_and_outputs
         self.show_error_rates = show_error_rates
         self.kalman_reset = kalman_reset
+        self.show_statistics = show_statistics
+        self.show_assigned_p_values = show_assigned_p_values
         self.seed = seed
 
 

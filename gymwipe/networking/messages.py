@@ -243,3 +243,4 @@ class StackMessageTypes(Enum):
     SENDCONTROL = 3
     RECEIVED = 4
     ISRECEIVING = 5
+    GETCONTROL = 6

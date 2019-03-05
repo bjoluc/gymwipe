@@ -8,7 +8,7 @@ from gymwipe.control.scheduler import RoundRobinTDMAScheduler
 
 from gymwipe.baSimulation.constants import Configuration, SchedulerType, ProtocolType
 from gymwipe.networking.attenuation_models import FsplAttenuation
-from gymwipe.networking.mac_layers import SensorMac, ActuatorMac
+from gymwipe.networking.mac_layers import SensorMac, ActuatorMac, GatewayMac
 from gymwipe.networking.physical import FrequencyBand
 from gymwipe.plants.state_space_plants import StateSpacePlant
 from gymwipe.simtools import SimTimePrepender, SimMan, Notifier
@@ -108,7 +108,92 @@ def done(msg):
             os.makedirs(os.path.dirname(actuatorstr), exist_ok=True)
             plt.savefig(actuatorstr)
             plt.close()
-    episode_results_save.close()
+
+    if config.show_assigned_p_values is True and config.protocol_type == ProtocolType.CSMA:
+        for i in range(len(sensors)):
+            sensor: SimpleSensor = sensors[i]
+            mac: SensorMac = sensor._mac
+            ps = mac.assigned_ps
+            plt.plot(range(0, len(ps)), ps)
+            plt.xlabel('received schedule')
+            plt.ylabel('assigned p')
+            sensorstr = os.path.join(savepath, folder, "Sensor_p_values/Sensor_" + str(i) + "_p_values_" + savestring +
+                                     ".png")
+            os.makedirs(os.path.dirname(sensorstr), exist_ok=True)
+            plt.savefig(sensorstr)
+            plt.close()
+
+        gatewaymac: GatewayMac = gateway._mac
+        ps = gatewaymac.assigned_ps
+        plt.plot(range(0, len(ps)), ps)
+        plt.xlabel('received schedule')
+        plt.ylabel('assigned p')
+        sensorstr = os.path.join(savepath, folder, "Gateway_p_values/gateway_p_values_" + savestring +
+                                 ".png")
+        os.makedirs(os.path.dirname(sensorstr), exist_ok=True)
+        plt.savefig(sensorstr)
+        plt.close()
+
+    if config.show_statistics is True:
+        gateway_arrived_acks = gateway.received_ack_amount
+        gateway_arrived_data = gateway.received_data_amount
+        gateway_send_controls = gateway.send_control_amount
+        gateway_send_schedules = gateway.send_schedule_amount
+        complete_name = os.path.join(savepath, folder, "statistics_" + savestring)
+        os.makedirs(os.path.dirname(complete_name), exist_ok=True)
+        statistics_save = open(complete_name, "w")
+        statistics_save.write("GATEWAY\nMac Adresse: {}\ngesendete Schedules: {}\nerhaltene Sensordaten: \n".format(
+            gateway.mac,
+            gateway_send_schedules))
+        for i in range(len(sensors)):
+            sensor: SimpleSensor = sensors[i]
+            sensordata = gateway_arrived_data[sensor.mac]
+            statistics_save.write("\tSensor {}: {}\n".format(gateway.macToDeviceIndexDict[sensor.mac], sensordata))
+        statistics_save.write("gesendete Controls und erhaltene Acknowledgements: \n")
+        for i in range(len(actuators)):
+            actuator: SimpleActuator = actuators[i]
+            actuatoracks = gateway_arrived_acks[actuator.mac]
+            gatewaycontrols = gateway_send_controls[actuator.mac]
+            if gatewaycontrols is not 0:
+                statistics_save.write("\tActuator {}: gesendet: {} erhalten: {} ({}%)\n".format(
+                    gateway.macToDeviceIndexDict[actuator.mac],
+                    gatewaycontrols,
+                    actuatoracks,
+                    round(actuatoracks/gatewaycontrols*100)))
+            else:
+                statistics_save.write("\tActuator {}: gesendet: {} erhalten: {}\n".format(
+                    gateway.macToDeviceIndexDict[actuator.mac],
+                    gatewaycontrols,
+                    actuatoracks))
+        statistics_save.write("\n")
+        for i in range(len(sensors)):
+            sensor: SimpleSensor = sensors[i]
+            sensormaclayer: SensorMac = sensor._mac
+            received_schedules = sensormaclayer.received_schedule_count
+            send_data = sensormaclayer.send_data_count
+            statistics_save.write("SENSOR {}\nMac Adresse: {}\nerhaltene Schedules: {} ({} %)\ngesendete Daten: {}\n".format(
+                gateway.macToDeviceIndexDict[sensor.mac],
+                sensor.mac,
+                received_schedules,
+                round(received_schedules/gateway_send_schedules * 100),
+                send_data))
+            statistics_save.write("\n")
+        for i in range(len(actuators)):
+            actuator: SimpleActuator = actuators[i]
+            actuatormaclayer: ActuatorMac = actuator._mac
+            received_schedules = actuatormaclayer.schedule_received_count
+            received_controls = actuatormaclayer.control_received_count
+            send_acks = actuatormaclayer.ack_send_count
+            statistics_save.write("ACTUATOR {}\nMac Adresse: {}\nerhaltene Schedules: "
+                                  "{} ({} %)\nerhaltene Controls: {}\ngesendete Acknowledgements: {}\n\n".format(
+                gateway.macToDeviceIndexDict[actuator.mac],
+                actuator.mac,
+                received_schedules,
+                round(received_schedules / gateway_send_schedules * 100),
+                received_controls,
+                send_acks))
+        statistics_save.close()
+    # episode_results_save.close()
     loss_save.close()
     gc.collect()
 
@@ -243,7 +328,7 @@ def initialize(configuration: Configuration):
     global config
     config = configuration
     configstr = "{}\n{}\ntimeslot length: {}\nepisodes: {}\nhorizon: {}\nplant sample time: {}\nsensor sample time: {}\nkalman reset: {}" \
-                "num plants: {}\nnum instable plants: {}\nschedule length: {}\nseed: {}".format(
+                "\nnum plants: {}\nnum instable plants: {}\nschedule length: {}\nseed: {}".format(
         config.protocol_type.name,
         config.scheduler_type.name,
         config.timeslot_length,

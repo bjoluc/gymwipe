@@ -70,6 +70,9 @@ class SensorMac(Module):
         """
         self._lastGatewayClock = 0
         self.received_schedule_count = 0
+        self.send_data_count = 0
+
+        self.assigned_ps = []
         logger.debug("Initialization completed, MAC address: %s", self.addr, sender=self)
 
     @GateListener("phyIn", (Message))
@@ -103,15 +106,17 @@ class SensorMac(Module):
                 if not isinstance(header, NCSMacHeader):
                     raise ValueError("Can only deal with header of type NCSMacHeader. Got %s.", type(header))
                 if header.type[0] == 0:  # received schedule from gateway
-                    schedule = msg.payload.value
+                    schedule = msg.args["packet"].payload.value
                     if not isinstance(schedule, CSMASchedule):
                         raise ValueError("Can only deal with schedule of type CSMASchedule. Got %s.", type(schedule))
                     logger.debug("received new p value", sender=self)
-                    self._lastGatewayClock = msg.trailer.value
+                    self._lastGatewayClock = msg.args["packet"].trailer.value
                     logger.debug("gateway clock is %f", self._lastGatewayClock, sender=self)
                     self._next_receive_time = schedule.get_end_time()
                     self.gateway_address = header.sourceMAC
                     self.received_schedule_count += 1
+                    if self.configuration.show_error_rates:
+                        self.error_rates.append(msg.args["error_rate"])
                     self._nNewP.trigger(schedule.get_my_p(self.addr))
 
                     # TODO: save csi, given by phy
@@ -163,11 +168,13 @@ class SensorMac(Module):
                     self.gates["phyOut"].send(send_cmd)
                     logger.debug("Transmitting data. Schedule timestep %d", i, sender=self)
                     yield send_cmd.eProcessed
+                    self.send_data_count += 1
                     self._network_cmd.setProcessed()
                 relevant_span = self._schedule.get_next_relevant_timespan(self.addr, relevant_span[1])
             self._start_receiving()
         elif self.configuration.protocol_type == ProtocolType.CSMA:
             logger.debug("my p is %f", arg, sender=self)
+            self.assigned_ps.append(arg)
             current_slot = 1
             while current_slot < self._next_receive_time:
                 yield SimMan.timeoutUntil(self._lastGatewayClock + current_slot * TIMESLOT_LENGTH)
@@ -192,6 +199,7 @@ class SensorMac(Module):
                         self.gates["phyOut"].send(send_cmd)
                         logger.debug("Transmitting data. Schedule timestep %d", current_slot, sender=self)
                         yield send_cmd.eProcessed
+                        self.send_data_count += 1
                         self._start_receiving()
                         self._network_cmd.setProcessed()
                     else:  # dont send
@@ -225,6 +233,8 @@ class ActuatorMac(Module):
         self._n_control_received.subscribeProcess(self._sendcsi, queued=False)
         self._lastGatewayClock = 0
         self.schedule_received_count = 0
+        self.control_received_count = 0
+        self.ack_send_count = 0
         self.error_rates_schedule = []
         self.error_rates_control = []
         logger.debug("Initialization completed, MAC address: %s", self.addr, sender=self)
@@ -250,6 +260,7 @@ class ActuatorMac(Module):
                     if self.configuration.show_error_rates:
                         self.error_rates_control.append(cmd.args["error_rate"])
                     self.gates["networkOut"].send(cmd.args["packet"].payload)
+                    self.control_received_count += 1
                     self._n_control_received.trigger(cmd)
 
     @GateListener("networkIn", (Message, Packet))
@@ -273,6 +284,7 @@ class ActuatorMac(Module):
         self.gates["phyOut"].send(send_cmd)
         logger.debug("sending csi back", sender=self)
         yield send_cmd.eProcessed
+        self.ack_send_count += 1
         self._start_receiving()
 
     def _stopReceiving(self):
@@ -308,8 +320,11 @@ class GatewayMac(Module):
         self._nControlReceived.subscribeProcess(self._sendControl, queued=True)
         self._nAnnouncementReceived = Notifier("new schedule message received", self)
         self._nAnnouncementReceived.subscribeProcess(self._sendAnnouncement, queued=True)
-        self._nAnnouncementReceived.subscribeProcess(self._handle_controller_schedule)
+        self._nControlSchedulerReceived = Notifier("received control scheduler")
+        self._nControlSchedulerReceived.subscribeProcess(self._handle_controller_schedule)
         self._receivingMode = True
+
+        self.assigned_ps = []
         logger.debug("Initialization completed, MAC address: %s", self.addr, sender=self)
 
     def _stop_receiving(self):
@@ -364,44 +379,41 @@ class GatewayMac(Module):
             self._nControlReceived.trigger(message)
 
     def _handle_controller_schedule(self, message: Message):
-        if self.configuration.protocol_type == ProtocolType.CSMA:
-            controller_schedule: CSMAControllerSchedule = message.args["controller_schedule"]
-            sensor_schedule: CSMASchedule = message.args["schedule"]
-            gateway_p = sensor_schedule.get_my_p(self.addr)
-            current_slot = 1
-            while current_slot < sensor_schedule.get_end_time():
-                yield SimMan.timeoutUntil(SimMan.now + current_slot * TIMESLOT_LENGTH)
-                ask_cmd = Message(
-                    StackMessageTypes.ISRECEIVING
-                )
-                self.gates["phyOut"].send(ask_cmd)
-                channel_blocked = yield ask_cmd.eProcessed
-                if not channel_blocked:
-                    logger.debug("channel is free", sender=self)
-                    decide = random.random()
-                    if decide <= gateway_p:  # send
-                        logger.debug("will send now, decide value was %f", decide, sender=self)
-                        self._stop_receiving()
-                        controller_decide = random.randrange(0, 1)
-                        controller = controller_schedule.get_chosen_controller(controller_decide)
-                        send_cmd = Message(
-                            StackMessageTypes.SEND, {
-                                "packet": self._lastDatapacket,
-                                "power": self._transmissionPower,
-                                "mcs": self._mcs
-                            }
-                        )
-                        self.gates["phyOut"].send(send_cmd)
-                        logger.debug("Transmitting data. Schedule timestep %d", current_slot, sender=self)
-                        yield send_cmd.eProcessed
-                        self._start_receiving()
-                        self._network_cmd.setProcessed()
-                    else:  # dont send
-                        logger.debug("Passing this timestep. Schedule timestep %d", current_slot, sender=self)
+        controller_schedule: CSMAControllerSchedule = message.args["controller_schedule"]
+        sensor_schedule: CSMASchedule = message.args["schedule"]
+        gateway_p = sensor_schedule.get_my_p(self.addr)
+        logger.debug("My p is %f", gateway_p, sender=self)
+        self.assigned_ps.append(gateway_p)
+        current_slot = 1
+        while current_slot < sensor_schedule.get_end_time():
+            yield SimMan.timeoutUntil(SimMan.now + current_slot * TIMESLOT_LENGTH)
+            ask_cmd = Message(
+                StackMessageTypes.ISRECEIVING
+            )
+            self.gates["phyOut"].send(ask_cmd)
+            channel_blocked = yield ask_cmd.eProcessed
+            if not channel_blocked:
+                logger.debug("channel is free", sender=self)
+                decide = random.random()
+                if decide <= gateway_p:  # send
+                    logger.debug("will send now, decide value was %f", decide, sender=self)
+                    controller_decide = random.randrange(0, 1)
+                    controller = controller_schedule.get_chosen_controller(controller_decide)
+                    logger.debug("will send control message from controller %d", controller, sender=self)
+                    controller_cmd = Message(
+                        StackMessageTypes.GETCONTROL, {
+                            "controller": controller
+                        }
+                    )
+                    self.gates["networkOut"].send(controller_cmd)
 
-                else:
-                    logger.debug("channel is not free", sender=self)
-                current_slot += 1
+
+                else:  # dont send
+                    logger.debug("Passing this timestep. Schedule timestep %d", current_slot, sender=self)
+
+            else:
+                logger.debug("channel is not free", sender=self)
+            current_slot += 1
 
     def _sendControl(self, message: Message):
         """
@@ -459,3 +471,6 @@ class GatewayMac(Module):
         yield sendCmd.eProcessed
         message.setProcessed()
         self._start_receiving()
+        if self.configuration.protocol_type == ProtocolType.CSMA:
+            self._nControlSchedulerReceived.trigger(message)
+

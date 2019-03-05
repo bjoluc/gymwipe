@@ -178,14 +178,24 @@ class GatewayDevice(NetworkDevice):
         self.done_event = done_event
         self.episode_done_event = episode_done_event
         self.mac: bytes = newUniqueMacAddress()
+        self.send_schedule_count = 0
+        self.send_control_amount = {}
+        self.received_ack_amount = {}
+        self.received_data_amount = {}
+        self._nSendControl = Notifier("control should be send")
+        self._nSendControl.subscribeProcess(self.send_control)
         """
         The mac address
         """
         super(GatewayDevice, self).__init__(name, xPos, yPos, frequencyBand)
 
         self.sensor_macs = sensors
+        for i in range(len(self.sensor_macs)):
+            self.received_data_amount[self.sensor_macs[i]] = 0
         self.actuator_macs = actuators
-
+        for i in range(len(self.actuator_macs)):
+            self.send_control_amount[self.actuator_macs[i]] = 0
+            self.received_ack_amount[self.actuator_macs[i]] = 0
         self.control = control
         """
         :class:'~gymwipe.networking.MyDevices': The
@@ -225,15 +235,34 @@ class GatewayDevice(NetworkDevice):
                 # Mapping MAC addresses to indexes
                 senderIndex = self.macToDeviceIndexDict[message.args["sender"]]
                 if message.args["sender"] in self.sensor_macs:
+                    self.received_data_amount[message.args["sender"]] += 1
                     self.control.onPacketReceived(senderIndex, message.args["state"])
                     logger.debug("received sensor data, transmitted id and state to control", sender=self)
                     self.interpreter.onPacketReceived(message, senderIndex)
                     logger.debug("transmitted whole message to interpreter", sender=self)
                 elif message.args["sender"] in self.actuator_macs:
+                    self.received_ack_amount[message.args["sender"]] += 1
                     self.interpreter.onPacketReceived(message, senderIndex)
                     logger.debug("transmitted whole message to interpreter", sender=self)
+            if message.type is StackMessageTypes.GETCONTROL:
+                logger.debug("should send control message", sender=self)
+                controller = message.args["controller"]
+                actuator_id = self.control.controller_id_to_actuator_id[controller]
+                control_value = self.control.getControl(actuator_id, False)
+                self._nSendControl.trigger((self.deviceIndexToMacDict[actuator_id], control_value[0][0]))
         self._mac.gates["networkOut"].nReceives.subscribeCallback(onPacketReceived)
 
+    def send_control(self, values):
+        logger.debug("will send control message %f to actuator %d", values[1], values[0], sender=self)
+        send_cmd = Message(
+            StackMessageTypes.SENDCONTROL, {
+                "control": values[1],
+                "receiver": values[0]
+            }
+        )
+        self._mac.gates["networkIn"].send(send_cmd)
+        yield send_cmd.eProcessed
+        self.send_control_amount[values[0]] += 1
 
     # merge __init__ docstrings
     __init__.__doc__ = NetworkDevice.__init__.__doc__ + __init__.__doc__
@@ -247,6 +276,7 @@ class Gateway(GatewayDevice):
                  episode_done_event: Notifier, configuration: Configuration):
 
         indexToMAC = {}
+
         self.nextScheduleCreation = 0
         self.last_schedule_creation = 0
         self.simulatedSlot = 0
@@ -288,7 +318,6 @@ class Gateway(GatewayDevice):
 
     def _schedule_handler(self, schedule):
         self.interpreter.onScheduleCreated(schedule)
-        self.send_schedule_amount += 1
         if self.configuration.protocol_type == ProtocolType.TDMA:
             last_control_slot = 0
             next_control_line = self.scheduler.get_next_control_slot(last_control_slot)
@@ -298,7 +327,8 @@ class Gateway(GatewayDevice):
                 logger.debug("next control line is %s", next_control_line, sender=self)
                 actuator_id = self.macToDeviceIndexDict[next_control_line[1]]
                 control = self.control.getControl(actuator_id, False)
-                logger.debug("will send control message %f to actuator %d", control, actuator_id, sender=self)
+
+                logger.debug("will send control message %f to actuator %d", control[0][0], actuator_id, sender=self)
                 send_cmd = Message(
                     StackMessageTypes.SENDCONTROL, {
                         "control": control[0][0],
@@ -307,6 +337,7 @@ class Gateway(GatewayDevice):
                 )
                 self._mac.gates["networkIn"].send(send_cmd)
                 yield send_cmd.eProcessed
+                self.send_control_amount[next_control_line[1]] += 1
                 last_control_slot = next_control_line[0]
                 next_control_line = self.scheduler.get_next_control_slot(last_control_slot)
 
@@ -383,6 +414,7 @@ class Gateway(GatewayDevice):
                                                     self.configuration.timeslot_length
                         self._n_schedule_created.trigger(schedule)
                         yield send_cmd.eProcessed
+                        self.send_schedule_amount += 1
                         yield SimMan.timeoutUntil(self.nextScheduleCreation)
                         reward = self.interpreter.getReward()
                         cum_loss += -reward
@@ -419,6 +451,7 @@ class Gateway(GatewayDevice):
                         )
                         self._mac.gates["networkIn"].send(send_cmd)
                         yield send_cmd.eProcessed
+                        self.send_schedule_amount += 1
                         yield SimMan.timeoutUntil(self.nextScheduleCreation)
                         next_observation = self.interpreter.getObservation()
                         logger.debug("last observation was %s\nnext observation is %s", str(observation),
@@ -463,6 +496,7 @@ class Gateway(GatewayDevice):
                                                     self.configuration.timeslot_length
                         self._n_schedule_created.trigger(schedule)
                         yield send_cmd.eProcessed
+                        self.send_schedule_amount += 1
                         yield SimMan.timeoutUntil(self.nextScheduleCreation)
                         reward = self.interpreter.getReward()
                         cum_loss += -reward
@@ -499,6 +533,7 @@ class Gateway(GatewayDevice):
                         )
                         self._mac.gates["networkIn"].send(send_cmd)
                         yield send_cmd.eProcessed
+                        self.send_schedule_amount += 1
                         yield SimMan.timeoutUntil(self.nextScheduleCreation)
                         observation = self.interpreter.getObservation()
                         logger.debug("last observation was %s", str(observation), sender=self)
@@ -538,6 +573,7 @@ class Gateway(GatewayDevice):
                                                     self.configuration.timeslot_length
                         self._n_schedule_created.trigger(controller_schedule)
                         yield send_cmd.eProcessed
+                        self.send_schedule_amount += 1
                         yield SimMan.timeoutUntil(self.nextScheduleCreation)
                         reward = self.interpreter.getReward()
                         cum_loss += -reward
