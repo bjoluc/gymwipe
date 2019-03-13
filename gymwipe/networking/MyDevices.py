@@ -69,7 +69,7 @@ class Control:
         controller_id = self.actuator_id_to_controller_id[actuator_id]
         diff = (self.gateway.simulatedSlot - self.controller_id_to_latest_state_slot[controller_id]) * \
                self.gateway.configuration.sample_to_timeslot_ratio
-        diff = int(diff) + 1
+        diff = int(diff)
         estimated_state = self.estimateState(diff, controller_id)
         controller = self.controller_id_to_controller[controller_id]
         control = controller @ estimated_state
@@ -662,6 +662,7 @@ class SimpleActuator(ComplexNetworkDevice):
 
     def onReceive(self, packet: Packet):
         self.plant.set_control(packet.payload.value)
+        pass
 
 
 class MyInterpreter(Interpreter):

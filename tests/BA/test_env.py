@@ -28,12 +28,12 @@ def test_env_creation(caplog):
                                        num_plants=3,
                                        num_instable_plants=0,
                                        schedule_length=2,
-                                       show_error_rates=True,
+                                       show_error_rates=False,
                                        show_inputs_and_outputs=True,
                                        kalman_reset=True,
-                                       show_statistics=True,
+                                       show_statistics=False,
                                        show_assigned_p_values=False,
-                                       seed=1)]
+                                       seed=42)]
 
     random_csma_config = [Configuration(SchedulerType.RANDOM,
                                         ProtocolType.CSMA,
@@ -200,7 +200,7 @@ def test_env_creation(caplog):
                              seed=40)
                ]
 
-    used_configs = random_csma_config
+    used_configs = roundrobin_config
     for i in range(len(used_configs)):
         config = used_configs[i]
         BAEnvironment.initialize(config)

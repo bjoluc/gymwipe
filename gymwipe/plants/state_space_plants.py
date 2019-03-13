@@ -68,7 +68,7 @@ class StateSpacePlant:
             n_complex = np.int(np.floor(np.sum(np.random.random_sample((n - n_unstable - 2 * n_double,)) < 0.5) / 2))
             n_real = n - n_unstable - 2 * n_double - 2 * n_complex
 
-            unstable = np.random.uniform(1.01, 2, n_unstable)
+            unstable = np.random.uniform(1.01, 1.1, n_unstable)
             for k in range(n_unstable):
                 if np.random.random_sample() < 0.5:
                     unstable[k] *= -1
@@ -78,7 +78,7 @@ class StateSpacePlant:
             poles = []
             if n_complex != 0:
                 for i in range(n_complex):
-                    mag = 2*np.random.random_sample() - 1
+                    mag = np.random.random_sample()
                     comp = mag * cmath.exp(complex(0, np.pi * np.random.random_sample()))
                     re = comp.real
                     im = comp.imag
@@ -106,6 +106,9 @@ class StateSpacePlant:
         self.dt = dt
         self.q_subsystem = np.eye(np.shape(self.a)[0])
         self.r_subsystem = 0.1
+        self.state_mean = np.zeros((self.dim,))
+        self.state_cov = np.eye(self.dim) * 0.1
+        self.control_back_to_0 = False
         logger.debug("Plant initialized\n A: %s\nB: %s\n control: %s", self.a, self.b, self.control, sender=self.name)
         SimMan.process(self.state_update())
 
@@ -122,8 +125,12 @@ class StateSpacePlant:
 
     def state_update(self):
         while True:
-            self.state = np.einsum('ij,j->i', self.a, self.state) + np.einsum('ij,j->i', self.b, self.control)
+            if self.control_back_to_0:
+                self.control = np.array([0.0])
+            self.state = np.einsum('ij,j->i', self.a, self.state) + np.einsum('ij,j->i', self.b, self.control) \
+                         + np.random.multivariate_normal(self.state_mean, self.state_cov)
             logger.debug("state updated: %s", self.state, sender=self.name)
+            self.control_back_to_0 = True
             yield SimMan.timeout(self.dt)
 
     def get_state(self):
@@ -131,13 +138,12 @@ class StateSpacePlant:
         Gets the plant's current state
         :return: Noisy state
         """
-        mean = np.zeros((self.dim,))
-        cov = np.eye(self.dim)*0.1
-        return self.state + np.random.multivariate_normal(mean, cov)
+        return self.state
 
     """
     Sets the current control value
     """
     def set_control(self, control: float):
         self.control = np.array([control])
+        self.control_back_to_0 = False
         logger.debug("set control to %s", self.control.__str__(), sender=self.name)
