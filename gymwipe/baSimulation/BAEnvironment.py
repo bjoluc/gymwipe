@@ -78,6 +78,7 @@ def done(msg):
             sensor: SimpleSensor = sensors[i]
             mac: SensorMac = sensor._mac
             error = mac.error_rates
+            bits = mac.biterror_sums
             logger.debug("error rated for sensor %d is %s", i, error.__str__(), sender="environment")
             plt.plot(range(0, len(error)), error)
             plt.xlabel('received schedule')
@@ -88,10 +89,24 @@ def done(msg):
             plt.savefig(sensorstr)
             plt.close()
 
+            # biterrors sensor
+            plt.plot(range(0, len(bits)), bits)
+            plt.xlabel('received schedule')
+            plt.ylabel('# biterrors')
+            sensorstr = os.path.join(savepath, folder, "Sensorerror/Sensor_" + str(i) + "_biterrors" + savestring +
+                                     ".png")
+            os.makedirs(os.path.dirname(sensorstr), exist_ok=True)
+            plt.savefig(sensorstr)
+            plt.close()
+
+
             actuator: SimpleActuator = actuators[i]
             mac: ActuatorMac = actuator._mac
             error_schedule = mac.error_rates_schedule
+            bits_schedule = mac.biterror_sums_schedule
             error_control = mac.error_rates_control
+            bits_control = mac.biterror_sums_control
+
             plt.plot(range(0, len(error_schedule)), error_schedule)
             plt.xlabel('received schedule')
             plt.ylabel('error rate')
@@ -100,11 +115,32 @@ def done(msg):
             os.makedirs(os.path.dirname(actuatorstr), exist_ok=True)
             plt.savefig(actuatorstr)
             plt.close()
+
+            plt.plot(range(0, len(error_schedule)), error_schedule)
+            plt.xlabel('received schedule')
+            plt.ylabel('biterrors')
+            actuatorstr = os.path.join(savepath, folder,
+                                       "Actuatorerror/Actuator_" + str(
+                                           i) + "_schedule_biterrors_" + savestring + ".png")
+            os.makedirs(os.path.dirname(actuatorstr), exist_ok=True)
+            plt.savefig(actuatorstr)
+            plt.close()
+
             plt.plot(range(0, len(error_control)), error_control)
             plt.xlabel('received control message')
             plt.ylabel('error rate')
             actuatorstr = os.path.join(savepath, folder,
                                        "Actuatorerror/Actuator_" + str(i) + "_control_errorrate_" + savestring + ".png")
+            os.makedirs(os.path.dirname(actuatorstr), exist_ok=True)
+            plt.savefig(actuatorstr)
+            plt.close()
+
+            plt.plot(range(0, len(error_schedule)), error_schedule)
+            plt.xlabel('received control message')
+            plt.ylabel('biterrors')
+            actuatorstr = os.path.join(savepath, folder,
+                                       "Actuatorerror/Actuator_" + str(
+                                           i) + "_schedule_biterrors_" + savestring + ".png")
             os.makedirs(os.path.dirname(actuatorstr), exist_ok=True)
             plt.savefig(actuatorstr)
             plt.close()
@@ -286,6 +322,27 @@ done_event = Notifier("simulation done")
 done_event.subscribeCallback(done)
 
 
+def generate_x_y(num_plants):
+    def random_pos():
+        return round(np.random.uniform(0.0, 3), 2), round(np.random.uniform(0.0, 3), 2)
+    gateway_pos = random_pos()
+
+    def next_pos():
+        distance = 0.0
+        position = 0.0, 0.0
+        while distance < 1.5:
+            position = random_pos()
+            diff_x = abs(gateway_pos[0]-position[0])
+            diff_y = abs(gateway_pos[1]-position[1])
+            distance = min(diff_x, diff_y)
+        return position
+
+    coords = []
+    for i in range(num_plants):
+        coords.append((next_pos(), next_pos()))
+    return gateway_pos, coords
+
+
 def initialize(configuration: Configuration):
     """
     Initializes the simulation environment. Creates plants, their sensors, actuators and controllers and initializes
@@ -346,7 +403,10 @@ def initialize(configuration: Configuration):
     config_save.close()
     frequency_band = FrequencyBand([FsplAttenuation])
     np.random.seed(configuration.seed)
+
+    gatewaypos, coords = generate_x_y(config.num_plants)
     for i in range(configuration.num_plants):
+        sensor_pos, actuator_pos = coords[i]
         if i+1 > configuration.num_instable_plants:
             plant = StateSpacePlant(2, 1,
                                     configuration.plant_sample_time,
@@ -362,20 +422,20 @@ def initialize(configuration: Configuration):
         controllers.append(controller)
         plantstr = "Plant {}: \nA:\n {} \nB:\n{} \ncontrol: {}\n".format(i, plant.a, plant.b, controller)
         plants_save.write(plantstr)
-        sensor = SimpleSensor("Sensor " + i.__str__(), round(np.random.uniform(0.0, 3), 2),
-                              round(np.random.uniform(0.0, 3), 2),
+        sensor = SimpleSensor("Sensor " + i.__str__(), sensor_pos[0],
+                              sensor_pos[1],
                               frequency_band, plant, configuration)
         sensors.append(sensor)
         sensormacs.append(sensor.mac)
-        actuator = SimpleActuator("Actuator" + i.__str__(), round(np.random.uniform(0.0, 3), 2),
-                                  round(np.random.uniform(0.0, 3), 2),
+        actuator = SimpleActuator("Actuator" + i.__str__(), actuator_pos[0],
+                                  actuator_pos[1],
                                   frequency_band, plant, configuration)
         actuators.append(actuator)
         actuatormacs.append(actuator.mac)
 
     global gateway
-    gateway = Gateway(sensormacs, actuatormacs, controllers, plants, "Gateway", round(np.random.uniform(0.0, 3), 2),
-                      round(np.random.uniform(0.0, 3), 2), frequency_band, reset_event, done_event,
+    gateway = Gateway(sensormacs, actuatormacs, controllers, plants, "Gateway", gatewaypos[0],
+                      gatewaypos[1], frequency_band, reset_event, done_event,
                       episode_done_event, configuration)
     plants_save.close()
     np.random.seed()

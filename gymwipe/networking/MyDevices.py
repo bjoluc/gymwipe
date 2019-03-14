@@ -31,6 +31,8 @@ class Control:
         self.controller_id_to_latest_state_slot = {}
         self.controller_id_to_latest_u = {}
         self.controller_id_to_estimated_state = {}
+        self.controller_id_to_u_slot = {}
+        self.controller_id_to_estimated_states_history = {}
         for i in range(len(self.controller_id_to_plant)):
             plant: StateSpacePlant = self.controller_id_to_plant[i]
             self.controller_id_to_latest_state[i] = plant.state
@@ -38,6 +40,7 @@ class Control:
             # TODO: fill estimated state slots
             self.controller_id_to_latest_state_slot[i] = 0
             self.controller_id_to_latest_u[i] = 0.0
+            self.controller_id_to_u_slot[i] = 0
         self.sensor_id_to_controller_id = sensor_id_to_controller_id
         self.controller_id_to_actuator_id = controller_id_id_to_actuator
         self.actuator_id_to_controller_id = {y: x for x, y in self.controller_id_to_actuator_id.items()}
@@ -87,9 +90,17 @@ class Control:
         logger.debug("last received state from sensor is %s. This was %d timeslots ago", last_state.__str__(),
                      timeslots, sender="Control")
         last_u = self.controller_id_to_latest_u[controller_id]
-
+        u_time = self.controller_id_to_u_slot[controller_id]
+        data_time = self.controller_id_to_latest_state_slot[controller_id]
+        one_u = False
+        if data_time < u_time:
+            one_u = True
         for i in range(timeslots):
-            last_state = plant.a @ last_state + plant.b * last_u
+            if one_u:
+                last_state = plant.a @ last_state + plant.b * last_u
+                one_u = False
+            else:
+                last_state = plant.a @ last_state
 
         logger.debug("estimated state at timeslot %d for plant %d is %s", self.gateway.simulatedSlot, controller_id,
                      last_state.__str__())

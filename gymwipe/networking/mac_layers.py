@@ -65,6 +65,7 @@ class SensorMac(Module):
 
         self._next_receive_time = 0
         self.error_rates = []
+        self.biterror_sums = []
         """
         The most recent clock signal sent by the gateway. Is sent within a scheduling Packet.
         """
@@ -75,56 +76,62 @@ class SensorMac(Module):
         self.assigned_ps = []
         logger.debug("Initialization completed, MAC address: %s", self.addr, sender=self)
 
-    @GateListener("phyIn", (Message))
+    @GateListener("phyIn", Message)
     def phyInGateListener(self, msg):
+        if msg.type == StackMessageTypes.RECEIVED:
+            if self._receiving is True:
+                if self.configuration.protocol_type == ProtocolType.TDMA:
+                    logger.debug("received a packet from phy, am in receiving mode", sender=self)
+                    header = msg.args["packet"].header
+                    if not isinstance(header, NCSMacHeader):
+                        raise ValueError("Can only deal with header of type NCSMacHeader. Got %s.", type(header))
+                    if header.type[0] == 0:  # received schedule from gateway
+                        self._schedule = msg.args["packet"].payload.value
+                        trailer = msg.args["packet"].trailer.value
+                        self._lastGatewayClock = trailer
+                        logger.debug("gateway clock is %f", self._lastGatewayClock, sender=self)
+                        self.gateway_address = header.sourceMAC
+                        self._nScheduleAdded.trigger(msg)
+                        schedulestr = self._schedule.get_string()
+                        self.received_schedule_count += 1
+                        if self.configuration.show_error_rates:
+                            self.error_rates.append(msg.args["error_rate"])
+                            self.biterror_sums.append(msg.args["biterrors"])
+                        logger.debug("received a schedule: gateway clock: %s schedule: %s", self._lastGatewayClock.__str__(),
+                                     schedulestr, sender=self)
+                        # TODO: save csi, given by phy
+                    else:
+                        pass
+                elif self.configuration.protocol_type == ProtocolType.CSMA:
+                    logger.debug("received a packet from phy, am in receiving mode", sender=self)
+                    header = msg.args["packet"].header
+                    if not isinstance(header, NCSMacHeader):
+                        raise ValueError("Can only deal with header of type NCSMacHeader. Got %s.", type(header))
+                    if header.type[0] == 0:  # received schedule from gateway
+                        schedule = msg.args["packet"].payload.value
+                        if not isinstance(schedule, CSMASchedule):
+                            raise ValueError("Can only deal with schedule of type CSMASchedule. Got %s.", type(schedule))
+                        logger.debug("received new p value", sender=self)
+                        self._lastGatewayClock = msg.args["packet"].trailer.value
+                        logger.debug("gateway clock is %f", self._lastGatewayClock, sender=self)
+                        self._next_receive_time = schedule.get_end_time()
+                        self.gateway_address = header.sourceMAC
+                        self.received_schedule_count += 1
+                        if self.configuration.show_error_rates:
+                            self.error_rates.append(msg.args["error_rate"])
+                            self.biterror_sums.append(msg.args["biterrors"])
+                        self._nNewP.trigger(schedule.get_my_p(self.addr))
 
-        if self._receiving is True:
-            if self.configuration.protocol_type == ProtocolType.TDMA:
-                logger.debug("received a packet from phy, am in receiving mode", sender=self)
-                header = msg.args["packet"].header
-                if not isinstance(header, NCSMacHeader):
-                    raise ValueError("Can only deal with header of type NCSMacHeader. Got %s.", type(header))
-                if header.type[0] == 0:  # received schedule from gateway
-                    self._schedule = msg.args["packet"].payload.value
-                    trailer = msg.args["packet"].trailer.value
-                    self._lastGatewayClock = trailer
-                    logger.debug("gateway clock is %f", self._lastGatewayClock, sender=self)
-                    self.gateway_address = header.sourceMAC
-                    self._nScheduleAdded.trigger(msg)
-                    schedulestr = self._schedule.get_string()
-                    self.received_schedule_count += 1
-                    if self.configuration.show_error_rates:
-                        self.error_rates.append(msg.args["error_rate"])
-                    logger.debug("received a schedule: gateway clock: %s schedule: %s", self._lastGatewayClock.__str__(),
-                                 schedulestr, sender=self)
-                    # TODO: save csi, given by phy
-                else:
-                    pass
-            elif self.configuration.protocol_type == ProtocolType.CSMA:
-                logger.debug("received a packet from phy, am in receiving mode", sender=self)
-                header = msg.args["packet"].header
-                if not isinstance(header, NCSMacHeader):
-                    raise ValueError("Can only deal with header of type NCSMacHeader. Got %s.", type(header))
-                if header.type[0] == 0:  # received schedule from gateway
-                    schedule = msg.args["packet"].payload.value
-                    if not isinstance(schedule, CSMASchedule):
-                        raise ValueError("Can only deal with schedule of type CSMASchedule. Got %s.", type(schedule))
-                    logger.debug("received new p value", sender=self)
-                    self._lastGatewayClock = msg.args["packet"].trailer.value
-                    logger.debug("gateway clock is %f", self._lastGatewayClock, sender=self)
-                    self._next_receive_time = schedule.get_end_time()
-                    self.gateway_address = header.sourceMAC
-                    self.received_schedule_count += 1
-                    if self.configuration.show_error_rates:
-                        self.error_rates.append(msg.args["error_rate"])
-                    self._nNewP.trigger(schedule.get_my_p(self.addr))
+                        # TODO: save csi, given by phy
+                    else:
+                        pass
+            else:
+                logger.debug("received a packet from phy, but not in receiving mode. packet ignored", sender=self)
+                pass
 
-                    # TODO: save csi, given by phy
-                else:
-                    pass
-        else:
-            logger.debug("received a packet from phy, but not in receiving mode. packet ignored", sender=self)
-            pass
+        if msg.type == StackMessageTypes.FAILED:
+            self.error_rates.append(msg.args["error_rate"])
+            self.biterror_sums.append(msg.args["biterrors"])
 
     @GateListener("networkIn", (Message, Packet), queued=False)
     def networkInGateListener(self, cmd):
@@ -236,32 +243,42 @@ class ActuatorMac(Module):
         self.control_received_count = 0
         self.ack_send_count = 0
         self.error_rates_schedule = []
+
+        self.biterror_sums_schedule = []
         self.error_rates_control = []
+
+        self.biterror_sums_control = []
         logger.debug("Initialization completed, MAC address: %s", self.addr, sender=self)
 
     @GateListener("phyIn", Message)
     def phyInGateListener(self, cmd):
-        if self._receiving:
-            header = cmd.args["packet"].header
-            if not isinstance(header, NCSMacHeader):
-                raise ValueError("Can only deal with header of type NCSMacHeader. Got %s.", type(header), sender=self)
-            if header.type[0] == 0: # received schedule from gateway
-                self.schedule = cmd.args["packet"].payload.value
-                self._lastGatewayClock = cmd.args["packet"].trailer.value
-                self.gatewayAdress = header.sourceMAC
-                logger.debug("received a schedule, gateway clock is %f", self._lastGatewayClock, sender=self)
-                self.schedule_received_count += 1
-                if self.configuration.show_error_rates:
-                    self.error_rates_schedule.append(cmd.args["error_rate"])
-            if header.type[0] == 2: #received control message
-                # TODO: check if timeslot is mine, not if addr is mine
-                if header.destMAC == self.addr:  # message for me
-                    logger.debug("received control message", sender=self)
+        if cmd.type == StackMessageTypes.RECEIVED:
+            if self._receiving:
+                header = cmd.args["packet"].header
+                if not isinstance(header, NCSMacHeader):
+                    raise ValueError("Can only deal with header of type NCSMacHeader. Got %s.", type(header), sender=self)
+                if header.type[0] == 0: # received schedule from gateway
+                    self.schedule = cmd.args["packet"].payload.value
+                    self._lastGatewayClock = cmd.args["packet"].trailer.value
+                    self.gatewayAdress = header.sourceMAC
+                    logger.debug("received a schedule, gateway clock is %f", self._lastGatewayClock, sender=self)
+                    self.schedule_received_count += 1
                     if self.configuration.show_error_rates:
-                        self.error_rates_control.append(cmd.args["error_rate"])
-                    self.gates["networkOut"].send(cmd.args["packet"].payload)
-                    self.control_received_count += 1
-                    self._n_control_received.trigger(cmd)
+                        self.error_rates_schedule.append(cmd.args["error_rate"])
+                        self.biterror_sums_schedule.append(cmd.args["biterrors"])
+                if header.type[0] == 2: #received control message
+                    # TODO: check if timeslot is mine, not if addr is mine
+                    if header.destMAC == self.addr:  # message for me
+                        logger.debug("received control message", sender=self)
+                        if self.configuration.show_error_rates:
+                            self.error_rates_control.append(cmd.args["error_rate"])
+                            self.biterror_sums_control.append(cmd.args["biterrors"])
+                        self.gates["networkOut"].send(cmd.args["packet"].payload)
+                        self.control_received_count += 1
+                        self._n_control_received.trigger(cmd)
+
+        if cmd.type == StackMessageTypes.FAILED:
+            pass
 
     @GateListener("networkIn", (Message, Packet))
     def networkInGateListener(self, cmd):
@@ -337,36 +354,37 @@ class GatewayMac(Module):
 
     @GateListener("phyIn", Message)
     def phyInGateListener(self, cmd: Message):
-        if self._receivingMode is True:
-            logger.debug("%s: received a packet", self)
-            packet = cmd.args["packet"]
-            header = packet.header
-            if not isinstance(header, NCSMacHeader):
-                raise ValueError("Can only deal with header of type NCSMacHeader. Got %s.", type(header), sender=self)
-            message_type = header.type[0]
-            if message_type == 1: #received sensordata
-                logger.debug("received sensordata from %s. data is %s", header.sourceMAC, packet.payload.value, sender=self)
-                receive_message = Message(
-                    StackMessageTypes.RECEIVED, {
-                        "sender": header.sourceMAC,
-                        "state": packet.payload.value,
-                        "csisensor": "TODO",
-                        "csigateway": "TODO"
-                    }
-                )
-                self.gates["networkOut"].send(receive_message)
-                # TODO: csi integration
-            if message_type == 2: #received Actuator ACK
-                logger.debug("received actuator csi from %s. csi is %s", header.sourceMAC, packet.payload.value, sender=self)
-                receive_message = Message(
-                    StackMessageTypes.RECEIVED, {
-                        "sender": header.sourceMAC,
-                        "csiactuator": packet.payload.value,
-                        "csigateway": "TODO"
-                    }
-                )
-                # TODO: add gateway csi
-                self.gates["networkOut"].send(receive_message)
+        if cmd.type == StackMessageTypes.RECEIVED:
+            if self._receivingMode is True:
+                logger.debug("%s: received a packet", self)
+                packet = cmd.args["packet"]
+                header = packet.header
+                if not isinstance(header, NCSMacHeader):
+                    raise ValueError("Can only deal with header of type NCSMacHeader. Got %s.", type(header), sender=self)
+                message_type = header.type[0]
+                if message_type == 1: #received sensordata
+                    logger.debug("received sensordata from %s. data is %s", header.sourceMAC, packet.payload.value, sender=self)
+                    receive_message = Message(
+                        StackMessageTypes.RECEIVED, {
+                            "sender": header.sourceMAC,
+                            "state": packet.payload.value,
+                            "csisensor": "TODO",
+                            "csigateway": "TODO"
+                        }
+                    )
+                    self.gates["networkOut"].send(receive_message)
+                    # TODO: csi integration
+                if message_type == 2: #received Actuator ACK
+                    logger.debug("received actuator csi from %s. csi is %s", header.sourceMAC, packet.payload.value, sender=self)
+                    receive_message = Message(
+                        StackMessageTypes.RECEIVED, {
+                            "sender": header.sourceMAC,
+                            "csiactuator": packet.payload.value,
+                            "csigateway": "TODO"
+                        }
+                    )
+                    # TODO: add gateway csi
+                    self.gates["networkOut"].send(receive_message)
 
     @GateListener("networkIn", Message)
     def networkInGateListener(self, message: Message):

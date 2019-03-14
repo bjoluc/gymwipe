@@ -109,6 +109,7 @@ class StateSpacePlant:
         self.state_mean = np.zeros((self.dim,))
         self.state_cov = np.eye(self.dim) * 0.1
         self.control_back_to_0 = False
+        self.marginally_stable = marginally_stable
         logger.debug("Plant initialized\n A: %s\nB: %s\n control: %s", self.a, self.b, self.control, sender=self.name)
         SimMan.process(self.state_update())
 
@@ -118,8 +119,12 @@ class StateSpacePlant:
 
     def generate_controller(self):
         dare = sp.linalg.solve_discrete_are(self.a, self.b, self.q_subsystem, self.r_subsystem)
-        controller = (-np.linalg.inv(self.b.transpose() @ dare @ self.b +
-                                          self.r_subsystem) @ self.b.transpose() @ dare @ self.a)
+        if self.marginally_stable:
+            controller = (-np.linalg.inv(self.b.transpose() @ dare @ self.b +
+                                              self.r_subsystem) @ self.b.transpose() @ dare @ self.a)
+        else:
+            controller = (-np.linalg.inv(self.b.transpose() @ dare @ self.b +
+                                         self.r_subsystem)*0.005 @ self.b.transpose() @ dare @ self.a)
         logger.debug("controller generated: %s", controller, sender=self.name)
         return controller
 

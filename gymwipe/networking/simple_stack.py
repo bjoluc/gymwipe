@@ -185,8 +185,11 @@ class SimplePhy(Module):
 
         # Derive the number of bit errors for that duration (as a float,
         # rounding is done in the end)
-        bitErrors = self._receivedBitErrorRate * duration * self._currentReceiverMcs.bitRate
-        self._receivedBitErrorSum += bitErrors
+        bits = round(duration * self._currentReceiverMcs.bitRate)
+        errors = np.random.binomial(bits, self._receivedBitErrorRate)
+
+        #bitErrors = self._receivedBitErrorRate * duration * self._currentReceiverMcs.bitRate
+        self._receivedBitErrorSum += errors
     
     # SimPy processes
 
@@ -237,40 +240,46 @@ class SimplePhy(Module):
             self._nReceivedPowerChanges.subscribeCallback(onReceivedPowerChange)
 
             self._updateBitErrorRate(t) # Calculate initial bitErrorRate
-            average_error = self._receivedBitErrorRate
+
             # Wait for the header to be transmitted
             yield t.eHeaderCompletes
 
             # Count errors since the last time that the received power has changed
-            self._countBitErrors() 
-
+            self._countBitErrors()
+            biterrors = self._receivedBitErrorSum
             # Decide whether the header could be received
-            if self._decide(self._receivedBitErrorSum, t.headerBits, t.mcsHeader, logSubject="Header"):
-                # Possibly switch MCS
-                self._currentReceiverMcs = t.mcsPayload
-                self._resetBitErrorCounter()
-                self._updateBitErrorRate(t)
-                average_error += self._receivedBitErrorRate
+            headersuccess = self._decide(self._receivedBitErrorSum, t.headerBits, t.mcsHeader, logSubject="Header")
+            # Possibly switch MCS
+            self._currentReceiverMcs = t.mcsPayload
+            self._resetBitErrorCounter()
+            self._updateBitErrorRate(t)
 
-                # Wait for the payload to be transmitted
-                yield t.eCompletes
-                self._countBitErrors()
 
-                logger.debug("{:.3} of {:.3} payload bits were errors.".format(
-                                self._receivedBitErrorSum, t.payloadBits), sender=self)
-                
-                # Decide whether the payload could be received
-                if self._decide(self._receivedBitErrorSum, t.payloadBits, t.mcsPayload, logSubject="Payload"):
-                    average_error /= 2
-                    # Send the packet via the mac gate
-                    msg = Message(StackMessageTypes.RECEIVED, {
-                        "packet": t.packet,
-                        "error_rate": average_error
-                    })
-                    self.gates["macOut"].send(msg)
-                else:
-                    logger.info("Receiving transmission payload failed for %s", t, sender=self)
-            
+            # Wait for the payload to be transmitted
+            yield t.eCompletes
+            self._countBitErrors()
+            biterrors += self._receivedBitErrorSum
+            average_error = biterrors/(t.headerBits+t.payloadBits)
+            logger.debug("{} of {:.3} payload bits were errors.".format(
+                            self._receivedBitErrorSum, t.payloadBits), sender=self)
+
+            # Decide whether the payload could be received
+            payloadsuccess = self._decide(self._receivedBitErrorSum, t.payloadBits, t.mcsPayload, logSubject="Payload")
+            if headersuccess and payloadsuccess:
+                # Send the packet via the mac gate
+                msg = Message(StackMessageTypes.RECEIVED, {
+                    "packet": t.packet,
+                    "error_rate": average_error,
+                    "biterrors": biterrors
+                })
+                self.gates["macOut"].send(msg)
+            else:
+                logger.info("Receiving transmission payload failed for %s", t, sender=self)
+                msg = Message(StackMessageTypes.FAILED, {
+                    "error_rate": average_error,
+                    "biterrors": biterrors
+                })
+                self.gates["macOut"].send(msg)
             self._nReceivedPowerChanges.unsubscribeCallback(onReceivedPowerChange)
             self._resetBitErrorCounter()
             self._receiving = False

@@ -28,10 +28,10 @@ def test_env_creation(caplog):
                                        num_plants=3,
                                        num_instable_plants=0,
                                        schedule_length=2,
-                                       show_error_rates=False,
+                                       show_error_rates=True,
                                        show_inputs_and_outputs=True,
                                        kalman_reset=True,
-                                       show_statistics=False,
+                                       show_statistics=True,
                                        show_assigned_p_values=False,
                                        seed=42)]
 
