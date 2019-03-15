@@ -275,7 +275,7 @@ class ActuatorMac(Module):
                             self.biterror_sums_control.append(cmd.args["biterrors"])
                         self.gates["networkOut"].send(cmd.args["packet"].payload)
                         self.control_received_count += 1
-                        self._n_control_received.trigger(cmd)
+                        self._n_control_received.trigger(cmd.args["error_rate"])
 
         if cmd.type == StackMessageTypes.FAILED:
             pass
@@ -285,11 +285,11 @@ class ActuatorMac(Module):
         if isinstance(cmd, Message):
             pass
 
-    def _sendcsi(self, packet):
+    def _sendcsi(self, csi):
         self._stopReceiving()
         csisendingtype = bytearray(1)
         csisendingtype[0] = 2
-        sendPackage = Packet(NCSMacHeader(csisendingtype, self.addr, self.gatewayAdress), Transmittable("TODO: send csi", 1 ))
+        sendPackage = Packet(NCSMacHeader(csisendingtype, self.addr, self.gatewayAdress), Transmittable(csi))
         # TODO: send csi, will be in packet
         send_cmd = Message(
             StackMessageTypes.SEND, {

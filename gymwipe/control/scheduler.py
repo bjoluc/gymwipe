@@ -14,7 +14,11 @@ class SendOrReceive(Enum):
     `Message` objects between network stack layers.
     """
     SEND = 0
-    RECEIVE = 1
+    RECE = 1
+
+
+class MCS(Enum):
+    BPSK = 1
 
 
 class Schedule:
@@ -47,7 +51,7 @@ class TDMASchedule(Schedule):
         for i in range(len(self.action)):
             if self.action[i] != last_action:
                 self.schedule.append([i+1, self.action[i][0],
-                                     self.action[i][1], 1])
+                                     self.action[i][1], MCS.BPSK])
             last_action = self.action[i]
         self.schedule.append([len(action)+1])
         logger.debug("TDMA Schedule created. Content: %s" + self.schedule.__str__(), sender="TDMA Schedule")
@@ -57,7 +61,6 @@ class TDMASchedule(Schedule):
 
     def get_next_relevant_timespan(self, mac_address, last_step):
         logger.debug("called function with address %s and last step %d", mac_address, last_step, sender="TDMA Schedule")
-        schedule_list = self.string.split(" ")
         for i in range(len(self.schedule)-1):
             line = self.schedule[i]
             logger.debug("Found a mac address field, address is: %s", line[1], sender="TDMA Schedule")
@@ -195,9 +198,10 @@ class CSMAScheduler:
 
 
 class RandomTDMAScheduler(TDMAScheduler):
-    def __init__(self, devices: [], actuators: [], timeslots: int):
+    def __init__(self, devices: [],sensors: [], actuators: [], timeslots: int):
         super(RandomTDMAScheduler, self).__init__(devices, actuators, timeslots)
         logger.debug("given devices are %s", devices.__str__())
+        self.sensors = sensors
         self.action_set = list(itertools.permutations(range(len(devices)), timeslots))
         logger.debug("action set is %s", self.action_set.__str__())
         self.action_size = len(self.action_set)
@@ -209,13 +213,31 @@ class RandomTDMAScheduler(TDMAScheduler):
         for i in range(len(devices)):
             device = self.devices[devices[i]]
             if device in self.actuators:
-                action.append([device, SendOrReceive.RECEIVE])
+                action.append([device, SendOrReceive.RECE])
             else:
                 action.append([device, SendOrReceive.SEND])
         self.schedule = TDMASchedule(action)
         logger.debug("new random schedule generated, content is %s", self.schedule.schedule.__str__(),
                      sender="RandomTDMAScheduler")
         return self.schedule
+
+    def get_schedule_string(self):
+        string = "["
+        for i in range(len(self.schedule.schedule) - 1):
+            line = self.schedule.schedule[i]
+            string += "[slot {}, ".format(line[0])
+            if line[1] in self.actuators:
+                string += "device {}(a), ".format((self.actuators.index(line[1]) + len(self.sensors)))
+            if line[1] in self.sensors:
+                string += "device {}(s), ".format(self.sensors.index(line[1]))
+
+            type: SendOrReceive = line[2]
+            string += "{}, ".format(type.name)
+
+            mcs: MCS = line[3]
+            string += "{}]".format(mcs.name)
+        string += "]"
+        return string
 
 
 class RoundRobinTDMAScheduler(TDMAScheduler):
@@ -240,7 +262,7 @@ class RoundRobinTDMAScheduler(TDMAScheduler):
         for i in range(self.timeslots):
             device = self.devices[self.nextDevice]
             if device in self.actuators:
-                action.append([device, SendOrReceive.RECEIVE])
+                action.append([device, SendOrReceive.RECE])
             else:
                 action.append([device, SendOrReceive.SEND])
             if self.nextDevice == (len(self.devices) - 1):
@@ -251,6 +273,24 @@ class RoundRobinTDMAScheduler(TDMAScheduler):
         logger.debug("new schedule generated", sender="RoundRobinTDMAScheduler")
         self.schedule = TDMASchedule(action)
         return self.schedule
+
+    def get_schedule_string(self):
+        string = "["
+        for i in range(len(self.schedule.schedule) - 1):
+            line = self.schedule.schedule[i]
+            string += "[slot {}, ".format(line[0])
+            if line[1] in self.actuators:
+                string += "device {}(a), ".format((self.actuators.index(line[1]) + len(self.sensors)))
+            if line[1] in self.sensors:
+                string += "device {}(s), ".format(self.sensors.index(line[1]))
+
+            type: SendOrReceive = line[2]
+            string += "{}, ".format(type.name)
+
+            mcs: MCS = line[3]
+            string += "{}]".format(mcs.name)
+        string += "]"
+        return string
 
 
 class GreedyWaitingTimeTDMAScheduler(TDMAScheduler):
@@ -276,7 +316,7 @@ class GreedyWaitingTimeTDMAScheduler(TDMAScheduler):
             max_index = observation.index(max_value)
             device = self.devices[max_index]
             if device in self.actuators:
-                action.append([device, SendOrReceive.RECEIVE])
+                action.append([device, SendOrReceive.RECE])
             else:
                 action.append([device, SendOrReceive.SEND])
             observation[max_index] = -1

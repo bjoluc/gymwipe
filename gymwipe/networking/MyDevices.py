@@ -172,8 +172,7 @@ class GatewayDevice(NetworkDevice):
     """
 
     def __init__(self, name: str, xPos: float, yPos: float, frequencyBand: FrequencyBand,
-                    deviceIndexToMacDict: Dict[int, bytes], sensors, actuators, interpreter, control,
-                 reset_event, done_event, episode_done_event, configuration: Configuration):
+                    deviceIndexToMacDict: Dict[int, bytes], sensors, actuators, interpreter, control, done_event, episode_done_event, configuration: Configuration):
         # No type definition for 'interpreter' to avoid circular dependencies
         """
             deviceIndexToMacDict: A dictionary mapping integer indexes to device
@@ -185,7 +184,6 @@ class GatewayDevice(NetworkDevice):
                 observation and reward calculations
         """
         self.configuration = configuration
-        self.reset_event = reset_event
         self.done_event = done_event
         self.episode_done_event = episode_done_event
         self.mac: bytes = newUniqueMacAddress()
@@ -283,7 +281,7 @@ class Gateway(GatewayDevice):
     scheduler = None
 
     def __init__(self, sensorMACS: [], actuatorMACS: [], control: [], plants: [], name: str, xPos: float, yPos: float,
-                 frequencyBand: FrequencyBand, reset_event: Notifier, done_event: Notifier,
+                 frequencyBand: FrequencyBand, done_event: Notifier,
                  episode_done_event: Notifier, configuration: Configuration):
 
         indexToMAC = {}
@@ -297,6 +295,7 @@ class Gateway(GatewayDevice):
         self.controller_id_to_actuator_id = {}
         self.sensor_id_to_controller_id = {}
         self.send_schedule_amount = 0
+        self.chosen_schedules = {}
         for i in range(len(control)):
             self.controller_id_to_controller[i] = control[i]
             self.controller_id_to_plant[i] = plants[i]
@@ -315,8 +314,7 @@ class Gateway(GatewayDevice):
                                       Control(self.controller_id_to_controller,
                                               self.sensor_id_to_controller_id,
                                               self.controller_id_to_actuator_id,
-                                              self.controller_id_to_plant),
-                                      reset_event, done_event, episode_done_event, configuration)
+                                              self.controller_id_to_plant), done_event, episode_done_event, configuration)
         self.control.gateway = self
         self.interpreter.gateway = self
 
@@ -386,7 +384,8 @@ class Gateway(GatewayDevice):
 
         elif self.configuration.scheduler_type == SchedulerType.RANDOM:
             if self.configuration.protocol_type == ProtocolType.TDMA:
-                self.scheduler = RandomTDMAScheduler(list(self.deviceIndexToMacDict.values()), self.actuator_macs,
+                self.scheduler = RandomTDMAScheduler(list(self.deviceIndexToMacDict.values()),self.sensor_macs,
+                                                     self.actuator_macs,
                                                      self.configuration.schedule_length)
                 logger.debug("RandomTDMA Scheduler created")
             elif self.configuration.protocol_type == ProtocolType.CSMA:
@@ -413,6 +412,10 @@ class Gateway(GatewayDevice):
                     cum_loss = 0
                     for t in range(self.configuration.horizon):
                         schedule = self.scheduler.next_schedule()
+                        if self.scheduler.get_schedule_string() in self.chosen_schedules:
+                            self.chosen_schedules[self.scheduler.get_schedule_string()] += 1
+                        else:
+                            self.chosen_schedules[self.scheduler.get_schedule_string()] = 1
                         self.last_schedule_creation = SimMan.now
                         send_cmd = Message(
                             StackMessageTypes.SEND, {
@@ -450,6 +453,10 @@ class Gateway(GatewayDevice):
                     cum_loss = 0
                     for t in range(self.configuration.horizon):
                         schedule = self.scheduler.next_schedule(observation)
+                        if self.scheduler.get_schedule_string() in self.chosen_schedules:
+                            self.chosen_schedules[self.scheduler.get_schedule_string()] += 1
+                        else:
+                            self.chosen_schedules[self.scheduler.get_schedule_string()] = 1
                         self.last_schedule_creation = SimMan.now
                         self.nextScheduleCreation = SimMan.now + schedule.get_end_time() * \
                                                     self.configuration.timeslot_length
@@ -495,6 +502,10 @@ class Gateway(GatewayDevice):
                     cum_loss = 0
                     for t in range(self.configuration.horizon):
                         schedule = self.scheduler.next_schedule()
+                        if schedule.get_string() in self.chosen_schedules:
+                            self.chosen_schedules[schedule.get_string()] += 1
+                        else:
+                            self.chosen_schedules[schedule.get_string()] = 1
                         self.last_schedule_creation = SimMan.now
                         send_cmd = Message(
                             StackMessageTypes.SEND, {
@@ -532,6 +543,10 @@ class Gateway(GatewayDevice):
                     cum_loss = 0
                     for t in range(self.configuration.horizon):
                         schedule = self.scheduler.next_schedule(observation)
+                        if schedule.get_string() in self.chosen_schedules:
+                            self.chosen_schedules[schedule.get_string()] += 1
+                        else:
+                            self.chosen_schedules[schedule.get_string()] = 1
                         self.last_schedule_creation = SimMan.now
                         self.nextScheduleCreation = SimMan.now + schedule.get_end_time() * \
                                                     self.configuration.timeslot_length

@@ -35,11 +35,8 @@ config: Configuration = None
 duration = 0.0
 
 
-def reset():
-    logger.debug("environment resetted", sender="environment")
-
-
 def done(msg):
+    print("simulation done...")
     avgloss = msg
     total_average = sum(msg)/len(msg)
     loss_save.write("{}".format(avgloss))
@@ -175,10 +172,12 @@ def done(msg):
         gateway_arrived_data = gateway.received_data_amount
         gateway_send_controls = gateway.send_control_amount
         gateway_send_schedules = gateway.send_schedule_amount
+
         complete_name = os.path.join(savepath, folder, "statistics_" + savestring)
         os.makedirs(os.path.dirname(complete_name), exist_ok=True)
         statistics_save = open(complete_name, "w")
-        statistics_save.write("GATEWAY\nMac Adresse: {}\ngesendete Schedules: {}\nerhaltene Sensordaten: \n".format(
+        statistics_save.write("GATEWAY\nPosition: {}\nMac Adresse: {}\ngesendete Schedules: {}\nerhaltene Sensordaten: \n".format(
+            (gateway.position.x, gateway.position.y),
             gateway.mac,
             gateway_send_schedules))
         for i in range(len(sensors)):
@@ -207,27 +206,42 @@ def done(msg):
             sensormaclayer: SensorMac = sensor._mac
             received_schedules = sensormaclayer.received_schedule_count
             send_data = sensormaclayer.send_data_count
-            statistics_save.write("SENSOR {}\nMac Adresse: {}\nerhaltene Schedules: {} ({} %)\ngesendete Daten: {}\n".format(
+            statistics_save.write("SENSOR {}\nPosition: {}\nMac Adresse: {}\nerhaltene Schedules: {} ({} %)\ngesendete Daten: {}\n\n".format(
                 gateway.macToDeviceIndexDict[sensor.mac],
+                (sensor.position.x, sensor.position.y),
                 sensor.mac,
                 received_schedules,
                 round(received_schedules/gateway_send_schedules * 100),
                 send_data))
-            statistics_save.write("\n")
+
+        statistics_save.write("\n\n")
         for i in range(len(actuators)):
             actuator: SimpleActuator = actuators[i]
             actuatormaclayer: ActuatorMac = actuator._mac
             received_schedules = actuatormaclayer.schedule_received_count
             received_controls = actuatormaclayer.control_received_count
             send_acks = actuatormaclayer.ack_send_count
-            statistics_save.write("ACTUATOR {}\nMac Adresse: {}\nerhaltene Schedules: "
+            statistics_save.write("ACTUATOR {}\nPosition: {}\nMac Adresse: {}\nerhaltene Schedules: "
                                   "{} ({} %)\nerhaltene Controls: {}\ngesendete Acknowledgements: {}\n\n".format(
                 gateway.macToDeviceIndexDict[actuator.mac],
+                (actuator.position.x, actuator.position.y),
                 actuator.mac,
                 received_schedules,
                 round(received_schedules / gateway_send_schedules * 100),
                 received_controls,
                 send_acks))
+
+        statistics_save.write("\n\n")
+        gateway_chosen_schedules = gateway.chosen_schedules
+        sorted_keys = sorted(gateway_chosen_schedules, key=gateway_chosen_schedules.get, reverse=True)
+        keys = list(gateway_chosen_schedules.keys())
+        statistics_save.write("CHOSEN SCHEDULES\n")
+        for i in range(len(sorted_keys)):
+            key = sorted_keys[i]
+            statistics_save.write("{} : {} ({}%)\n".format(key, gateway_chosen_schedules[key],
+                                                           round(
+                                                               gateway_chosen_schedules[key]/gateway_send_schedules*100
+                                                               , 2)))
         statistics_save.close()
     # episode_results_save.close()
     loss_save.close()
@@ -238,6 +252,7 @@ def done(msg):
 
 
 def reset_env():
+    print("Environment resetted")
     global plants
     plants = []
     global controllers
@@ -309,28 +324,26 @@ def episode_done(info):
                                                                                                 info[2]))
     global duration
     duration += info[1]
-    print("episode {} finished. Duration: {:.3} mean loss: {:.2}\n".format(info[0], info[1], info[2]))
+    print("episode {} finished. Duration: {:.3} mean loss: {:.2}".format(info[0], info[1], info[2]))
     logger.debug("episode %d finished. Duration: %f, mean loss: %f", info[0], info[1], info[2], sender="environment")
     gc.collect()
 
 
 episode_done_event = Notifier("episode done")
 episode_done_event.subscribeCallback(episode_done)
-reset_event = Notifier("reset environment")
-reset_event.subscribeCallback(reset)
 done_event = Notifier("simulation done")
 done_event.subscribeCallback(done)
 
 
 def generate_x_y(num_plants):
     def random_pos():
-        return round(np.random.uniform(0.0, 3), 2), round(np.random.uniform(0.0, 3), 2)
+        return round(np.random.uniform(0.0, 3.7), 2), round(np.random.uniform(0.0, 3.7), 2)
     gateway_pos = random_pos()
 
     def next_pos():
         distance = 0.0
         position = 0.0, 0.0
-        while distance < 1.5:
+        while distance < 1.6:
             position = random_pos()
             diff_x = abs(gateway_pos[0]-position[0])
             diff_y = abs(gateway_pos[1]-position[1])
@@ -350,6 +363,7 @@ def initialize(configuration: Configuration):
     ) are defined in the module :mod:`~gymwipe.baSimulation.constants`
     """
     SimMan.init()
+    print("initializing new environment...")
     timestamp = int(time.time())
     global savestring
     global folder
@@ -435,15 +449,254 @@ def initialize(configuration: Configuration):
 
     global gateway
     gateway = Gateway(sensormacs, actuatormacs, controllers, plants, "Gateway", gatewaypos[0],
-                      gatewaypos[1], frequency_band, reset_event, done_event,
+                      gatewaypos[1], frequency_band, done_event,
                       episode_done_event, configuration)
     plants_save.close()
+
+    plt.plot(gatewaypos[0], gatewaypos[1], 'o', color='b')
+    for i in range(len(sensors)):
+        sensor = sensors[i]
+        actuator = actuators[i]
+        x,y = (sensor.position.x, sensor.position.y)
+        plt.plot(x, y, 'o', color='r')
+        x, y = (actuator.position.x, actuator.position.y)
+        plt.plot(x, y, 'o', color='g')
+
+    sensorstr = os.path.join(savepath, folder, "devicepositions_" + savestring +
+                             ".png")
+    os.makedirs(os.path.dirname(sensorstr), exist_ok=True)
+    plt.savefig(sensorstr)
+    plt.close()
     np.random.seed()
     gc.collect()
 
 
+def env_creation():
+
+    roundrobin_config = [Configuration(SchedulerType.ROUNDROBIN,
+                                       ProtocolType.TDMA,
+                                       timeslot_length=0.01,
+                                       episodes=200,
+                                       horizon=500,
+                                       plant_sample_time=0.01,
+                                       sensor_sample_time=0.01,
+                                       num_plants=3,
+                                       num_instable_plants=0,
+                                       schedule_length=2,
+                                       show_error_rates=False,
+                                       show_inputs_and_outputs=False,
+                                       kalman_reset=True,
+                                       show_statistics=True,
+                                       show_assigned_p_values=False,
+                                       seed=42)]
+
+    dqn_config = [Configuration(SchedulerType.DQN,
+                                ProtocolType.TDMA,
+                                timeslot_length=0.01,
+                                episodes=200,
+                                horizon=500,
+                                plant_sample_time=0.01,
+                                sensor_sample_time=0.01,
+                                num_plants=3,
+                                num_instable_plants=0,
+                                schedule_length=2,
+                                show_error_rates=False,
+                                show_inputs_and_outputs=False,
+                                kalman_reset=True,
+                                show_statistics=True,
+                                show_assigned_p_values=False,
+                                seed=42)]
+
+    random_csma_config = [Configuration(SchedulerType.RANDOM,
+                                        ProtocolType.CSMA,
+                                        timeslot_length=0.01,
+                                        episodes=10,
+                                        horizon=25,
+                                        plant_sample_time=0.01,
+                                        sensor_sample_time=0.01,
+                                        num_plants=3,
+                                        num_instable_plants=0,
+                                        schedule_length=20,
+                                        show_error_rates=False,
+                                        show_inputs_and_outputs=False,
+                                        kalman_reset=True,
+                                        show_statistics=True,
+                                        show_assigned_p_values=True,
+                                        seed=1)]
+
+    random_tdma_configs = [Configuration(SchedulerType.RANDOM,
+                                   ProtocolType.TDMA,
+                                   timeslot_length=0.01,
+                                   episodes=190,
+                                   horizon=500,
+                                   plant_sample_time=0.005,
+                                   sensor_sample_time=0.01,
+                                   num_plants=2,
+                                   num_instable_plants=0,
+                                   schedule_length=2,
+                                   show_error_rates=False,
+                                   show_inputs_and_outputs=False,
+                                   kalman_reset=False,
+                                   show_statistics=False,
+                                         show_assigned_p_values=False,
+                                         seed=42),
+                     Configuration(SchedulerType.RANDOM,
+                                   ProtocolType.TDMA,
+                                   timeslot_length=0.01,
+                                   episodes=190,
+                                   horizon=500,
+                                   plant_sample_time=0.005,
+                                   sensor_sample_time=0.01,
+                                   num_plants=2,
+                                   num_instable_plants=0,
+                                   schedule_length=3,
+                                   show_error_rates=False,
+                                   show_inputs_and_outputs=False,
+                                   kalman_reset=False,
+                                   show_statistics=False,
+                                   show_assigned_p_values=False,
+                                   seed=42),
+                     Configuration(SchedulerType.RANDOM,
+                                   ProtocolType.TDMA,
+                                   timeslot_length=0.01,
+                                   episodes=190,
+                                   horizon=500,
+                                   plant_sample_time=0.005,
+                                   sensor_sample_time=0.01,
+                                   num_plants=2,
+                                   num_instable_plants=0,
+                                   schedule_length=4,
+                                   show_error_rates=False,
+                                   show_inputs_and_outputs=False,
+                                   kalman_reset=False,
+                                   show_statistics=False,
+                                   show_assigned_p_values=False,
+                                   seed=42)
+                     ]
+
+    configs = [Configuration(SchedulerType.ROUNDROBIN,
+                             ProtocolType.TDMA,
+                             timeslot_length=0.01,
+                             episodes=190,
+                             horizon=500,
+                             plant_sample_time=0.005,
+                             sensor_sample_time=0.01,
+                             num_plants=2,
+                             num_instable_plants=0,
+                             schedule_length=2,
+                             show_error_rates=False,
+                             show_inputs_and_outputs=False,
+                             kalman_reset=False,
+                             show_statistics=False,
+                             show_assigned_p_values=False,
+                             seed=42),
+               Configuration(SchedulerType.ROUNDROBIN,
+                             ProtocolType.TDMA,
+                             timeslot_length=0.01,
+                             episodes=190,
+                             horizon=500,
+                             plant_sample_time=0.005,
+                             sensor_sample_time=0.01,
+                             num_plants=2,
+                             num_instable_plants=0,
+                             schedule_length=3,
+                             show_error_rates=False,
+                             show_inputs_and_outputs=False,
+                             kalman_reset=False,
+                             show_statistics=False,
+                             show_assigned_p_values=False,
+                             seed=42),
+               Configuration(SchedulerType.ROUNDROBIN,
+                             ProtocolType.TDMA,
+                             timeslot_length=0.01,
+                             episodes=190,
+                             horizon=500,
+                             plant_sample_time=0.005,
+                             sensor_sample_time=0.01,
+                             num_plants=2,
+                             num_instable_plants=0,
+                             schedule_length=4,
+                             show_error_rates=False,
+                             show_inputs_and_outputs=False,
+                             kalman_reset=False,
+                             show_statistics=False,
+                             show_assigned_p_values=False,
+                             seed=42),
+               Configuration(SchedulerType.DQN,
+                             ProtocolType.TDMA,
+                             timeslot_length=0.01,
+                             episodes=190,
+                             horizon=500,
+                             plant_sample_time=0.005,
+                             sensor_sample_time=0.01,
+                             num_plants=2,
+                             num_instable_plants=0,
+                             schedule_length=2,
+                             show_error_rates=False,
+                             show_inputs_and_outputs=False,
+                             kalman_reset=False,
+                             show_statistics=False,
+                             show_assigned_p_values=False,
+                             seed=42),
+               Configuration(SchedulerType.DQN,
+                             ProtocolType.TDMA,
+                             timeslot_length=0.01,
+                             episodes=190,
+                             horizon=500,
+                             plant_sample_time=0.005,
+                             sensor_sample_time=0.01,
+                             num_plants=2,
+                             num_instable_plants=0,
+                             schedule_length=3,
+                             show_error_rates=False,
+                             show_inputs_and_outputs=False,
+                             kalman_reset=False,
+                             show_statistics=False,
+                             show_assigned_p_values=False,
+                             seed=40),
+               Configuration(SchedulerType.DQN,
+                             ProtocolType.TDMA,
+                             timeslot_length=0.01,
+                             episodes=190,
+                             horizon=500,
+                             plant_sample_time=0.005,
+                             sensor_sample_time=0.01,
+                             num_plants=2,
+                             num_instable_plants=0,
+                             schedule_length=4,
+                             show_error_rates=False,
+                             show_inputs_and_outputs=False,
+                             kalman_reset=False,
+                             show_statistics=False,
+                             show_assigned_p_values=False,
+                             seed=40)
+               ]
+
+    used_configs = roundrobin_config + dqn_config
+    for i in range(len(used_configs)):
+        configur = used_configs[i]
+        initialize(configur)
+        while not is_done:
+            SimMan.runSimulation(0.01)
+        reset_env()
+
+
+def compare():
+    dqn = ""
+    robin =""
+    plt.plot(range(0, len(dqn)), dqn, label="DQN Scheduler")
+    plt.plot(range(0, len(robin)), robin, label="Round Robin Scheduler")
+    plt.xlabel('episode')
+    plt.ylabel(' average episode loss')
+    plt.legend()
+    sensorstr = os.path.join(savepath, "Vergleich1.png")
+    os.makedirs(os.path.dirname(sensorstr), exist_ok=True)
+    plt.savefig(sensorstr)
+    plt.close()
+
+
 if __name__ == "__main__":
-    initialize()
-    while not done:
-        SimMan.runSimulation(config.timeslot_length*10)
-    episode_results_save.close()
+    # env_creation()
+    compare()
+
+
