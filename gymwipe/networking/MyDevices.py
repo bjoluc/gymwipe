@@ -296,6 +296,7 @@ class Gateway(GatewayDevice):
         self.sensor_id_to_controller_id = {}
         self.send_schedule_amount = 0
         self.chosen_schedules = {}
+        self.chosen_devices = {}
         for i in range(len(control)):
             self.controller_id_to_controller[i] = control[i]
             self.controller_id_to_plant[i] = plants[i]
@@ -350,7 +351,18 @@ class Gateway(GatewayDevice):
                 last_control_slot = next_control_line[0]
                 next_control_line = self.scheduler.get_next_control_slot(last_control_slot)
 
-
+    def schedule_analysis(self):
+        if self.configuration.protocol_type == ProtocolType.TDMA:
+            if self.scheduler.get_schedule_string() in self.chosen_schedules:
+                self.chosen_schedules[self.scheduler.get_schedule_string()] += 1
+            else:
+                self.chosen_schedules[self.scheduler.get_schedule_string()] = 1
+            chosen_devices = self.scheduler.get_chosen_devices()
+            for i in range(len(chosen_devices)):
+                if chosen_devices[i] in self.chosen_devices:
+                    self.chosen_devices[chosen_devices[i]] += 1
+                else:
+                    self.chosen_devices[chosen_devices[i]] = 1
 
     def _slotCount(self):
         while True:
@@ -412,10 +424,7 @@ class Gateway(GatewayDevice):
                     cum_loss = 0
                     for t in range(self.configuration.horizon):
                         schedule = self.scheduler.next_schedule()
-                        if self.scheduler.get_schedule_string() in self.chosen_schedules:
-                            self.chosen_schedules[self.scheduler.get_schedule_string()] += 1
-                        else:
-                            self.chosen_schedules[self.scheduler.get_schedule_string()] = 1
+                        self.schedule_analysis()
                         self.last_schedule_creation = SimMan.now
                         send_cmd = Message(
                             StackMessageTypes.SEND, {
@@ -453,10 +462,7 @@ class Gateway(GatewayDevice):
                     cum_loss = 0
                     for t in range(self.configuration.horizon):
                         schedule = self.scheduler.next_schedule(observation)
-                        if self.scheduler.get_schedule_string() in self.chosen_schedules:
-                            self.chosen_schedules[self.scheduler.get_schedule_string()] += 1
-                        else:
-                            self.chosen_schedules[self.scheduler.get_schedule_string()] = 1
+                        self.schedule_analysis()
                         self.last_schedule_creation = SimMan.now
                         self.nextScheduleCreation = SimMan.now + schedule.get_end_time() * \
                                                     self.configuration.timeslot_length
@@ -502,10 +508,7 @@ class Gateway(GatewayDevice):
                     cum_loss = 0
                     for t in range(self.configuration.horizon):
                         schedule = self.scheduler.next_schedule()
-                        if schedule.get_string() in self.chosen_schedules:
-                            self.chosen_schedules[schedule.get_string()] += 1
-                        else:
-                            self.chosen_schedules[schedule.get_string()] = 1
+                        self.schedule_analysis()
                         self.last_schedule_creation = SimMan.now
                         send_cmd = Message(
                             StackMessageTypes.SEND, {
@@ -543,10 +546,7 @@ class Gateway(GatewayDevice):
                     cum_loss = 0
                     for t in range(self.configuration.horizon):
                         schedule = self.scheduler.next_schedule(observation)
-                        if schedule.get_string() in self.chosen_schedules:
-                            self.chosen_schedules[schedule.get_string()] += 1
-                        else:
-                            self.chosen_schedules[schedule.get_string()] = 1
+                        self.schedule_analysis()
                         self.last_schedule_creation = SimMan.now
                         self.nextScheduleCreation = SimMan.now + schedule.get_end_time() * \
                                                     self.configuration.timeslot_length

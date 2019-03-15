@@ -154,12 +154,13 @@ class TDMAScheduler:
     """
         A framework for a Scheduler class, which will produce channel allocation schedules
     """
-    def __init__(self, devices, actuators, timeslots: int):
+    def __init__(self, devices, sensors, actuators, timeslots: int):
         """
         Args:
             devices: a list of MAC adresses which should be considered while producing a schedule
             int timeslots: the number of timeslots for which scheduling decisions should be taken
         """
+        self.sensors = sensors
         self.devices = devices  # list of sensor/controller mac addresses
         self.actuators = actuators
         self.schedule = None  # current schedule
@@ -184,6 +185,31 @@ class TDMAScheduler:
                     return [line[0], line[1]]
         return None
 
+    def get_chosen_devices(self):
+        devices = []
+        for i in range(len(self.schedule.schedule)-1):
+            line = self.schedule.schedule[i]
+            devices.append(line[1])
+        return devices
+
+    def get_schedule_string(self):
+        string = "["
+        for i in range(len(self.schedule.schedule)-1):
+            line = self.schedule.schedule[i]
+            string += "[slot {}, ".format(line[0])
+            if line[1] in self.actuators:
+                string += "device {}(a), ".format((self.actuators.index(line[1])+ len(self.sensors)))
+            if line[1] in self.sensors:
+                string += "device {}(s), ".format(self.sensors.index(line[1]))
+
+            type: SendOrReceive = line[2]
+            string += "{}, ".format(type.name)
+
+            mcs: MCS = line[3]
+            string += "{}]".format(mcs.name)
+        string += "]"
+        return string
+
 
 class CSMAScheduler:
     def __init__(self, sensors, gatewaymac, timeslots:int):
@@ -198,10 +224,9 @@ class CSMAScheduler:
 
 
 class RandomTDMAScheduler(TDMAScheduler):
-    def __init__(self, devices: [],sensors: [], actuators: [], timeslots: int):
-        super(RandomTDMAScheduler, self).__init__(devices, actuators, timeslots)
+    def __init__(self, devices: [], sensors: [], actuators: [], timeslots: int):
+        super(RandomTDMAScheduler, self).__init__(devices, sensors, actuators, timeslots)
         logger.debug("given devices are %s", devices.__str__())
-        self.sensors = sensors
         self.action_set = list(itertools.permutations(range(len(devices)), timeslots))
         logger.debug("action set is %s", self.action_set.__str__())
         self.action_size = len(self.action_set)
@@ -221,24 +246,6 @@ class RandomTDMAScheduler(TDMAScheduler):
                      sender="RandomTDMAScheduler")
         return self.schedule
 
-    def get_schedule_string(self):
-        string = "["
-        for i in range(len(self.schedule.schedule) - 1):
-            line = self.schedule.schedule[i]
-            string += "[slot {}, ".format(line[0])
-            if line[1] in self.actuators:
-                string += "device {}(a), ".format((self.actuators.index(line[1]) + len(self.sensors)))
-            if line[1] in self.sensors:
-                string += "device {}(s), ".format(self.sensors.index(line[1]))
-
-            type: SendOrReceive = line[2]
-            string += "{}, ".format(type.name)
-
-            mcs: MCS = line[3]
-            string += "{}]".format(mcs.name)
-        string += "]"
-        return string
-
 
 class RoundRobinTDMAScheduler(TDMAScheduler):
     """
@@ -246,8 +253,7 @@ class RoundRobinTDMAScheduler(TDMAScheduler):
     approach. That means, that every device gets one slot in a fixed order.
     """
     def __init__(self, devices: [], sensors: [], actuators: [], timeslots: int):
-        super(RoundRobinTDMAScheduler, self).__init__(devices, actuators, timeslots)
-        self.sensors = sensors
+        super(RoundRobinTDMAScheduler, self).__init__(devices, sensors, actuators, timeslots)
         self.nextDevice = 0 # position in device list of the first device in the next schedule
         self.wasActuator = False
 
@@ -274,24 +280,6 @@ class RoundRobinTDMAScheduler(TDMAScheduler):
         self.schedule = TDMASchedule(action)
         return self.schedule
 
-    def get_schedule_string(self):
-        string = "["
-        for i in range(len(self.schedule.schedule) - 1):
-            line = self.schedule.schedule[i]
-            string += "[slot {}, ".format(line[0])
-            if line[1] in self.actuators:
-                string += "device {}(a), ".format((self.actuators.index(line[1]) + len(self.sensors)))
-            if line[1] in self.sensors:
-                string += "device {}(s), ".format(self.sensors.index(line[1]))
-
-            type: SendOrReceive = line[2]
-            string += "{}, ".format(type.name)
-
-            mcs: MCS = line[3]
-            string += "{}]".format(mcs.name)
-        string += "]"
-        return string
-
 
 class GreedyWaitingTimeTDMAScheduler(TDMAScheduler):
     """
@@ -299,8 +287,8 @@ class GreedyWaitingTimeTDMAScheduler(TDMAScheduler):
     approach. That means, that the devices that waited the most slots since their last successful transmission are
     scheduled next.
     """
-    def __init__(self, devices: [], actuators: [], timeslots: int):
-        super(GreedyWaitingTimeTDMAScheduler, self).__init__(devices, actuators, timeslots)
+    def __init__(self, devices: [], sensors: [], actuators: [], timeslots: int):
+        super(GreedyWaitingTimeTDMAScheduler, self).__init__(devices, sensors, actuators, timeslots)
 
     def next_schedule(self, observation: list) -> TDMASchedule:
         """
@@ -327,8 +315,8 @@ class GreedyWaitingTimeTDMAScheduler(TDMAScheduler):
 
 
 class GreedyErrorTDMAScheduler(TDMAScheduler):
-    def __init__(self, devices: [], actuators: [], timeslots: int):
-        super(GreedyErrorTDMAScheduler, self).__init__(devices, actuators, timeslots)
+    def __init__(self, devices: [], sensors: [], actuators: [], timeslots: int):
+        super(GreedyErrorTDMAScheduler, self).__init__(devices, sensors, actuators, timeslots)
 
     def next_schedule(self, observation: list) -> TDMASchedule:
         """

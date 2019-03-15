@@ -180,21 +180,29 @@ def done(msg):
             (gateway.position.x, gateway.position.y),
             gateway.mac,
             gateway_send_schedules))
+        chosen_count = gateway.chosen_devices
         for i in range(len(sensors)):
             sensor: SimpleSensor = sensors[i]
             sensordata = gateway_arrived_data[sensor.mac]
-            statistics_save.write("\tSensor {}: {}\n".format(gateway.macToDeviceIndexDict[sensor.mac], sensordata))
+            wanted = chosen_count[sensor.mac]
+            statistics_save.write("\tSensor {}:verlangt: {} erhalten: {} ({} %)\n".format(
+                gateway.macToDeviceIndexDict[sensor.mac],
+                wanted,
+                sensordata,
+                round(sensordata/wanted*100, 2)))
         statistics_save.write("gesendete Controls und erhaltene Acknowledgements: \n")
         for i in range(len(actuators)):
             actuator: SimpleActuator = actuators[i]
             actuatoracks = gateway_arrived_acks[actuator.mac]
+            actuatormaclayer: ActuatorMac = actuator._mac
             gatewaycontrols = gateway_send_controls[actuator.mac]
+            send_acks = actuatormaclayer.ack_send_count
             if gatewaycontrols is not 0:
-                statistics_save.write("\tActuator {}: gesendet: {} erhalten: {} ({}%)\n".format(
+                statistics_save.write("\tActuator {}: gesendet: {} erhalten: {} ({}% der vom Actuator gesendeten ACKs)\n".format(
                     gateway.macToDeviceIndexDict[actuator.mac],
                     gatewaycontrols,
                     actuatoracks,
-                    round(actuatoracks/gatewaycontrols*100)))
+                    round(actuatoracks/send_acks*100, 2)))
             else:
                 statistics_save.write("\tActuator {}: gesendet: {} erhalten: {}\n".format(
                     gateway.macToDeviceIndexDict[actuator.mac],
@@ -206,13 +214,15 @@ def done(msg):
             sensormaclayer: SensorMac = sensor._mac
             received_schedules = sensormaclayer.received_schedule_count
             send_data = sensormaclayer.send_data_count
-            statistics_save.write("SENSOR {}\nPosition: {}\nMac Adresse: {}\nerhaltene Schedules: {} ({} %)\ngesendete Daten: {}\n\n".format(
+            wanted = chosen_count[sensor.mac]
+            statistics_save.write("SENSOR {}\nPosition: {}\nMac Adresse: {}\nerhaltene Schedules: {} ({} %)\ngesendete Daten: {} ({} % der verlangten Daten)\n\n".format(
                 gateway.macToDeviceIndexDict[sensor.mac],
                 (sensor.position.x, sensor.position.y),
                 sensor.mac,
                 received_schedules,
-                round(received_schedules/gateway_send_schedules * 100),
-                send_data))
+                round(received_schedules/gateway_send_schedules * 100, 2),
+                send_data,
+                round(send_data/wanted*100, 2)))
 
         statistics_save.write("\n\n")
         for i in range(len(actuators)):
@@ -221,20 +231,21 @@ def done(msg):
             received_schedules = actuatormaclayer.schedule_received_count
             received_controls = actuatormaclayer.control_received_count
             send_acks = actuatormaclayer.ack_send_count
+            send_controls = gateway_send_controls[actuator.mac]
             statistics_save.write("ACTUATOR {}\nPosition: {}\nMac Adresse: {}\nerhaltene Schedules: "
-                                  "{} ({} %)\nerhaltene Controls: {}\ngesendete Acknowledgements: {}\n\n".format(
+                                  "{} ({} %)\nerhaltene Controls: {} ({} %)\ngesendete Acknowledgements: {}\n\n".format(
                 gateway.macToDeviceIndexDict[actuator.mac],
                 (actuator.position.x, actuator.position.y),
                 actuator.mac,
                 received_schedules,
-                round(received_schedules / gateway_send_schedules * 100),
+                round(received_schedules / gateway_send_schedules * 100,2),
                 received_controls,
+                round(received_controls/send_controls*100, 2),
                 send_acks))
 
         statistics_save.write("\n\n")
         gateway_chosen_schedules = gateway.chosen_schedules
         sorted_keys = sorted(gateway_chosen_schedules, key=gateway_chosen_schedules.get, reverse=True)
-        keys = list(gateway_chosen_schedules.keys())
         statistics_save.write("CHOSEN SCHEDULES\n")
         for i in range(len(sorted_keys)):
             key = sorted_keys[i]
@@ -242,6 +253,21 @@ def done(msg):
                                                            round(
                                                                gateway_chosen_schedules[key]/gateway_send_schedules*100
                                                                , 2)))
+
+        statistics_save.write("\n\nCHOSEN DEVICES\n")
+
+        devices = list(chosen_count.keys())
+        summe = 0
+        for i in range(len(devices)):
+            summe += chosen_count[devices[i]]
+        for i in range(len(devices)):
+            device_mac = devices[i]
+            device_id = gateway.macToDeviceIndexDict[device_mac]
+            count = chosen_count[device_mac]
+            if device_mac in gateway.sensor_macs:
+                statistics_save.write("Sensor {}: {} ({}%)\n".format(device_id, count, round(count/summe*100, 2)))
+            if device_mac in gateway.actuator_macs:
+                statistics_save.write("Actuator {}: {} ({}%)\n".format(device_id, count, round(count / summe * 100, 2)))
         statistics_save.close()
     # episode_results_save.close()
     loss_save.close()
@@ -472,12 +498,27 @@ def initialize(configuration: Configuration):
 
 
 def env_creation():
-
+    random_config = [Configuration(SchedulerType.RANDOM,
+                                   ProtocolType.TDMA,
+                                   timeslot_length=0.01,
+                                   episodes=1,
+                                   horizon=150,
+                                   plant_sample_time=0.01,
+                                   sensor_sample_time=0.01,
+                                   num_plants=3,
+                                   num_instable_plants=0,
+                                   schedule_length=2,
+                                   show_error_rates=False,
+                                   show_inputs_and_outputs=True,
+                                   kalman_reset=True,
+                                   show_statistics=True,
+                                   show_assigned_p_values=False,
+                                   seed=46)]
     roundrobin_config = [Configuration(SchedulerType.ROUNDROBIN,
                                        ProtocolType.TDMA,
                                        timeslot_length=0.01,
-                                       episodes=200,
-                                       horizon=500,
+                                       episodes=1,
+                                       horizon=50,
                                        plant_sample_time=0.01,
                                        sensor_sample_time=0.01,
                                        num_plants=3,
@@ -493,7 +534,7 @@ def env_creation():
     dqn_config = [Configuration(SchedulerType.DQN,
                                 ProtocolType.TDMA,
                                 timeslot_length=0.01,
-                                episodes=200,
+                                episodes=20,
                                 horizon=500,
                                 plant_sample_time=0.01,
                                 sensor_sample_time=0.01,
@@ -505,7 +546,7 @@ def env_creation():
                                 kalman_reset=True,
                                 show_statistics=True,
                                 show_assigned_p_values=False,
-                                seed=42)]
+                                seed=46)]
 
     random_csma_config = [Configuration(SchedulerType.RANDOM,
                                         ProtocolType.CSMA,
@@ -672,7 +713,7 @@ def env_creation():
                              seed=40)
                ]
 
-    used_configs = roundrobin_config + dqn_config
+    used_configs = roundrobin_config
     for i in range(len(used_configs)):
         configur = used_configs[i]
         initialize(configur)
@@ -696,7 +737,7 @@ def compare():
 
 
 if __name__ == "__main__":
-    # env_creation()
-    compare()
+    env_creation()
+    # compare()
 
 
