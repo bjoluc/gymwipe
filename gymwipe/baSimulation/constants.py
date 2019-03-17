@@ -40,27 +40,35 @@ class Configuration:
     def __init__(self,
                  scheduler_type: SchedulerType,
                  protocol_type: ProtocolType,
-                 timeslot_length,
-                 episodes,
-                 horizon,
-                 plant_sample_time,
-                 sensor_sample_time,
-                 num_plants,
-                 num_instable_plants,
-                 schedule_length,
-                 show_inputs_and_outputs,
-                 show_error_rates,
-                 kalman_reset,
-                 show_statistics,
-                 show_assigned_p_values,
-                 seed):
+                 timeslot_length: float = 0.01,
+                 episodes: int = 200,
+                 horizon: int = 500,
+                 plant_sample_time: float = 0.02,
+                 sensor_sample_time: float = 0.02,
+                 num_plants: int = 2,
+                 num_instable_plants: int = 0,
+                 schedule_length: int = 2,
+                 show_inputs_and_outputs: bool = True,
+                 show_error_rates: bool = True,
+                 kalman_reset: bool = True,
+                 show_statistics: bool = True,
+                 show_assigned_p_values: bool = True,
+                 train: bool = True,
+                 simulate: bool = True,
+                 simulation_horizon: int = 100,
+                 seed: int = 42):
         self.scheduler_type = scheduler_type
         self.protocol_type = protocol_type
         self.timeslot_length = timeslot_length
         self.episodes = episodes
         self.horizon = horizon
-        self.plant_sample_time = plant_sample_time
-        self.sample_to_timeslot_ratio = self.timeslot_length/self.plant_sample_time
+        self.train = train
+        if protocol_type == ProtocolType.TDMA:
+            self.plant_sample_time = schedule_length * timeslot_length
+        elif protocol_type == protocol_type.CSMA:
+            self.plant_sample_time = plant_sample_time
+
+        self.sample_to_timeslot_ratio = self.timeslot_length*schedule_length/self.plant_sample_time
         self.sensor_sample_time = sensor_sample_time
         self.num_plants = num_plants
         self.num_instable_plants = num_instable_plants
@@ -68,6 +76,8 @@ class Configuration:
         self.show_inputs_and_outputs = show_inputs_and_outputs
         self.show_error_rates = show_error_rates
         self.kalman_reset = kalman_reset
+        self.simulate = simulate
+        self.simulation_horizon = simulation_horizon
         self.show_statistics = show_statistics
         self.show_assigned_p_values = show_assigned_p_values
         self.seed = seed

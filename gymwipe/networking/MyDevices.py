@@ -64,13 +64,13 @@ class Control:
             self.controller_id_to_latest_u[i] = 0.0
 
     def onPacketReceived(self, senderIndex, state):
-        self.controller_id_to_latest_state_slot[self.sensor_id_to_controller_id[senderIndex]] = self.gateway.simulatedSlot
+        self.controller_id_to_latest_state_slot[self.sensor_id_to_controller_id[senderIndex]] = self.gateway.send_schedule_amount
         self.controller_id_to_latest_state[self.sensor_id_to_controller_id[senderIndex]] = state
         logger.debug("received a packet with estimated state", sender="Control")
 
     def getControl(self, actuator_id, hypothetical: bool):
         controller_id = self.actuator_id_to_controller_id[actuator_id]
-        diff = (self.gateway.simulatedSlot - self.controller_id_to_latest_state_slot[controller_id]) * \
+        diff = (self.gateway.send_schedule_amount - self.controller_id_to_latest_state_slot[controller_id]) * \
                self.gateway.configuration.sample_to_timeslot_ratio
         diff = int(diff)
         estimated_state = self.estimateState(diff, controller_id)
@@ -172,7 +172,8 @@ class GatewayDevice(NetworkDevice):
     """
 
     def __init__(self, name: str, xPos: float, yPos: float, frequencyBand: FrequencyBand,
-                    deviceIndexToMacDict: Dict[int, bytes], sensors, actuators, interpreter, control, done_event, episode_done_event, configuration: Configuration):
+                    deviceIndexToMacDict: Dict[int, bytes], sensors, actuators, interpreter, control,
+                 done_event, episode_done_event, simulation_done_event, configuration: Configuration):
         # No type definition for 'interpreter' to avoid circular dependencies
         """
             deviceIndexToMacDict: A dictionary mapping integer indexes to device
@@ -186,6 +187,7 @@ class GatewayDevice(NetworkDevice):
         self.configuration = configuration
         self.done_event = done_event
         self.episode_done_event = episode_done_event
+        self.simualtion_done_event = simulation_done_event
         self.mac: bytes = newUniqueMacAddress()
         self.send_schedule_count = 0
         self.send_control_amount = {}
@@ -282,7 +284,7 @@ class Gateway(GatewayDevice):
 
     def __init__(self, sensorMACS: [], actuatorMACS: [], control: [], plants: [], name: str, xPos: float, yPos: float,
                  frequencyBand: FrequencyBand, done_event: Notifier,
-                 episode_done_event: Notifier, configuration: Configuration):
+                 episode_done_event: Notifier, simulation_done_event: Notifier, configuration: Configuration):
 
         indexToMAC = {}
 
@@ -315,13 +317,17 @@ class Gateway(GatewayDevice):
                                       Control(self.controller_id_to_controller,
                                               self.sensor_id_to_controller_id,
                                               self.controller_id_to_actuator_id,
-                                              self.controller_id_to_plant), done_event, episode_done_event, configuration)
+                                              self.controller_id_to_plant),
+                                      done_event, episode_done_event, simulation_done_event,
+                                      configuration)
         self.control.gateway = self
         self.interpreter.gateway = self
 
         self._create_scheduler()
         self._n_schedule_created = Notifier("new Schedule created", self)
         self._n_schedule_created.subscribeProcess(self._schedule_handler)
+        self.n_simulate = Notifier("start simulation")
+        self.n_simulate.subscribeProcess(self._simulate)
 
         SimMan.process(self._gateway())
         SimMan.process(self._slotCount())
@@ -363,6 +369,8 @@ class Gateway(GatewayDevice):
                     self.chosen_devices[chosen_devices[i]] += 1
                 else:
                     self.chosen_devices[chosen_devices[i]] = 1
+
+            self.send_schedule_amount += 1
 
     def _slotCount(self):
         while True:
@@ -413,209 +421,240 @@ class Gateway(GatewayDevice):
                 pass
 
     def _gateway(self):
-        if self.configuration.protocol_type == ProtocolType.TDMA:
-            logger.debug("protocol is TDMA", sender=self)
-            if isinstance(self.scheduler, RoundRobinTDMAScheduler):  # Round Robin
-                logger.debug("scheduler is round robin scheduler", sender=self)
-                avgloss = []
-                for i in range(self.configuration.episodes):
-                    logger.debug("starting episode %d", i, sender=self)
-                    start = time.time()
-                    cum_loss = 0
-                    for t in range(self.configuration.horizon):
-                        schedule = self.scheduler.next_schedule()
-                        self.schedule_analysis()
-                        self.last_schedule_creation = SimMan.now
-                        send_cmd = Message(
-                            StackMessageTypes.SEND, {
-                                "schedule": schedule,
-                                "clock": self.last_schedule_creation
-                            }
-                        )
-                        self._mac.gates["networkIn"].send(send_cmd)
-                        self.nextScheduleCreation = SimMan.now + schedule.get_end_time() * \
-                                                    self.configuration.timeslot_length
-                        self._n_schedule_created.trigger(schedule)
-                        yield send_cmd.eProcessed
-                        self.send_schedule_amount += 1
-                        yield SimMan.timeoutUntil(self.nextScheduleCreation)
-                        reward = self.interpreter.getReward()
-                        cum_loss += -reward
-                    logger.debug("episode %d is done", i, sender=self)
-                    avgloss.append(cum_loss / self.configuration.horizon)
-                    end_time = time.time()
-                    info = [i, end_time-start, cum_loss/self.configuration.horizon]
-                    logger.debug("episode %d done. Average loss is %f", i, cum_loss/self.configuration.horizon)
-                    if self.episode_done_event is not None:
-                        self.episode_done_event.trigger(info)
+        if self.configuration.train:
+            if self.configuration.protocol_type == ProtocolType.TDMA:
+                logger.debug("protocol is TDMA", sender=self)
+                if isinstance(self.scheduler, RoundRobinTDMAScheduler):  # Round Robin
 
-                if self.done_event is not None:
+                    logger.debug("scheduler is round robin scheduler", sender=self)
+                    avgloss = []
+                    for i in range(self.configuration.episodes):
+                        logger.debug("starting episode %d", i, sender=self)
+                        start = time.time()
+                        cum_loss = 0
+                        for t in range(self.configuration.horizon):
+                            schedule = self.scheduler.next_schedule()
+                            self.schedule_analysis()
+                            self.last_schedule_creation = SimMan.now
+                            send_cmd = Message(
+                                StackMessageTypes.SEND, {
+                                    "schedule": schedule,
+                                    "clock": self.last_schedule_creation
+                                }
+                            )
+                            self._mac.gates["networkIn"].send(send_cmd)
+                            self.nextScheduleCreation = SimMan.now + schedule.get_end_time() * \
+                                                        self.configuration.timeslot_length
+                            self._n_schedule_created.trigger(schedule)
+                            yield send_cmd.eProcessed
+                            yield SimMan.timeoutUntil(self.nextScheduleCreation)
+                            reward = self.interpreter.getReward()
+                            cum_loss += -reward
+                        logger.debug("episode %d is done", i, sender=self)
+                        avgloss.append(cum_loss / self.configuration.horizon)
+                        end_time = time.time()
+                        info = [i, end_time-start, cum_loss/self.configuration.horizon]
+                        logger.debug("episode %d done. Average loss is %f", i, cum_loss/self.configuration.horizon)
+                        if self.episode_done_event is not None:
+                            self.episode_done_event.trigger(info)
+
+                    if self.done_event is not None:
+                        self.done_event.trigger(avgloss)
+
+                elif isinstance(self.scheduler, DQNTDMAScheduler):
+                    logger.debug("scheduler is dqn scheduler", sender=self)
+                    avgloss = []
+                    for e in range(self.configuration.episodes):
+                        logger.debug("starting episode %d", e, sender=self)
+                        start = time.time()
+                        observation = self.interpreter.get_first_observation()
+                        cum_loss = 0
+                        for t in range(self.configuration.horizon):
+                            schedule = self.scheduler.next_schedule(observation)
+                            self.schedule_analysis()
+                            self.last_schedule_creation = SimMan.now
+                            self.nextScheduleCreation = SimMan.now + schedule.get_end_time() * \
+                                                        self.configuration.timeslot_length
+                            self._n_schedule_created.trigger(schedule)
+                            send_cmd = Message(
+                                StackMessageTypes.SEND, {
+                                    "schedule": schedule,
+                                    "clock": self.last_schedule_creation
+                                }
+                            )
+                            self._mac.gates["networkIn"].send(send_cmd)
+                            yield send_cmd.eProcessed
+                            yield SimMan.timeoutUntil(self.nextScheduleCreation)
+                            next_observation = self.interpreter.getObservation()
+                            logger.debug("last observation was %s\nnext observation is %s", str(observation),
+                                         str(next_observation), sender=self)
+                            reward = self.interpreter.getReward()
+                            cum_loss += -reward
+                            action_id = self.scheduler.action_id
+                            self.scheduler.remember(observation, action_id,
+                                                    reward, next_observation)
+                            observation = next_observation
+                            if np.mod(t, self.scheduler.c) == 0:
+                                self.scheduler.update_target_model()
+                            if len(self.scheduler.memory) > self.scheduler.batch_size:
+                                self.scheduler.replay()
+                        avg = cum_loss/self.configuration.horizon
+                        avgloss.append(avg)
+                        end_time = time.time()
+                        info = [e, end_time-start, avg]
+                        logger.debug("episode %d done. Average loss is %f", e, cum_loss/self.configuration.horizon)
+
+                        self.episode_done_event.trigger(info)
                     self.done_event.trigger(avgloss)
 
-            elif isinstance(self.scheduler, DQNTDMAScheduler):
-                logger.debug("scheduler is dqn scheduler", sender=self)
-                avgloss = []
-                for e in range(self.configuration.episodes):
-                    logger.debug("starting episode %d", e, sender=self)
-                    start = time.time()
-                    observation = self.interpreter.get_first_observation()
-                    cum_loss = 0
-                    for t in range(self.configuration.horizon):
-                        schedule = self.scheduler.next_schedule(observation)
-                        self.schedule_analysis()
-                        self.last_schedule_creation = SimMan.now
-                        self.nextScheduleCreation = SimMan.now + schedule.get_end_time() * \
-                                                    self.configuration.timeslot_length
-                        self._n_schedule_created.trigger(schedule)
-                        send_cmd = Message(
-                            StackMessageTypes.SEND, {
-                                "schedule": schedule,
-                                "clock": self.last_schedule_creation
-                            }
-                        )
-                        self._mac.gates["networkIn"].send(send_cmd)
-                        yield send_cmd.eProcessed
-                        self.send_schedule_amount += 1
-                        yield SimMan.timeoutUntil(self.nextScheduleCreation)
-                        next_observation = self.interpreter.getObservation()
-                        logger.debug("last observation was %s\nnext observation is %s", str(observation),
-                                     str(next_observation), sender=self)
-                        reward = self.interpreter.getReward()
-                        cum_loss += -reward
-                        action_id = self.scheduler.action_id
-                        self.scheduler.remember(observation, action_id,
-                                                reward, next_observation)
-                        observation = next_observation
-                        if np.mod(t, self.scheduler.c) == 0:
-                            self.scheduler.update_target_model()
-                        if len(self.scheduler.memory) > self.scheduler.batch_size:
-                            self.scheduler.replay()
-                    avg = cum_loss/self.configuration.horizon
-                    avgloss.append(avg)
-                    end_time = time.time()
-                    info = [e, end_time-start, avg]
-                    logger.debug("episode %d done. Average loss is %f", e, cum_loss/self.configuration.horizon)
+                elif isinstance(self.scheduler, RandomTDMAScheduler):
+                    logger.debug("scheduler is random scheduler", sender=self)
+                    avgloss = []
+                    for i in range(self.configuration.episodes):
+                        logger.debug("starting episode %d", i, sender=self)
+                        start = time.time()
+                        cum_loss = 0
+                        for t in range(self.configuration.horizon):
+                            schedule = self.scheduler.next_schedule()
+                            self.schedule_analysis()
+                            self.last_schedule_creation = SimMan.now
+                            send_cmd = Message(
+                                StackMessageTypes.SEND, {
+                                    "schedule": schedule,
+                                    "clock": self.last_schedule_creation
+                                }
+                            )
+                            self._mac.gates["networkIn"].send(send_cmd)
+                            self.nextScheduleCreation = SimMan.now + schedule.get_end_time() * \
+                                                        self.configuration.timeslot_length
+                            self._n_schedule_created.trigger(schedule)
+                            yield send_cmd.eProcessed
+                            yield SimMan.timeoutUntil(self.nextScheduleCreation)
+                            reward = self.interpreter.getReward()
+                            cum_loss += -reward
+                        logger.debug("episode %d is done", i, sender=self)
+                        avgloss.append(cum_loss / self.configuration.horizon)
+                        end_time = time.time()
+                        info = [i, end_time-start, cum_loss/self.configuration.horizon]
+                        logger.debug("episode %d done. Average loss is %f", i, cum_loss/self.configuration.horizon)
+                        if self.episode_done_event is not None:
+                            self.episode_done_event.trigger(info)
 
-                    self.episode_done_event.trigger(info)
-                self.done_event.trigger(avgloss)
+                    if self.done_event is not None:
+                        self.done_event.trigger(avgloss)
 
-            elif isinstance(self.scheduler, RandomTDMAScheduler):
-                logger.debug("scheduler is random scheduler", sender=self)
-                avgloss = []
-                for i in range(self.configuration.episodes):
-                    logger.debug("starting episode %d", i, sender=self)
-                    start = time.time()
-                    cum_loss = 0
-                    for t in range(self.configuration.horizon):
-                        schedule = self.scheduler.next_schedule()
-                        self.schedule_analysis()
-                        self.last_schedule_creation = SimMan.now
-                        send_cmd = Message(
-                            StackMessageTypes.SEND, {
-                                "schedule": schedule,
-                                "clock": self.last_schedule_creation
-                            }
-                        )
-                        self._mac.gates["networkIn"].send(send_cmd)
-                        self.nextScheduleCreation = SimMan.now + schedule.get_end_time() * \
-                                                    self.configuration.timeslot_length
-                        self._n_schedule_created.trigger(schedule)
-                        yield send_cmd.eProcessed
-                        self.send_schedule_amount += 1
-                        yield SimMan.timeoutUntil(self.nextScheduleCreation)
-                        reward = self.interpreter.getReward()
-                        cum_loss += -reward
-                    logger.debug("episode %d is done", i, sender=self)
-                    avgloss.append(cum_loss / self.configuration.horizon)
-                    end_time = time.time()
-                    info = [i, end_time-start, cum_loss/self.configuration.horizon]
-                    logger.debug("episode %d done. Average loss is %f", i, cum_loss/self.configuration.horizon)
-                    if self.episode_done_event is not None:
+                elif isinstance(self.scheduler, GreedyWaitingTimeTDMAScheduler):
+                    logger.debug("scheduler is dqn scheduler", sender=self)
+                    avgloss = []
+                    for e in range(self.configuration.episodes):
+                        logger.debug("starting episode %d", e, sender=self)
+                        start = time.time()
+                        observation = self.interpreter.get_first_observation()
+                        cum_loss = 0
+                        for t in range(self.configuration.horizon):
+                            schedule = self.scheduler.next_schedule(observation)
+                            self.schedule_analysis()
+                            self.last_schedule_creation = SimMan.now
+                            self.nextScheduleCreation = SimMan.now + schedule.get_end_time() * \
+                                                        self.configuration.timeslot_length
+                            self._n_schedule_created.trigger(schedule)
+                            send_cmd = Message(
+                                StackMessageTypes.SEND, {
+                                    "schedule": schedule,
+                                    "clock": self.last_schedule_creation
+                                }
+                            )
+                            self._mac.gates["networkIn"].send(send_cmd)
+                            yield send_cmd.eProcessed
+                            yield SimMan.timeoutUntil(self.nextScheduleCreation)
+                            observation = self.interpreter.getObservation()
+                            logger.debug("last observation was %s", str(observation), sender=self)
+                            reward = self.interpreter.getReward()
+                            cum_loss += -reward
+                        avg = cum_loss / self.configuration.horizon
+                        avgloss.append(avg)
+                        end_time = time.time()
+                        info = [e, end_time - start, avg]
+                        logger.debug("episode %d done. Average loss is %f", e, cum_loss / self.configuration.horizon)
+
                         self.episode_done_event.trigger(info)
-
-                if self.done_event is not None:
                     self.done_event.trigger(avgloss)
 
-            elif isinstance(self.scheduler, GreedyWaitingTimeTDMAScheduler):
-                logger.debug("scheduler is dqn scheduler", sender=self)
-                avgloss = []
-                for e in range(self.configuration.episodes):
-                    logger.debug("starting episode %d", e, sender=self)
-                    start = time.time()
-                    observation = self.interpreter.get_first_observation()
-                    cum_loss = 0
-                    for t in range(self.configuration.horizon):
-                        schedule = self.scheduler.next_schedule(observation)
-                        self.schedule_analysis()
-                        self.last_schedule_creation = SimMan.now
-                        self.nextScheduleCreation = SimMan.now + schedule.get_end_time() * \
-                                                    self.configuration.timeslot_length
-                        self._n_schedule_created.trigger(schedule)
-                        send_cmd = Message(
-                            StackMessageTypes.SEND, {
-                                "schedule": schedule,
-                                "clock": self.last_schedule_creation
-                            }
-                        )
-                        self._mac.gates["networkIn"].send(send_cmd)
-                        yield send_cmd.eProcessed
-                        self.send_schedule_amount += 1
-                        yield SimMan.timeoutUntil(self.nextScheduleCreation)
-                        observation = self.interpreter.getObservation()
-                        logger.debug("last observation was %s", str(observation), sender=self)
-                        reward = self.interpreter.getReward()
-                        cum_loss += -reward
-                    avg = cum_loss / self.configuration.horizon
-                    avgloss.append(avg)
-                    end_time = time.time()
-                    info = [e, end_time - start, avg]
-                    logger.debug("episode %d done. Average loss is %f", e, cum_loss / self.configuration.horizon)
+            elif self.configuration.protocol_type == ProtocolType.CSMA:
+                if isinstance(self.scheduler, RandomCSMAScheduler):
+                    logger.debug("scheduler is random scheduler", sender=self)
+                    avgloss = []
+                    for i in range(self.configuration.episodes):
+                        logger.debug("starting episode %d", i, sender=self)
+                        start = time.time()
+                        cum_loss = 0
+                        for t in range(self.configuration.horizon):
+                            schedules = self.scheduler.next_schedule()
+                            sensor_schedule = schedules[0]
+                            controller_schedule = schedules[1]
+                            self.last_schedule_creation = SimMan.now
+                            send_cmd = Message(
+                                StackMessageTypes.SEND, {
+                                    "schedule": sensor_schedule,
+                                    "controller_schedule": controller_schedule,
+                                    "clock": self.last_schedule_creation
+                                }
+                            )
+                            self._mac.gates["networkIn"].send(send_cmd)
+                            self.nextScheduleCreation = SimMan.now + sensor_schedule.get_end_time() * \
+                                                        self.configuration.timeslot_length
+                            self._n_schedule_created.trigger(controller_schedule)
+                            yield send_cmd.eProcessed
+                            self.send_schedule_amount += 1
+                            yield SimMan.timeoutUntil(self.nextScheduleCreation)
+                            reward = self.interpreter.getReward()
+                            cum_loss += -reward
+                        logger.debug("episode %d is done", i, sender=self)
+                        avgloss.append(cum_loss / self.configuration.horizon)
+                        end_time = time.time()
+                        info = [i, end_time-start, cum_loss/self.configuration.horizon]
+                        logger.debug("episode %d done. Average loss is %f", i, cum_loss/self.configuration.horizon)
+                        if self.episode_done_event is not None:
+                            self.episode_done_event.trigger(info)
 
-                    self.episode_done_event.trigger(info)
-                self.done_event.trigger(avgloss)
+                    if self.done_event is not None:
+                        self.done_event.trigger(avgloss)
 
-        elif self.configuration.protocol_type == ProtocolType.CSMA:
-            if isinstance(self.scheduler, RandomCSMAScheduler):
-                logger.debug("scheduler is random scheduler", sender=self)
-                avgloss = []
-                for i in range(self.configuration.episodes):
-                    logger.debug("starting episode %d", i, sender=self)
-                    start = time.time()
-                    cum_loss = 0
-                    for t in range(self.configuration.horizon):
-                        schedules = self.scheduler.next_schedule()
-                        sensor_schedule = schedules[0]
-                        controller_schedule = schedules[1]
-                        self.last_schedule_creation = SimMan.now
-                        send_cmd = Message(
-                            StackMessageTypes.SEND, {
-                                "schedule": sensor_schedule,
-                                "controller_schedule": controller_schedule,
-                                "clock": self.last_schedule_creation
-                            }
-                        )
-                        self._mac.gates["networkIn"].send(send_cmd)
-                        self.nextScheduleCreation = SimMan.now + sensor_schedule.get_end_time() * \
-                                                    self.configuration.timeslot_length
-                        self._n_schedule_created.trigger(controller_schedule)
-                        yield send_cmd.eProcessed
-                        self.send_schedule_amount += 1
-                        yield SimMan.timeoutUntil(self.nextScheduleCreation)
-                        reward = self.interpreter.getReward()
-                        cum_loss += -reward
-                    logger.debug("episode %d is done", i, sender=self)
-                    avgloss.append(cum_loss / self.configuration.horizon)
-                    end_time = time.time()
-                    info = [i, end_time-start, cum_loss/self.configuration.horizon]
-                    logger.debug("episode %d done. Average loss is %f", i, cum_loss/self.configuration.horizon)
-                    if self.episode_done_event is not None:
-                        self.episode_done_event.trigger(info)
+                if self.configuration.protocol_type == SchedulerType.GREEDYWAIT:
+                    pass
+        else:
+            self.done_event.trigger([])
 
-                if self.done_event is not None:
-                    self.done_event.trigger(avgloss)
+    def _simulate(self):
 
-            if self.configuration.protocol_type == SchedulerType.GREEDYWAIT:
-                pass
+        if self.configuration.simulate:
+            loss = []
+            cum_loss = 0
+            observation = self.interpreter.get_first_observation()
+            for i in range(self.configuration.simulation_horizon):
+                schedule = self.scheduler.next_schedule(observation)
+                self.schedule_analysis()
+                self.last_schedule_creation = SimMan.now
+                self.nextScheduleCreation = SimMan.now + schedule.get_end_time() * \
+                                            self.configuration.timeslot_length
+                self._n_schedule_created.trigger(schedule)
+                send_cmd = Message(
+                    StackMessageTypes.SEND, {
+                        "schedule": schedule,
+                        "clock": self.last_schedule_creation
+                    }
+                )
+                self._mac.gates["networkIn"].send(send_cmd)
+                yield send_cmd.eProcessed
+                yield SimMan.timeoutUntil(self.nextScheduleCreation)
+                next_observation = self.interpreter.getObservation()
+                logger.debug("last observation was %s\nnext observation is %s", str(observation),
+                             str(next_observation), sender=self)
+                reward = self.interpreter.getReward()
+                loss.append(-reward)
+                cum_loss += -reward
+                observation = next_observation
+            self.simualtion_done_event.trigger(loss)
 
 
 class SimpleSensor(ComplexNetworkDevice):

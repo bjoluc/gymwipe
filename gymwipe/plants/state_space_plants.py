@@ -68,7 +68,7 @@ class StateSpacePlant:
             n_complex = np.int(np.floor(np.sum(np.random.random_sample((n - n_unstable - 2 * n_double,)) < 0.5) / 2))
             n_real = n - n_unstable - 2 * n_double - 2 * n_complex
 
-            unstable = np.random.uniform(1.01, 1.1, n_unstable)
+            unstable = np.random.uniform(1.001, 1.01, n_unstable)
             for k in range(n_unstable):
                 if np.random.random_sample() < 0.5:
                     unstable[k] *= -1
@@ -124,7 +124,7 @@ class StateSpacePlant:
                                               self.r_subsystem) @ self.b.transpose() @ dare @ self.a)
         else:
             controller = (-np.linalg.inv(self.b.transpose() @ dare @ self.b +
-                                         self.r_subsystem)*0.005 @ self.b.transpose() @ dare @ self.a)
+                                         self.r_subsystem)*0.003 @ self.b.transpose() @ dare @ self.a)
         logger.debug("controller generated: %s", controller, sender=self.name)
         return controller
 
