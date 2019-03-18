@@ -62,6 +62,7 @@ class Control:
             self.controller_id_to_latest_state[i] = plant.state
             self.controller_id_to_latest_state_slot[i] = 0
             self.controller_id_to_latest_u[i] = 0.0
+            self.controller_id_to_u_slot[i] = 0
 
     def onPacketReceived(self, senderIndex, state):
         self.controller_id_to_latest_state_slot[self.sensor_id_to_controller_id[senderIndex]] = self.gateway.send_schedule_amount
@@ -78,6 +79,7 @@ class Control:
         control = controller @ estimated_state
         if not hypothetical:
             self.controller_id_to_latest_u[controller_id] = control
+            self.controller_id_to_u_slot[controller_id] = self.gateway.send_schedule_amount
             return control
         else:
             return [control, estimated_state]
@@ -246,13 +248,19 @@ class GatewayDevice(NetworkDevice):
                 # Mapping MAC addresses to indexes
                 senderIndex = self.macToDeviceIndexDict[message.args["sender"]]
                 if message.args["sender"] in self.sensor_macs:
-                    self.received_data_amount[message.args["sender"]] += 1
+                    if message.args["sender"] in self.received_data_amount:
+                        self.received_data_amount[message.args["sender"]] += 1
+                    else:
+                        self.received_data_amount[message.args["sender"]] = 1
                     self.control.onPacketReceived(senderIndex, message.args["state"])
                     logger.debug("received sensor data, transmitted id and state to control", sender=self)
                     self.interpreter.onPacketReceived(message, senderIndex)
                     logger.debug("transmitted whole message to interpreter", sender=self)
                 elif message.args["sender"] in self.actuator_macs:
-                    self.received_ack_amount[message.args["sender"]] += 1
+                    if message.args["sender"] in self.received_ack_amount:
+                        self.received_ack_amount[message.args["sender"]] += 1
+                    else:
+                        self.received_ack_amount[message.args["sender"]] = 1
                     self.interpreter.onPacketReceived(message, senderIndex)
                     logger.debug("transmitted whole message to interpreter", sender=self)
             if message.type is StackMessageTypes.GETCONTROL:
@@ -404,7 +412,7 @@ class Gateway(GatewayDevice):
 
         elif self.configuration.scheduler_type == SchedulerType.RANDOM:
             if self.configuration.protocol_type == ProtocolType.TDMA:
-                self.scheduler = RandomTDMAScheduler(list(self.deviceIndexToMacDict.values()),self.sensor_macs,
+                self.scheduler = RandomTDMAScheduler(list(self.deviceIndexToMacDict.values()), self.sensor_macs,
                                                      self.actuator_macs,
                                                      self.configuration.schedule_length)
                 logger.debug("RandomTDMA Scheduler created")
@@ -414,6 +422,7 @@ class Gateway(GatewayDevice):
         elif self.configuration.scheduler_type == SchedulerType.GREEDYWAIT:
             if self.configuration.protocol_type == ProtocolType.TDMA:
                 self.scheduler = GreedyWaitingTimeTDMAScheduler(list(self.deviceIndexToMacDict.values()),
+                                                                self.sensor_macs,
                                                                 self.actuator_macs,
                                                                 self.configuration.schedule_length)
                 logger.debug("Greedy waiting time TDMA Scheduler created")
@@ -625,13 +634,13 @@ class Gateway(GatewayDevice):
         else:
             self.done_event.trigger([])
 
-    def _simulate(self):
+    def _simulate(self, horizon):
 
         if self.configuration.simulate:
             loss = []
             cum_loss = 0
             observation = self.interpreter.get_first_observation()
-            for i in range(self.configuration.simulation_horizon):
+            for i in range(horizon):
                 schedule = self.scheduler.next_schedule(observation)
                 self.schedule_analysis()
                 self.last_schedule_creation = SimMan.now

@@ -21,21 +21,6 @@ class ProtocolType(Enum):
     CSMA = 1
 
 
-TIMESLOT_LENGTH = 0.01
-EPISODES = 1  # number of episodes
-T = 100  # horizon length
-SEED = 40
-SCHEDULER = SchedulerType.ROUNDROBIN
-PROTOCOL = ProtocolType.TDMA
-
-PLANT_SAMPLE_TIME = 0.01
-SENSOR_SAMPLE_TIME = 0.01
-SAMPLE_TO_TIMESLOT_RATIO = TIMESLOT_LENGTH/PLANT_SAMPLE_TIME
-NUM_PLANTS = 5
-INSTABLE_PLANTS = 0
-SCHEDULE_LENGTH = 2
-
-
 class Configuration:
     def __init__(self,
                  scheduler_type: SchedulerType,
@@ -55,7 +40,7 @@ class Configuration:
                  show_assigned_p_values: bool = True,
                  train: bool = True,
                  simulate: bool = True,
-                 simulation_horizon: int = 100,
+                 simulation_horizon: int = 150,
                  seed: int = 42):
         self.scheduler_type = scheduler_type
         self.protocol_type = protocol_type

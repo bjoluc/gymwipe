@@ -1,5 +1,6 @@
 import logging
 
+from gymwipe.baSimulation.constants import ProtocolType
 from gymwipe.networking.messages import Transmittable
 from gymwipe.simtools import SimMan, SimTimePrepender
 
@@ -7,7 +8,7 @@ logger = SimTimePrepender(logging.getLogger(__name__))
 
 
 class NCSMacHeader(Transmittable):
-    def __init__(self, type: bytes, sourceMAC: bytes, destMAC: bytes = None, more: bytes = None):
+    def __init__(self, protocol: ProtocolType, type: bytes, sourceMAC: bytes, destMAC: bytes = None, more: bytes = None):
         if len(sourceMAC) != 6:
             raise ValueError("sourceMAC: Expected 6 bytes, got {:d}.".format(len(sourceMAC)))
         if destMAC != None:
@@ -22,12 +23,14 @@ class NCSMacHeader(Transmittable):
         self.destMAC = destMAC
         self.type = type
         self.more = more
-
-        bytesize = len(sourceMAC)+ len(type)
-        if destMAC != None:
-            bytesize += len(destMAC)
-        if more != None:
-            bytesize += len(more)
+        bytesize = 0
+        if protocol == ProtocolType.TDMA:
+            bytesize = 1
+        if protocol == ProtocolType.CSMA:
+            if type[0] == 0:
+                bytesize = 1
+            else:
+                bytesize = 7
 
         super(NCSMacHeader, self).__init__((type, sourceMAC, destMAC, more), bytesize)
         logger.debug("Header created, bytesize %d: ", bytesize, sender=self)

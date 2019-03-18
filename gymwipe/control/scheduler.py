@@ -2,7 +2,7 @@ import itertools
 import logging
 import random
 from enum import Enum
-
+import numpy as np
 from gymwipe.simtools import SimTimePrepender
 
 logger = SimTimePrepender(logging.getLogger(__name__))
@@ -301,7 +301,7 @@ class GreedyWaitingTimeTDMAScheduler(TDMAScheduler):
         action = []
         for i in range(self.timeslots):
             max_value = max(observation)
-            max_index = observation.index(max_value)
+            max_index = np.nonzero(observation == max_value)[0][0]
             device = self.devices[max_index]
             if device in self.actuators:
                 action.append([device, SendOrReceive.RECE])
@@ -371,7 +371,7 @@ class RandomCSMAScheduler(CSMAScheduler):
 def csma_encode(schedule: CSMASchedule) -> int:
     bytesize = 0
     for i in range(len(schedule.schedule)-1):
-        bytesize += 7
+        bytesize += 9
     bytesize += 1
     return bytesize
 
@@ -386,6 +386,6 @@ def tdma_encode(schedule: TDMASchedule) -> int:
     """
     bytesize = 1  # time byte at the end of the schedule
     for i in range((len(schedule.schedule)-1)):
-        bytesize += 7
+        bytesize += 9
         # TODO: Change when schedule format is fixed
     return bytesize
