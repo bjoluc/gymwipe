@@ -58,7 +58,6 @@ class Control:
         """
         A dictionary that sores every estimated state from every plant
         """
-
         self.track_estimated_outputs = {}
         """
         A dictionary that sores every estimated output from every plant. ONLY USE FOR EVALUATION! USUALLY NOT KNOWN
@@ -90,12 +89,9 @@ class Control:
             current_estimated_state = self.sensor_id_to_current_state[sensor_ids[i]]
             # the following is just for evaluation, usually not known!
             c = np.array([[0.5, 1.5]])
-            mean = np.zeros((1,))
-            cov = np.eye(1) * 0.1
-            estimated_output = c @ current_estimated_state + np.random.multivariate_normal(mean, cov)
+            estimated_output = c @ current_estimated_state # not used, just for evaluation
             self.track_estimated_states[sensor_ids[i]].append(self.sensor_id_to_current_state[sensor_ids[i]])
             self.track_estimated_outputs[sensor_ids[i]].append(estimated_output[0])
-
         # compute new estimates
         for i in range(len(sensor_ids)):
             sensor_id = sensor_ids[i]
@@ -342,6 +338,7 @@ class Gateway(GatewayDevice):
         self.send_schedule_amount = 0
         self.chosen_schedules = {}
         self.chosen_devices = {}
+        self.schedule_sequence = []
         for i in range(len(control)):
             self.controller_id_to_controller[i] = control[i]
             self.controller_id_to_plant[i] = plants[i]
@@ -733,6 +730,7 @@ class Gateway(GatewayDevice):
                 observation = self.interpreter.get_first_observation()
                 for i in range(horizon):
                     schedule = self.scheduler.next_schedule(observation)
+                    self.schedule_sequence.append(self.scheduler.get_schedule_string())
                     self.schedule_analysis()
                     self.last_schedule_creation = SimMan.now
                     self.nextScheduleCreation = SimMan.now + schedule.get_end_time() * \
@@ -779,6 +777,7 @@ class Gateway(GatewayDevice):
                     yield send_cmd.eProcessed
                     self.send_schedule_amount += 1
                     yield SimMan.timeoutUntil(self.nextScheduleCreation)
+                    self.control.schedule_executed()
                     reward = self.interpreter.getReward()
                     cum_loss += -reward
                     loss.append(-reward)
@@ -804,8 +803,13 @@ class SimpleSensor(ComplexNetworkDevice):
         self.kalman.R = np.array([[self.plant.r_subsystem]])
         self.kalman.Q = self.plant.q_subsystem
         SimMan.process(self._sensor())
-        self.outputs = []
-        self.inputs = []  # just for evaluation, the sensor usually doesn't know these
+
+        # needed because of switch between training and simulation
+        initial_state = self.plant.get_state()
+        initial_output = self.c @ initial_state + np.random.multivariate_normal(self.mean, self.cov)
+        self.outputs = [initial_output[0]]
+        self.inputs = [0.0]  # just for evaluation, the sensor usually doesn't know these
+        self.is_simulating = False
 
     def reset(self):
         if self.configuration.kalman_reset:
@@ -829,7 +833,7 @@ class SimpleSensor(ComplexNetworkDevice):
         while True:
             state = self.plant.get_state()
             output = self.c @ state + np.random.multivariate_normal(self.mean, self.cov)
-            if self.configuration.show_inputs_and_outputs is True:
+            if self.configuration.show_inputs_and_outputs is True and self.is_simulating is True:
                 self.outputs.append(output[0])
                 self.inputs.append(self.plant.control)
             self.kalman.predict()

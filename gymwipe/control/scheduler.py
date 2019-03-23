@@ -128,10 +128,9 @@ class CSMASchedule(Schedule):
         :param length:  The amount of timeslots in which this schedule is valid
         """
         super(CSMASchedule, self).__init__(action)
-        self.length = length
         for i in range(len(self.action)):
             self.schedule.append([self.action[i][0], self.action[i][1]])
-        self.schedule.append([self.length])
+        self.schedule.append([length + 1])
 
         self.string = self.schedule.__str__()
         logger.debug("CSMA Schedule created. Content: " + self.string, sender="CSMA Schedule")
@@ -147,7 +146,7 @@ class CSMASchedule(Schedule):
         return self.string
 
     def get_end_time(self):
-        return self.length
+        return self.schedule[len(self.schedule)-1][0]
 
 
 class TDMAScheduler:

@@ -138,9 +138,9 @@ class SensorMac(Module):
     def networkInGateListener(self, cmd):
         if isinstance(cmd, Message):
             if cmd.type is StackMessageTypes.SEND:
-                self._network_cmd = cmd
                 data = cmd.args["state"]
                 self._lastState = data
+                cmd.setProcessed()
                 logger.debug("%s received new sensordata: %s , saved it", self, data)
 
     def _stop_receiving(self):
@@ -176,7 +176,6 @@ class SensorMac(Module):
                     logger.debug("Transmitting data. Schedule timestep %d", i, sender=self)
                     yield send_cmd.eProcessed
                     self.send_data_count += 1
-                    self._network_cmd.setProcessed()
                 relevant_span = self._schedule.get_next_relevant_timespan(self.addr, relevant_span[1])
             self._start_receiving()
         elif self.configuration.protocol_type == ProtocolType.CSMA:
@@ -191,32 +190,33 @@ class SensorMac(Module):
                 self.gates["phyOut"].send(ask_cmd)
                 channel_blocked = yield ask_cmd.eProcessed
                 if not channel_blocked:
-                    logger.debug("channel is free", sender=self)
-                    decide = random.random()
-                    if decide <= arg:  # send
-                        logger.debug("will send now, decide value was %f", decide, sender=self)
-                        self._stop_receiving()
-                        sensorsendingtype = bytearray(1)
-                        sensorsendingtype[0] = 1
-                        datapacket = Packet(
-                            NCSMacHeader(self.configuration.protocol_type, bytes(sensorsendingtype), self.addr),
-                            Transmittable([self._lastState, self._schedule_error], 6)
-                        )
-                        send_cmd = Message(
-                            StackMessageTypes.SEND, {
-                                "packet": datapacket,
-                                "power": self._transmissionPower,
-                                "mcs": self._mcs
-                            }
-                        )
-                        self.gates["phyOut"].send(send_cmd)
-                        logger.debug("Transmitting data. Schedule timestep %d", current_slot, sender=self)
-                        yield send_cmd.eProcessed
-                        self.send_data_count += 1
-                        self._start_receiving()
-                        self._network_cmd.setProcessed()
-                    else:  # dont send
-                        logger.debug("Passing this timestep. Schedule timestep %d", current_slot, sender=self)
+                    if self._lastState is not None: # send datapacket just once
+                        logger.debug("channel is free", sender=self)
+                        decide = random.random()
+                        if decide <= arg:  # send
+                            logger.debug("will send now, decide value was %f", decide, sender=self)
+                            self._stop_receiving()
+                            sensorsendingtype = bytearray(1)
+                            sensorsendingtype[0] = 1
+                            datapacket = Packet(
+                                NCSMacHeader(self.configuration.protocol_type, bytes(sensorsendingtype), self.addr),
+                                Transmittable([self._lastState, self._schedule_error], 6)
+                            )
+                            send_cmd = Message(
+                                StackMessageTypes.SEND, {
+                                    "packet": datapacket,
+                                    "power": self._transmissionPower,
+                                    "mcs": self._mcs
+                                }
+                            )
+                            self.gates["phyOut"].send(send_cmd)
+                            logger.debug("Transmitting data. Schedule timestep %d", current_slot, sender=self)
+                            yield send_cmd.eProcessed
+                            self.send_data_count += 1
+                            self._start_receiving()
+                            self._lastState = None
+                        else:  # dont send
+                            logger.debug("Passing this timestep. Schedule timestep %d", current_slot, sender=self)
 
                 else:
                     logger.debug("channel is not free", sender=self)
@@ -357,8 +357,6 @@ class GatewayMac(Module):
         self._nControlReceived.subscribeProcess(self._sendControl, queued=True)
         self._nAnnouncementReceived = Notifier("new schedule message received", self)
         self._nAnnouncementReceived.subscribeProcess(self._sendAnnouncement, queued=True)
-        self._nControlSchedulerReceived = Notifier("received control scheduler")
-        self._nControlSchedulerReceived.subscribeProcess(self._handle_controller_schedule)
         self._receivingMode = True
 
         self.assigned_ps = []
@@ -444,8 +442,6 @@ class GatewayMac(Module):
                         }
                     )
                     self.gates["networkOut"].send(controller_cmd)
-
-
                 else:  # dont send
                     logger.debug("Passing this timestep. Schedule timestep %d", current_slot, sender=self)
 
@@ -507,8 +503,8 @@ class GatewayMac(Module):
         logger.debug("%s: Sending schedule: %s", self, announcement.payload.value.get_string())
         self.gates["phyOut"].send(sendCmd)
         yield sendCmd.eProcessed
-        message.setProcessed()
         self._start_receiving()
         if self.configuration.protocol_type == ProtocolType.CSMA:
-            self._nControlSchedulerReceived.trigger(message)
+            SimMan.process(self._handle_controller_schedule(message))
 
+        message.setProcessed()

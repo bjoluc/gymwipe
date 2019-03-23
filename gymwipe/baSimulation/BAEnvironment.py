@@ -81,14 +81,13 @@ def training_done(msg):
         for i in range(len(sensors)):
             sensor: SimpleSensor = sensors[i]
             sensor.reset()
-            sensor.inputs = []
-            sensor.outputs = []
             mac: SensorMac = sensor._mac
             mac.biterror_sums = []
             mac.error_rates = []
             mac.received_schedule_count = 0
             mac.send_data_count = 0
             mac.assigned_ps = []
+            sensor.is_simulating = True
 
         for i in range(len(actuators)):
             actuator: SimpleActuator = actuators[i]
@@ -105,6 +104,7 @@ def training_done(msg):
         gateway.interpreter.gateway = gateway
 
         gateway.control.reset()
+
         gateway.n_simulate.trigger(config.simulation_horizon)
 
 
@@ -154,26 +154,43 @@ def simulation_done(msg):
         for i in range(len(sensors)):
             sensor: SimpleSensor = sensors[i]
             outputs = sensor.outputs
+            outputs.pop(len(outputs)-1)  # sensor samples one more time than the gateway estimates the output
             estimated_outputs = gateway.control.track_estimated_outputs[i]
             error = []
             for j in range(len(estimated_outputs)):
-                error.append(outputs[j] - estimated_outputs[j])
+                error.append(abs(outputs[j] - estimated_outputs[j]))
             inputs = sensor.inputs
-            in_out_save.write("Plant {}:\nInput:\n{}\nOutput:\n{}\n\n".format(i, inputs, outputs))
+            inputs.pop(len(inputs)-1)
+            in_out_save.write("Plant {}:\nInput:\n{}\n\nOutput:\n{}\n\nestimation error:\n{}\n\n\n".format(i,
+                                                                                                      inputs,
+                                                                                                      outputs,
+                                                                                                      error))
             logger.debug("data for sensor %d is %s", i, outputs.__str__(), sender="environment")
-            plt.plot(range(1, len(outputs)+1), outputs, label='sensed output')
-            plt.plot(range(1, len(estimated_outputs) + 1), estimated_outputs, '-o', label='estimated output')
-            #plt.plot(range(1, len(error) + 1), error, label='estimation error')
-            plt.xlabel('timestep')
-            plt.ylabel('output')
+
+            plt.plot(range(1, len(outputs)+1), outputs, label='sampled output', linewidth=0.8)
+            plt.plot(range(1, len(estimated_outputs) + 1), estimated_outputs, '-o', markersize=2,
+                     label='estimated output', linewidth=0.8)
+            plt.xlabel('Schedule round')
+            plt.ylabel('Plant output')
             plt.legend()
             sensorstr = os.path.join(savepath, spec_folder, "Sensoroutputs/Sensor_" + str(i) + "/" + savestring)
             os.makedirs(os.path.dirname(sensorstr+ ".png"), exist_ok=True)
+            plt.savefig(sensorstr + ".png", dpi=1200)
             plt.savefig(sensorstr + '.svg', format='svg', dpi=1200)
             plt.close()
-            plt.plot(range(1, len(inputs)+1), inputs, '-o')
-            plt.xlabel('timestep')
-            plt.ylabel('input')
+            # absolute estimation error
+            plt.plot(range(1, len(error) + 1), error, '-o', markersize=2, label='estimation error', linewidth=0.8)
+            plt.xlabel('Schedule round')
+            plt.ylabel('Absoulute estimation error')
+            sensorstr = os.path.join(savepath, spec_folder, "Sensoroutputs/Sensor_" + str(i) + "/error_" + savestring)
+            os.makedirs(os.path.dirname(sensorstr + ".png"), exist_ok=True)
+            plt.savefig(sensorstr + ".png", dpi=1200)
+            plt.savefig(sensorstr + '.svg', format='svg', dpi=1200)
+
+            # actuator input
+            plt.plot(range(1, len(inputs)+1), inputs, '-o', markersize=2, linewidth=0.8)
+            plt.xlabel('Schedule round')
+            plt.ylabel('Plant input')
             sensorstr = os.path.join(savepath, spec_folder, "Actuatorinputs/Actuator_" + str(i) + "/" + savestring)
             os.makedirs(os.path.dirname(sensorstr + ".png"), exist_ok=True)
             plt.savefig(sensorstr + ".png", dpi=1200)
@@ -188,9 +205,9 @@ def simulation_done(msg):
             error = mac.error_rates
             bits = mac.biterror_sums
             logger.debug("error rated for sensor %d is %s", i, error.__str__(), sender="environment")
-            plt.plot(range(1, len(error)+1), error)
-            plt.xlabel('received schedule')
-            plt.ylabel('error rate')
+            plt.plot(range(1, len(error)+1), error, '-o', markersize=2, linewidth=0.5)
+            plt.xlabel('Received schedule')
+            plt.ylabel('Empirical error rate [%]')
             sensorstr = os.path.join(savepath, spec_folder, "Sensorerror/Sensor_" + str(i) + "/errorrate_" + savestring)
             os.makedirs(os.path.dirname(sensorstr + ".png"), exist_ok=True)
             plt.savefig(sensorstr + ".png", dpi=1200)
@@ -198,8 +215,8 @@ def simulation_done(msg):
             plt.close()
 
             # biterrors sensor
-            plt.plot(range(1, len(bits)+1), bits)
-            plt.xlabel('received schedule')
+            plt.plot(range(1, len(bits)+1), bits, '-o', markersize=2, linewidth=0.8)
+            plt.xlabel('Received schedule')
             plt.ylabel('# biterrors')
             sensorstr = os.path.join(savepath, spec_folder, "Sensorerror/Sensor_" + str(i) + "/biterrors" + savestring)
             os.makedirs(os.path.dirname(sensorstr + ".png"), exist_ok=True)
@@ -215,9 +232,9 @@ def simulation_done(msg):
             error_control = mac.error_rates_control
             bits_control = mac.biterror_sums_control
 
-            plt.plot(range(1, len(error_schedule)+1), error_schedule)
-            plt.xlabel('received schedule')
-            plt.ylabel('error rate')
+            plt.plot(range(1, len(error_schedule)+1), error_schedule, '-o', markersize=2, linewidth=0.5)
+            plt.xlabel('Received schedule')
+            plt.ylabel('Empirical error rate [%]')
             actuatorstr = os.path.join(savepath, spec_folder,
                                        "Actuatorerror/Actuator_" + str(i) + "/schedule_errorrate_" + savestring)
             os.makedirs(os.path.dirname(actuatorstr), exist_ok=True)
@@ -225,9 +242,9 @@ def simulation_done(msg):
             plt.savefig(actuatorstr + ".svg", format='svg', dpi=1200)
             plt.close()
 
-            plt.plot(range(1, len(bits_schedule)+1), bits_schedule)
-            plt.xlabel('received schedule')
-            plt.ylabel('biterrors')
+            plt.plot(range(1, len(bits_schedule)+1), bits_schedule, '-o', markersize=2, linewidth=0.8)
+            plt.xlabel('Received schedule')
+            plt.ylabel('# biterrors')
             actuatorstr = os.path.join(savepath, spec_folder,
                                        "Actuatorerror/Actuator_" + str(
                                            i) + "/schedule_biterrors_" + savestring)
@@ -236,9 +253,9 @@ def simulation_done(msg):
             plt.savefig(actuatorstr + ".svg", format='svg', dpi=1200)
             plt.close()
 
-            plt.plot(range(1, len(error_control)+1), error_control)
-            plt.xlabel('received control message')
-            plt.ylabel('error rate')
+            plt.plot(range(1, len(error_control)+1), error_control, '-o', markersize=2, linewidth=0.8)
+            plt.xlabel('Received control message')
+            plt.ylabel('Empirical error rate [%]')
             actuatorstr = os.path.join(savepath, spec_folder,
                                        "Actuatorerror/Actuator_" + str(i) + "/control_errorrate_" + savestring)
             os.makedirs(os.path.dirname(actuatorstr + ".png"), exist_ok=True)
@@ -246,9 +263,9 @@ def simulation_done(msg):
             plt.savefig(actuatorstr + ".svg", format='svg', dpi=1200)
             plt.close()
 
-            plt.plot(range(1, len(bits_control)+1), bits_control)
-            plt.xlabel('received control message')
-            plt.ylabel('biterrors')
+            plt.plot(range(1, len(bits_control)+1), bits_control, '-o', markersize=2, linewidth=0.8)
+            plt.xlabel('Received control message')
+            plt.ylabel('# biterrors')
             actuatorstr = os.path.join(savepath, spec_folder,
                                        "Actuatorerror/Actuator_" + str(
                                            i) + "/control_biterrors_" + savestring)
@@ -263,26 +280,34 @@ def simulation_done(msg):
             mac: SensorMac = sensor._mac
             ps = mac.assigned_ps
             plt.plot(range(1, len(ps)+1), ps)
-            plt.xlabel('received schedule')
-            plt.ylabel('assigned p')
-            sensorstr = os.path.join(savepath, spec_folder, "Sensor_p_values/Sensor_" + str(i) + "/p_values_" + savestring +
-                                     ".png")
-            os.makedirs(os.path.dirname(sensorstr), exist_ok=True)
-            plt.savefig(sensorstr)
+            plt.xlabel('Received schedule')
+            plt.ylabel('Assigned p')
+            sensorstr = os.path.join(savepath, spec_folder, "Sensor_p_values/Sensor_" + str(i) + "/p_values_" + savestring)
+            os.makedirs(os.path.dirname(sensorstr + ".png"), exist_ok=True)
+            plt.savefig(sensorstr + ".png", dpi=1200)
+            plt.savefig(sensorstr + ".svg", format='svg', dpi=1200)
             plt.close()
 
         gatewaymac: GatewayMac = gateway._mac
         ps = gatewaymac.assigned_ps
         plt.plot(range(0, len(ps)), ps)
-        plt.xlabel('received schedule')
-        plt.ylabel('assigned p')
-        sensorstr = os.path.join(savepath, spec_folder, "Gateway_p_values/gateway_p_values_" + savestring +
-                                 ".png")
-        os.makedirs(os.path.dirname(sensorstr), exist_ok=True)
-        plt.savefig(sensorstr, dpi=1200)
+        plt.xlabel('Received schedule')
+        plt.ylabel('Assigned p')
+        sensorstr = os.path.join(savepath, spec_folder, "Gateway_p_values/gateway_p_values_" + savestring)
+        os.makedirs(os.path.dirname(sensorstr + ".png"), exist_ok=True)
+        plt.savefig(sensorstr + ".png", dpi=1200)
+        plt.savefig(sensorstr + ".svg", format='svg', dpi=1200)
         plt.close()
 
     if config.show_statistics is True and config.protocol_type == ProtocolType.TDMA:
+        gateway_schedule_sequence = gateway.schedule_sequence
+        complete_name = os.path.join(savepath, spec_folder, "schedule_sequence_" + savestring + ".txt")
+        os.makedirs(os.path.dirname(complete_name), exist_ok=True)
+        sequence_save = open(complete_name, "w")
+        for i in range(len(gateway_schedule_sequence)):
+            sequence_save.write("{}\n".format(gateway_schedule_sequence[i]))
+        sequence_save.close()
+
         gateway_arrived_acks = gateway.received_ack_amount
         gateway_arrived_data = gateway.received_data_amount
         gateway_send_controls = gateway.send_control_amount
@@ -428,7 +453,7 @@ def simulation_done(msg):
 
         plt.bar(index, values, 0.2)
         plt.xlabel('Device')
-        plt.ylabel('% chosen in schedule')
+        plt.ylabel('Chosen in schedule [%]')
         plt.xticks(index, names, rotation='vertical')
         plt.subplots_adjust(bottom=0.4)
         picstr = os.path.join(savepath, spec_folder,
@@ -775,313 +800,42 @@ def initialize(configuration: Configuration, current_config, total_configs):
 
 
 def env_creation():
-    test =[Configuration(SchedulerType.RANDOM, # schedule 2
-                          ProtocolType.TDMA,
-                          episodes=3,
-                          num_plants=3,
-                          num_instable_plants=1)]
-
-    tdma = [Configuration(SchedulerType.RANDOM,
-                          ProtocolType.TDMA,
-                          schedule_length=1,
-                          show_error_rates=False,
-                          reward=RewardType.GoalRealStateError,
-                          num_plants=1),
-            # schedule 2, plants 1
-            Configuration(SchedulerType.RANDOM,
-                          ProtocolType.TDMA,
-                          schedule_length=2,
-                          num_plants=1,
-                          show_error_rates=False,
-                          reward=RewardType.GoalRealStateError),
-            # schedule 1, plants 2
-            Configuration(SchedulerType.RANDOM,
-                          ProtocolType.TDMA,
-                          schedule_length=1,
-                          num_plants=2,
-                          show_error_rates=False,
-                          reward=RewardType.GoalRealStateError),
-            # schedule 2, plants 2
-            Configuration(SchedulerType.RANDOM,
+    evaluation_configs = [Configuration(SchedulerType.RANDOM,
+                                        ProtocolType.CSMA,
+                                        schedule_length=2,
+                                        num_plants=2,
+                                        num_instable_plants=1,
+                                        show_error_rates=True,
+                                        train=False,
+                                        simulation_horizon=150,
+                                        reward=RewardType.GoalRealStateError),
+                          Configuration(SchedulerType.RANDOM,
+                                        ProtocolType.CSMA,
+                                        schedule_length=2,
+                                        num_plants=2,
+                                        num_instable_plants=1,
+                                        show_error_rates=True,
+                                        train=False,
+                                        simulation_horizon=150,
+                                        reward=RewardType.GoalRealStateError)
+                          ]
+    test = [Configuration(SchedulerType.RANDOM,
                           ProtocolType.TDMA,
                           schedule_length=2,
                           num_plants=2,
-                          show_error_rates=False,
-                          reward=RewardType.GoalRealStateError),
-            # schedule 2, plants 4
-            Configuration(SchedulerType.RANDOM,
-                          ProtocolType.TDMA,
-                          schedule_length=2,
-                          num_plants=4,
-                          show_error_rates=False,
-                          reward=RewardType.GoalRealStateError),
-            # schedule 3, plants 4
-            Configuration(SchedulerType.RANDOM,
-                          ProtocolType.TDMA,
-                          schedule_length=3,
-                          num_plants=4,
-                          show_error_rates=False,
-                          reward=RewardType.GoalRealStateError),
-            Configuration(SchedulerType.ROUNDROBIN,
-                          ProtocolType.TDMA,
-                          schedule_length=1,
-                          show_error_rates=False,
-                          reward=RewardType.GoalRealStateError,
-                          num_plants=1),
-            # schedule 2, plants 1
-            Configuration(SchedulerType.ROUNDROBIN,
-                          ProtocolType.TDMA,
-                          schedule_length=2,
-                          num_plants=1,
-                          show_error_rates=False,
-                          reward=RewardType.GoalRealStateError),
-            # schedule 1, plants 2
-            Configuration(SchedulerType.ROUNDROBIN,
-                          ProtocolType.TDMA,
-                          schedule_length=1,
-                          num_plants=2,
-                          show_error_rates=False,
-                          reward=RewardType.GoalRealStateError),
-            # schedule 2, plants 2
-            Configuration(SchedulerType.ROUNDROBIN,
-                          ProtocolType.TDMA,
-                          schedule_length=2,
-                          num_plants=2,
-                          show_error_rates=False,
-                          reward=RewardType.GoalRealStateError),
-            # schedule 2, plants 4
-            Configuration(SchedulerType.ROUNDROBIN,
-                          ProtocolType.TDMA,
-                          schedule_length=2,
-                          num_plants=4,
-                          show_error_rates=False,
-                          reward=RewardType.GoalRealStateError),
-            # schedule 3, plants 4
-            Configuration(SchedulerType.ROUNDROBIN,
-                          ProtocolType.TDMA,
-                          schedule_length=3,
-                          num_plants=4,
-                          show_error_rates=False,
-                          reward=RewardType.GoalRealStateError),
-            Configuration(SchedulerType.GREEDYWAIT,
-                          ProtocolType.TDMA,
-                          schedule_length=1,
-                          show_error_rates=False,
-                          reward=RewardType.GoalRealStateError,
-                          num_plants=1),
-            # schedule 2, plants 1
-            Configuration(SchedulerType.GREEDYWAIT,
-                          ProtocolType.TDMA,
-                          schedule_length=2,
-                          num_plants=1,
-                          show_error_rates=False,
-                          reward=RewardType.GoalRealStateError),
-            # schedule 1, plants 2
-            Configuration(SchedulerType.GREEDYWAIT,
-                          ProtocolType.TDMA,
-                          schedule_length=1,
-                          num_plants=2,
-                          show_error_rates=False,
-                          reward=RewardType.GoalRealStateError),
-            # schedule 2, plants 2
-            Configuration(SchedulerType.GREEDYWAIT,
-                          ProtocolType.TDMA,
-                          schedule_length=2,
-                          num_plants=2,
-                          show_error_rates=False,
-                          reward=RewardType.GoalRealStateError),
-            # schedule 2, plants 4
-            Configuration(SchedulerType.GREEDYWAIT,
-                          ProtocolType.TDMA,
-                          schedule_length=2,
-                          num_plants=4,
-                          show_error_rates=False,
-                          reward=RewardType.GoalRealStateError),
-            # schedule 3, plants 4
-            Configuration(SchedulerType.GREEDYWAIT,
-                          ProtocolType.TDMA,
-                          schedule_length=3,
-                          num_plants=4,
-                          show_error_rates=False,
+                          num_instable_plants=1,
+                          show_error_rates=True,
+                          simulation_horizon=150,
+                          train=False,
                           reward=RewardType.GoalRealStateError)
             ]
 
-    stable =[# schedule 1, plants 1
-            Configuration(SchedulerType.ROUNDROBIN,
-                          ProtocolType.TDMA,
-                          schedule_length=1,
-                          train=False,
-                          num_plants=1),
-            Configuration(SchedulerType.RANDOM,
-                          ProtocolType.TDMA,
-                          schedule_length=1,
-                          train=False,
-                          num_plants=1),
-            Configuration(SchedulerType.GREEDYWAIT,
-                          ProtocolType.TDMA,
-                          schedule_length=1,
-                          train=False,
-                          num_plants=1),
-            # schedule 2, plants 1
-            Configuration(SchedulerType.ROUNDROBIN,
-                          ProtocolType.TDMA,
-                          schedule_length=2,
-                          train=False,
-                          num_plants=1),
-            Configuration(SchedulerType.RANDOM,
-                          ProtocolType.TDMA,
-                          schedule_length=2,
-                          train=False,
-                          num_plants=1),
-            Configuration(SchedulerType.GREEDYWAIT,
-                          ProtocolType.TDMA,
-                          schedule_length=2,
-                          train=False,
-                          num_plants=1),
-            # schedule 1, plants 2
-            Configuration(SchedulerType.ROUNDROBIN,
-                          ProtocolType.TDMA,
-                          schedule_length=1,
-                          train=False,
-                          num_plants=2),
-            Configuration(SchedulerType.RANDOM,
-                          ProtocolType.TDMA,
-                          schedule_length=1,
-                          train=False,
-                          num_plants=2),
-            Configuration(SchedulerType.GREEDYWAIT,
-                          ProtocolType.TDMA,
-                          schedule_length=1,
-                          train=False,
-                          num_plants=2),
-            # schedule 2, plants 2
-            Configuration(SchedulerType.ROUNDROBIN,
-                          ProtocolType.TDMA,
-                          schedule_length=2,
-                          train=False,
-                          num_plants=2),
-            Configuration(SchedulerType.RANDOM,
-                          ProtocolType.TDMA,
-                          schedule_length=2,
-                          train=False,
-                          num_plants=2),
-            Configuration(SchedulerType.GREEDYWAIT,
-                          ProtocolType.TDMA,
-                          schedule_length=2,
-                          train=False,
-                          num_plants=2),
-            # schedule 2, plants 4
-            Configuration(SchedulerType.ROUNDROBIN,
-                          ProtocolType.TDMA,
-                          schedule_length=2,
-                          train=False,
-                          num_plants=4),
-            Configuration(SchedulerType.RANDOM,
-                          ProtocolType.TDMA,
-                          schedule_length=2,
-                          train=False,
-                          num_plants=4),
-            Configuration(SchedulerType.GREEDYWAIT,
-                          ProtocolType.TDMA,
-                          schedule_length=2,
-                          train=False,
-                          num_plants=4),
-            #schedule 3, plants 4
-            Configuration(SchedulerType.ROUNDROBIN,
-                          ProtocolType.TDMA,
-                          schedule_length=3,
-                          train=False,
-                          num_plants=4),
-            Configuration(SchedulerType.RANDOM,
-                          ProtocolType.TDMA,
-                          schedule_length=3,
-                          train=False,
-                          num_plants=4),
-            Configuration(SchedulerType.GREEDYWAIT,
-                          ProtocolType.TDMA,
-                          schedule_length=3,
-                          train=False,
-                          num_plants=4),
-            # schedule 1, plants 1
-            Configuration(SchedulerType.DQN,
-                          ProtocolType.TDMA,
-                          schedule_length=1,
-                          num_plants=1),
-            # schedule 2, plants 1
-            Configuration(SchedulerType.DQN,
-                          ProtocolType.TDMA,
-                          schedule_length=2,
-                          num_plants=1),
-            # schedule 1, plants 2
-            Configuration(SchedulerType.DQN,
-                          ProtocolType.TDMA,
-                          schedule_length=1,
-                          num_plants=2),
-            # schedule 2, plants 2
-            Configuration(SchedulerType.DQN,
-                          ProtocolType.TDMA,
-                          schedule_length=2,
-                          num_plants=2),
-            # schedule 2, plants 4
-            Configuration(SchedulerType.DQN,
-                          ProtocolType.TDMA,
-                          schedule_length=2,
-                          num_plants=4),
-            # schedule 3, plants 4
-            Configuration(SchedulerType.DQN,
-                          ProtocolType.TDMA,
-                          schedule_length=3,
-                          num_plants=4)
-        ]
-    test = [Configuration(SchedulerType.ROUNDROBIN,
-                          ProtocolType.TDMA,
-                          schedule_length=2,
-                          num_plants=2,
-                          show_error_rates=False,
-                          train=False,
-                          simulation_horizon=50,
-                          reward=RewardType.GoalRealStateError)]
-    csma = [Configuration(SchedulerType.RANDOM,
-                          ProtocolType.CSMA,
-                          schedule_length=2,
-                          episodes=2,
-                          num_plants=6,
-                          show_error_rates=False,
-                          reward=RewardType.GoalRealStateError),
-            Configuration(SchedulerType.GREEDYWAIT,
-                          ProtocolType.TDMA,
-                          schedule_length=2,
-                          episodes=2,
-                          num_plants=6,
-                          show_error_rates=False,
-                          reward=RewardType.GoalRealStateError),
-            Configuration(SchedulerType.ROUNDROBIN,
-                          ProtocolType.TDMA,
-                          schedule_length=2,
-                          episodes=2,
-                          num_plants=6,
-                          show_error_rates=False,
-                          reward=RewardType.GoalRealStateError),
-            Configuration(SchedulerType.RANDOM,
-                          ProtocolType.TDMA,
-                          schedule_length=2,
-                          episodes=2,
-                          num_plants=6,
-                          show_error_rates=False,
-                          reward=RewardType.GoalRealStateError),
-            Configuration(SchedulerType.DQN,
-                          ProtocolType.TDMA,
-                          schedule_length=2,
-                          num_plants=6,
-                          show_error_rates=False,
-                          reward=RewardType.GoalRealStateError)
-            ]
     used_configs = test
     for i in range(len(used_configs)):
         configur = used_configs[i]
         initialize(configur, i+1, len(used_configs))
         while not is_done:
-            SimMan.runSimulation(0.01)
+            SimMan.runSimulation(0.001)
         reset_env()
 
 
