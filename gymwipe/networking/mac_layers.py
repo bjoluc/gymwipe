@@ -2,6 +2,7 @@
     Contains different MAC layer implementations
 """
 import logging
+import math
 import random
 from simpy.events import Event
 
@@ -274,7 +275,8 @@ class ActuatorMac(Module):
                 if header.type[0] == 2: #received control message
                     # TODO: check if timeslot is mine, not if addr is mine
                     if self.configuration.protocol_type == ProtocolType.TDMA:
-                        current_slot = int((SimMan.now - self._lastGatewayClock)/self.configuration.timeslot_length)
+                        time_since_schedule = SimMan.now - self._lastGatewayClock
+                        current_slot = math.trunc(time_since_schedule / self.configuration.timeslot_length)
                         if self.schedule is not None:
                             my_slot = self.schedule.get_next_relevant_timespan(self.addr, 0)
                             if my_slot is not None:
@@ -386,7 +388,7 @@ class GatewayMac(Module):
                         StackMessageTypes.RECEIVED, {
                             "sender": header.sourceMAC,
                             "state": packet.payload.value[0],
-                            "csisensor": packet.payload.value[1],
+                            "csisender": packet.payload.value[1],
                             "csigateway": cmd.args["error_rate"]
                         }
                     )
@@ -397,7 +399,7 @@ class GatewayMac(Module):
                     receive_message = Message(
                         StackMessageTypes.RECEIVED, {
                             "sender": header.sourceMAC,
-                            "csiactuator": packet.payload.value,
+                            "csisender": packet.payload.value,
                             "csigateway": cmd.args["error_rate"]
                         }
                     )

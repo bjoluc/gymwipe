@@ -131,13 +131,13 @@ class StateSpacePlant:
 
     def state_update(self):
         while True:
+            yield SimMan.timeout(self.dt)
             if self.control_back_to_0:
                 self.control = np.array([0.0])
             self.state = np.einsum('ij,j->i', self.a, self.state) + np.einsum('ij,j->i', self.b, self.control) \
                          + np.random.multivariate_normal(self.state_mean, self.state_cov)
             logger.debug("state updated: %s", self.state, sender=self.name)
             self.control_back_to_0 = True
-            yield SimMan.timeout(self.dt)
 
     def get_state(self):
         """

@@ -11,6 +11,7 @@ class SchedulerType(Enum):
     DQN = 3
     GREEDYWAIT = 4
     GREEDYERROR = 5
+    FIXEDDQN = 6
 
 
 class ProtocolType(Enum):
@@ -19,6 +20,15 @@ class ProtocolType(Enum):
     """
     TDMA = 0
     CSMA = 1
+
+
+class RewardType(Enum):
+    """
+    An enumeration of protocol types to be used for the environment's configuration
+    """
+    GoalEstimatedStateError = 0
+    EstimationError = 1
+    GoalRealStateError = 2
 
 
 class Configuration:
@@ -41,7 +51,8 @@ class Configuration:
                  train: bool = True,
                  simulate: bool = True,
                  simulation_horizon: int = 150,
-                 seed: int = 42):
+                 seed: int = 42,
+                 reward=RewardType.EstimationError):
         self.scheduler_type = scheduler_type
         self.protocol_type = protocol_type
         self.timeslot_length = timeslot_length
@@ -49,12 +60,12 @@ class Configuration:
         self.horizon = horizon
         self.train = train
         if protocol_type == ProtocolType.TDMA:
-            self.plant_sample_time = schedule_length * timeslot_length
+            self.plant_sample_time = schedule_length * timeslot_length + timeslot_length
         elif protocol_type == protocol_type.CSMA:
-            self.plant_sample_time = plant_sample_time
+            self.plant_sample_time = schedule_length * timeslot_length + timeslot_length
 
-        self.sample_to_timeslot_ratio = self.timeslot_length*schedule_length/self.plant_sample_time
-        self.sensor_sample_time = sensor_sample_time
+        self.sample_to_timeslot_ratio = (self.timeslot_length*schedule_length + timeslot_length)/self.plant_sample_time
+        self.sensor_sample_time = self.plant_sample_time
         self.num_plants = num_plants
         self.num_instable_plants = num_instable_plants
         self.schedule_length = schedule_length
@@ -66,6 +77,7 @@ class Configuration:
         self.show_statistics = show_statistics
         self.show_assigned_p_values = show_assigned_p_values
         self.seed = seed
+        self.reward = reward
 
 
 
