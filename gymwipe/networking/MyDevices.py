@@ -3,10 +3,11 @@ import time
 from typing import Dict
 import numpy as np
 import math
-from gymwipe.baSimulation.constants import ProtocolType, SchedulerType, Configuration, RewardType
+from gymwipe.baSimulation.constants import ProtocolType, SchedulerType, Configuration, RewardType, current_episode
 from gymwipe.control.scheduler import RoundRobinTDMAScheduler, RandomTDMAScheduler, GreedyWaitingTimeTDMAScheduler, \
     RandomCSMAScheduler, CSMASchedule, CSMAControllerSchedule
-from gymwipe.control.paper_scheduler import DQNTDMAScheduler, FixedDQNTDMAScheduler, DQNCSMAScheduler
+from gymwipe.control.paper_scheduler import DQNTDMAScheduler, FixedDQNTDMAScheduler, DQNCSMAScheduler, \
+    MyDQNTDMAScheduler
 from gymwipe.envs.core import Interpreter
 from gymwipe.networking.devices import NetworkDevice
 from gymwipe.networking.mac_layers import (ActuatorMac, GatewayMac,
@@ -49,7 +50,7 @@ class Control:
         A dictionary mapping the controller id to the current estimated state
         """
 
-        self.controller_id_to_control_sent= {}
+        self.controller_id_to_control_sent = {}
         """
         Keeps track of computed control signals
         """
@@ -62,10 +63,11 @@ class Control:
         """
         A dictionary that sores every estimated output from every plant. ONLY USE FOR EVALUATION! USUALLY NOT KNOWN
         """
-
+        self.first_states = {}  # timing problems during reset
         for i in range(len(self.controller_id_to_plant)):
             plant: StateSpacePlant = self.controller_id_to_plant[i]
             self.sensor_id_to_current_state[i] = plant.state
+            self.first_states[i] = plant.state
             self.track_estimated_states[i] = []
             self.track_estimated_outputs[i] = []
             self.controller_id_to_control_sent[i] = np.array([0.0])
@@ -131,7 +133,7 @@ class Control:
         self.track_estimated_states = {}
         for i in range(len(self.controller_id_to_plant)):
             plant: StateSpacePlant = self.controller_id_to_plant[i]
-            self.sensor_id_to_current_state[i] = plant.state
+            self.sensor_id_to_current_state[i] = self.first_states[i]
             self.track_estimated_states[i] = []
             self.track_estimated_outputs[i] = []
             self.controller_id_to_control_sent[i] = np.array([0.0])
@@ -466,6 +468,14 @@ class Gateway(GatewayDevice):
             elif self.configuration.protocol_type == ProtocolType.CSMA:
                 pass
 
+        elif self.configuration.scheduler_type == SchedulerType.MYDQN:
+            if self.configuration.protocol_type == ProtocolType.TDMA:
+                self.scheduler = MyDQNTDMAScheduler(list(self.deviceIndexToMacDict.values()), self.sensor_macs,
+                                                       self.actuator_macs, self.configuration.schedule_length)
+                logger.debug("MYDQNTDMAScheduler created", sender=self)
+            elif self.configuration.protocol_type == ProtocolType.CSMA:
+                pass
+
     def _gateway(self):
         if self.configuration.train:
             if self.configuration.protocol_type == ProtocolType.TDMA:
@@ -475,6 +485,8 @@ class Gateway(GatewayDevice):
                     logger.debug("scheduler is round robin scheduler", sender=self)
                     avgloss = []
                     for i in range(self.configuration.episodes):
+                        global current_episode
+                        current_episode = i
                         logger.debug("starting episode %d", i, sender=self)
                         start = time.time()
                         cum_loss = 0
@@ -508,7 +520,7 @@ class Gateway(GatewayDevice):
                     if self.done_event is not None:
                         self.done_event.trigger(avgloss)
 
-                elif isinstance(self.scheduler, DQNTDMAScheduler) or isinstance(self.scheduler, FixedDQNTDMAScheduler):
+                elif isinstance(self.scheduler, DQNTDMAScheduler) or isinstance(self.scheduler, FixedDQNTDMAScheduler) or isinstance(self.scheduler, MyDQNTDMAScheduler):
                     logger.debug("scheduler is dqn scheduler", sender=self)
                     avgloss = []
                     for e in range(self.configuration.episodes):
@@ -671,63 +683,20 @@ class Gateway(GatewayDevice):
                     if self.done_event is not None:
                         self.done_event.trigger(avgloss)
 
-                if isinstance(self.scheduler, DQNCSMAScheduler):
-                    logger.debug("scheduler is dqn scheduler", sender=self)
-                    avgloss = []
-                    for e in range(self.configuration.episodes):
-                        logger.debug("starting episode %d", e, sender=self)
-                        start = time.time()
-                        observation = self.interpreter.get_first_observation()
-                        cum_loss = 0
-                        for t in range(self.configuration.horizon):
-                            sensor_schedule, controller_schedule = self.scheduler.next_schedule(observation)
-                            self.schedule_analysis()
-                            self.last_schedule_creation = SimMan.now
-                            self.nextScheduleCreation = (SimMan.now + sensor_schedule.get_end_time() *
-                                                         self.configuration.timeslot_length)
-                            self._n_schedule_created.trigger(sensor_schedule)
-                            send_cmd = Message(
-                                StackMessageTypes.SEND, {
-                                    "schedule": sensor_schedule,
-                                    "controller_schedule": controller_schedule,
-                                    "clock": self.last_schedule_creation
-                                }
-                            )
-                            self._mac.gates["networkIn"].send(send_cmd)
-                            yield send_cmd.eProcessed
-                            yield SimMan.timeoutUntil(self.nextScheduleCreation)
-                            self.control.schedule_executed()
-                            next_observation = self.interpreter.getObservation()
-                            logger.debug("last observation was %s\nnext observation is %s", str(observation),
-                                         str(next_observation), sender=self)
-                            reward = self.interpreter.getReward()
-                            cum_loss += -reward
-                            action_id = self.scheduler.action_id
-                            self.scheduler.remember(observation, action_id,
-                                                    reward, next_observation)
-                            observation = next_observation
-                            if np.mod(t, self.scheduler.c) == 0:
-                                self.scheduler.update_target_model()
-                            if len(self.scheduler.memory) > self.scheduler.batch_size:
-                                self.scheduler.replay()
-                        avg = cum_loss / self.configuration.horizon
-                        avgloss.append(avg)
-                        end_time = time.time()
-                        info = [e, end_time - start, avg]
-                        logger.debug("episode %d done. Average loss is %f", e, cum_loss / self.configuration.horizon)
-
-                        self.episode_done_event.trigger(info)
-                    self.done_event.trigger(avgloss)
         else:
             self.done_event.trigger([])
 
-    def _simulate(self, horizon):
-
+    def _simulate(self, simulation_round):
         if self.configuration.simulate:
+            if simulation_round < self.configuration.simulation_rounds:
+                horizon = self.configuration.simulation_horizon
+            else:
+                horizon = self.configuration.long_simulation_horizon
             if self.configuration.protocol_type == ProtocolType.TDMA:
                 loss = []
                 cum_loss = 0
                 observation = self.interpreter.get_first_observation()
+
                 for i in range(horizon):
                     schedule = self.scheduler.next_schedule(observation)
                     self.schedule_sequence.append(self.scheduler.get_schedule_string())
@@ -820,6 +789,8 @@ class SimpleSensor(ComplexNetworkDevice):
             self.kalman.P = self.plant.x0_cov
             self.kalman.R = np.array([[self.plant.r_subsystem]])
             self.kalman.Q = self.plant.q_subsystem
+            self._mac._lastState = None
+            self._mac._network_cmd: Message = None
 
     def send(self, data):
         """

@@ -2,13 +2,17 @@ import os
 import gc
 import logging
 import time
+from enum import Enum
+
 import numpy as np
 import random
+
+from simpy import Event
 
 from gymwipe.control.paper_scheduler import DQNTDMAScheduler
 from gymwipe.control.scheduler import RoundRobinTDMAScheduler
 
-from gymwipe.baSimulation.constants import Configuration, SchedulerType, ProtocolType, RewardType
+from gymwipe.baSimulation.constants import Configuration, SchedulerType, ProtocolType, RewardType, ConfigType
 from gymwipe.networking.attenuation_models import FsplAttenuation
 from gymwipe.networking.mac_layers import SensorMac, ActuatorMac, GatewayMac
 from gymwipe.networking.physical import FrequencyBand
@@ -16,6 +20,9 @@ from gymwipe.plants.state_space_plants import StateSpacePlant
 from gymwipe.simtools import SimTimePrepender, SimMan, Notifier
 from gymwipe.networking.MyDevices import SimpleSensor, SimpleActuator, Gateway, Control, MyInterpreter
 import matplotlib.pyplot as plt
+
+
+
 
 logger = SimTimePrepender(logging.getLogger(__name__))
 
@@ -37,6 +44,10 @@ plants_save = None
 config: Configuration = None
 duration = 0.0
 timestamp = 0
+timestamp_config_type = ""
+simulation_round = 1
+simulation_losses = []
+save_done: Event = None
 
 
 def training_done(msg):
@@ -49,7 +60,7 @@ def training_done(msg):
                                                                                                              total_average))
         plt.plot(range(1, config.episodes + 1), avgloss)
         plt.xlabel('Episode')
-        plt.ylabel('Empiricial Average Loss')
+        plt.ylabel('Empirical Average Cost')
         picstr = os.path.join(savepath, spec_folder, "average_loss_" + savestring + ".png")
         svgpath = os.path.join(savepath, spec_folder, "average_loss_" + savestring + ".svg")
         plt.savefig(picstr, dpi=900)
@@ -66,6 +77,17 @@ def training_done(msg):
         global is_done
         is_done = True
     else:
+        SimMan.process(run_simulations())
+
+
+def run_simulations():
+    global simulation_losses
+    simulation_losses = []
+    for j in range(config.simulation_rounds):
+
+        global simulation_round
+        simulation_round = j+1
+        print("starting simulation round {}".format(simulation_round))
         gateway.simulatedSlot = 0
         gateway.send_schedule_amount = 0
         gateway.chosen_schedules = {}
@@ -105,13 +127,16 @@ def training_done(msg):
 
         gateway.control.reset()
 
-        gateway.n_simulate.trigger(config.simulation_horizon)
+        global save_done
+        save_done = Event(SimMan.env)
+        SimMan.process(gateway._simulate(simulation_round))
+        yield save_done
 
 
 def simulation_done(msg):
     global savestring
     global spec_folder
-    spec_folder = "{}/{}/{}/Simulation/".format(config.protocol_type.name, config.scheduler_type.name, timestamp)
+    spec_folder = "{}/{}/{}/Simulation/Round_{}/".format(config.protocol_type.name, config.scheduler_type.name, timestamp_config_type, simulation_round)
     savestring = "simulation_{}_{}_plants_{}_instable_{}_length_{}_seed_{}_episodes_{}_horizon_{}_reward_{}_{}".format(
         config.scheduler_type.name,
         config.protocol_type.name,
@@ -130,174 +155,182 @@ def simulation_done(msg):
     os.makedirs(os.path.dirname(complete_name), exist_ok=True)
     loss_save = open(complete_name, "w")
 
-    print("simulation done...")
+    print("simulation {} done...".format(simulation_round))
     avgloss = msg
     total_average = sum(avgloss) / len(avgloss)
+    if simulation_round < config.simulation_rounds:
+        simulation_losses.append(total_average)
+    print("total average loss is {}".format(total_average))
     loss_save.write("{}".format(avgloss))
-    plt.plot(range(1, config.simulation_horizon + 1), avgloss)
-    plt.xlabel('Schedule')
-    plt.ylabel('Empiricial Loss')
+    if simulation_round == config.simulation_rounds:
+        plt.plot(range(1, config.long_simulation_horizon + 1), avgloss)
+    else:
+        plt.plot(range(1, config.simulation_horizon + 1), avgloss)
+
+    plt.xlabel('Schedule round')
+    plt.ylabel('Empirical Cost')
     picstr = os.path.join(savepath, spec_folder, "simulation_loss_" + savestring + ".png")
     svgpath = os.path.join(savepath, spec_folder, "simulation_loss_" + savestring + ".svg")
-    plt.savefig(picstr, dpi=1200)
-    plt.savefig(svgpath, format='svg', dpi=1200)
+    plt.savefig(picstr, dpi=900)
+    plt.savefig(svgpath, format='svg', dpi=900)
     plt.close()
     logger.debug("Simulation is done, loss array is %s", avgloss.__str__(), sender="environment")
 
     loss_save.close()
     gc.collect()
+    if simulation_round < config.simulation_rounds:
+        if config.show_inputs_and_outputs is True and simulation_round == 1:
+            complete_name = os.path.join(savepath, spec_folder, "input_output" + savestring + ".txt")
+            os.makedirs(os.path.dirname(complete_name), exist_ok=True)
+            in_out_save = open(complete_name, "w")
+            for i in range(len(sensors)):
+                sensor: SimpleSensor = sensors[i]
+                outputs = sensor.outputs
+                outputs.pop(len(outputs)-1)  # sensor samples one more time than the gateway estimates the output
+                estimated_outputs = gateway.control.track_estimated_outputs[i]
+                error = []
+                for j in range(len(estimated_outputs)):
+                    error.append(abs(outputs[j] - estimated_outputs[j]))
+                inputs = sensor.inputs
+                inputs.pop(len(inputs)-1)
+                in_out_save.write("Plant {}:\nInput:\n{}\n\nOutput:\n{}\nEstimated output:\n{}\n\nestimation error:\n{}\n\n\n".format(i,
+                                                                                                          inputs,
+                                                                                                          outputs,
+                                                                                                          estimated_outputs,
+                                                                                                          error))
+                logger.debug("data for sensor %d is %s", i, outputs.__str__(), sender="environment")
 
-    if config.show_inputs_and_outputs is True:
-        complete_name = os.path.join(savepath, spec_folder, "input_output" + savestring + ".txt")
-        os.makedirs(os.path.dirname(complete_name), exist_ok=True)
-        in_out_save = open(complete_name, "w")
-        for i in range(len(sensors)):
-            sensor: SimpleSensor = sensors[i]
-            outputs = sensor.outputs
-            outputs.pop(len(outputs)-1)  # sensor samples one more time than the gateway estimates the output
-            estimated_outputs = gateway.control.track_estimated_outputs[i]
-            error = []
-            for j in range(len(estimated_outputs)):
-                error.append(abs(outputs[j] - estimated_outputs[j]))
-            inputs = sensor.inputs
-            inputs.pop(len(inputs)-1)
-            in_out_save.write("Plant {}:\nInput:\n{}\n\nOutput:\n{}\n\nestimation error:\n{}\n\n\n".format(i,
-                                                                                                      inputs,
-                                                                                                      outputs,
-                                                                                                      error))
-            logger.debug("data for sensor %d is %s", i, outputs.__str__(), sender="environment")
+                # plant output
+                plt.plot(range(1, len(outputs)+1), outputs, label='sampled output', linewidth=0.8)
+                plt.plot(range(1, len(estimated_outputs) + 1), estimated_outputs, '-o', markersize=2,
+                         label='estimated output', linewidth=0.8)
+                plt.xlabel('Schedule round')
+                plt.ylabel('Plant output')
+                plt.legend()
+                sensorstr = os.path.join(savepath, spec_folder, "Sensoroutputs/Sensor_" + str(i) + "/output_" + savestring)
+                os.makedirs(os.path.dirname(sensorstr+ ".png"), exist_ok=True)
+                plt.savefig(sensorstr + ".png", dpi=900)
+                plt.savefig(sensorstr + '.svg', format='svg', dpi=900)
+                plt.close()
 
-            plt.plot(range(1, len(outputs)+1), outputs, label='sampled output', linewidth=0.8)
-            plt.plot(range(1, len(estimated_outputs) + 1), estimated_outputs, '-o', markersize=2,
-                     label='estimated output', linewidth=0.8)
-            plt.xlabel('Schedule round')
-            plt.ylabel('Plant output')
-            plt.legend()
-            sensorstr = os.path.join(savepath, spec_folder, "Sensoroutputs/Sensor_" + str(i) + "/" + savestring)
-            os.makedirs(os.path.dirname(sensorstr+ ".png"), exist_ok=True)
-            plt.savefig(sensorstr + ".png", dpi=1200)
-            plt.savefig(sensorstr + '.svg', format='svg', dpi=1200)
-            plt.close()
-            # absolute estimation error
-            plt.plot(range(1, len(error) + 1), error, '-o', markersize=2, label='estimation error', linewidth=0.8)
-            plt.xlabel('Schedule round')
-            plt.ylabel('Absoulute estimation error')
-            sensorstr = os.path.join(savepath, spec_folder, "Sensoroutputs/Sensor_" + str(i) + "/error_" + savestring)
-            os.makedirs(os.path.dirname(sensorstr + ".png"), exist_ok=True)
-            plt.savefig(sensorstr + ".png", dpi=1200)
-            plt.savefig(sensorstr + '.svg', format='svg', dpi=1200)
+                # absolute estimation error
+                plt.plot(range(1, len(error) + 1), error, '-o', markersize=2, label='estimation error', linewidth=0.8)
+                plt.xlabel('Schedule round')
+                plt.ylabel('Absoulute estimation error')
+                sensorstr = os.path.join(savepath, spec_folder, "Sensoroutputs/Sensor_" + str(i) + "/error_" + savestring)
+                os.makedirs(os.path.dirname(sensorstr + ".png"), exist_ok=True)
+                plt.savefig(sensorstr + ".png", dpi=900)
+                plt.savefig(sensorstr + '.svg', format='svg', dpi=900)
+                plt.close()
 
-            # actuator input
-            plt.plot(range(1, len(inputs)+1), inputs, '-o', markersize=2, linewidth=0.8)
-            plt.xlabel('Schedule round')
-            plt.ylabel('Plant input')
-            sensorstr = os.path.join(savepath, spec_folder, "Actuatorinputs/Actuator_" + str(i) + "/" + savestring)
-            os.makedirs(os.path.dirname(sensorstr + ".png"), exist_ok=True)
-            plt.savefig(sensorstr + ".png", dpi=1200)
-            plt.savefig(sensorstr + ".svg", format='svg', dpi=1200)
-            plt.close()
-        in_out_save.close()
+                # actuator input
+                plt.plot(range(1, len(inputs)+1), inputs, '-o', markersize=2, linewidth=0.8)
+                plt.xlabel('Schedule round')
+                plt.ylabel('Plant input')
+                sensorstr = os.path.join(savepath, spec_folder, "Actuatorinputs/Actuator_" + str(i) + "/input_" + savestring)
+                os.makedirs(os.path.dirname(sensorstr + ".png"), exist_ok=True)
+                plt.savefig(sensorstr + ".png", dpi=900)
+                plt.savefig(sensorstr + ".svg", format='svg', dpi=900)
+                plt.close()
+            in_out_save.close()
+            print("inputs and outputs saved")
 
-    if config.show_error_rates is True:
-        for i in range(len(sensors)):
-            sensor: SimpleSensor = sensors[i]
-            mac: SensorMac = sensor._mac
-            error = mac.error_rates
-            bits = mac.biterror_sums
-            logger.debug("error rated for sensor %d is %s", i, error.__str__(), sender="environment")
-            plt.plot(range(1, len(error)+1), error, '-o', markersize=2, linewidth=0.5)
-            plt.xlabel('Received schedule')
-            plt.ylabel('Empirical error rate [%]')
-            sensorstr = os.path.join(savepath, spec_folder, "Sensorerror/Sensor_" + str(i) + "/errorrate_" + savestring)
-            os.makedirs(os.path.dirname(sensorstr + ".png"), exist_ok=True)
-            plt.savefig(sensorstr + ".png", dpi=1200)
-            plt.savefig(sensorstr + ".svg", format='svg', dpi=1200)
-            plt.close()
+        if config.show_error_rates is True and simulation_round == 1:
+            for i in range(len(sensors)):
+                sensor: SimpleSensor = sensors[i]
+                mac: SensorMac = sensor._mac
+                error = mac.error_rates
+                bits = mac.biterror_sums
+                logger.debug("error rated for sensor %d is %s", i, error.__str__(), sender="environment")
+                plt.plot(range(1, len(error)+1), error, '-o', markersize=2, linewidth=0.5)
+                plt.xlabel('Received schedule')
+                plt.ylabel('Empirical error rate [%]')
+                sensorstr = os.path.join(savepath, spec_folder, "Sensorerror/Sensor_" + str(i) + "/errorrate_" + savestring)
+                os.makedirs(os.path.dirname(sensorstr), exist_ok=True)
+                plt.savefig(sensorstr + ".svg", format='svg', dpi=900)
+                plt.close()
 
-            # biterrors sensor
-            plt.plot(range(1, len(bits)+1), bits, '-o', markersize=2, linewidth=0.8)
-            plt.xlabel('Received schedule')
-            plt.ylabel('# biterrors')
-            sensorstr = os.path.join(savepath, spec_folder, "Sensorerror/Sensor_" + str(i) + "/biterrors" + savestring)
-            os.makedirs(os.path.dirname(sensorstr + ".png"), exist_ok=True)
-            plt.savefig(sensorstr + ".png", dpi=1200)
-            plt.savefig(sensorstr + ".svg", format='svg', dpi=1200)
-            plt.close()
+                # biterrors sensor
+                plt.plot(range(1, len(bits)+1), bits, '-o', markersize=2, linewidth=0.8)
+                plt.xlabel('Received schedule')
+                plt.ylabel('# biterrors')
+                sensorstr = os.path.join(savepath, spec_folder, "Sensorerror/Sensor_" + str(i) + "/biterrors" + savestring)
+                os.makedirs(os.path.dirname(sensorstr), exist_ok=True)
+                plt.savefig(sensorstr + ".svg", format='svg', dpi=900)
+                plt.close()
 
-            #errors actuators
-            actuator: SimpleActuator = actuators[i]
-            mac: ActuatorMac = actuator._mac
-            error_schedule = mac.error_rates_schedule
-            bits_schedule = mac.biterror_sums_schedule
-            error_control = mac.error_rates_control
-            bits_control = mac.biterror_sums_control
+                #errors actuators
+                actuator: SimpleActuator = actuators[i]
+                mac: ActuatorMac = actuator._mac
+                error_schedule = mac.error_rates_schedule
+                bits_schedule = mac.biterror_sums_schedule
+                error_control = mac.error_rates_control
+                bits_control = mac.biterror_sums_control
 
-            plt.plot(range(1, len(error_schedule)+1), error_schedule, '-o', markersize=2, linewidth=0.5)
-            plt.xlabel('Received schedule')
-            plt.ylabel('Empirical error rate [%]')
-            actuatorstr = os.path.join(savepath, spec_folder,
-                                       "Actuatorerror/Actuator_" + str(i) + "/schedule_errorrate_" + savestring)
-            os.makedirs(os.path.dirname(actuatorstr), exist_ok=True)
-            plt.savefig(actuatorstr + ".png", dpi=1200)
-            plt.savefig(actuatorstr + ".svg", format='svg', dpi=1200)
-            plt.close()
+                plt.plot(range(1, len(error_schedule)+1), error_schedule, '-o', markersize=2, linewidth=0.5)
+                plt.xlabel('Received schedule')
+                plt.ylabel('Empirical error rate [%]')
+                actuatorstr = os.path.join(savepath, spec_folder,
+                                           "Actuatorerror/Actuator_" + str(i) + "/schedule_errorrate_" + savestring)
+                os.makedirs(os.path.dirname(actuatorstr), exist_ok=True)
+                plt.savefig(actuatorstr + ".svg", format='svg', dpi=900)
+                plt.close()
 
-            plt.plot(range(1, len(bits_schedule)+1), bits_schedule, '-o', markersize=2, linewidth=0.8)
-            plt.xlabel('Received schedule')
-            plt.ylabel('# biterrors')
-            actuatorstr = os.path.join(savepath, spec_folder,
-                                       "Actuatorerror/Actuator_" + str(
-                                           i) + "/schedule_biterrors_" + savestring)
-            os.makedirs(os.path.dirname(actuatorstr), exist_ok=True)
-            plt.savefig(actuatorstr + ".png", dpi=1200)
-            plt.savefig(actuatorstr + ".svg", format='svg', dpi=1200)
-            plt.close()
+                plt.plot(range(1, len(bits_schedule)+1), bits_schedule, '-o', markersize=2, linewidth=0.8)
+                plt.xlabel('Received schedule')
+                plt.ylabel('# biterrors')
+                actuatorstr = os.path.join(savepath, spec_folder,
+                                           "Actuatorerror/Actuator_" + str(
+                                               i) + "/schedule_biterrors_" + savestring)
+                os.makedirs(os.path.dirname(actuatorstr), exist_ok=True)
+                plt.savefig(actuatorstr + ".svg", format='svg', dpi=900)
+                plt.close()
 
-            plt.plot(range(1, len(error_control)+1), error_control, '-o', markersize=2, linewidth=0.8)
-            plt.xlabel('Received control message')
-            plt.ylabel('Empirical error rate [%]')
-            actuatorstr = os.path.join(savepath, spec_folder,
-                                       "Actuatorerror/Actuator_" + str(i) + "/control_errorrate_" + savestring)
-            os.makedirs(os.path.dirname(actuatorstr + ".png"), exist_ok=True)
-            plt.savefig(actuatorstr + ".png", dpi=1200)
-            plt.savefig(actuatorstr + ".svg", format='svg', dpi=1200)
-            plt.close()
+                plt.plot(range(1, len(error_control)+1), error_control, '-o', markersize=2, linewidth=0.8)
+                plt.xlabel('Received control message')
+                plt.ylabel('Empirical error rate [%]')
+                actuatorstr = os.path.join(savepath, spec_folder,
+                                           "Actuatorerror/Actuator_" + str(i) + "/control_errorrate_" + savestring)
+                os.makedirs(os.path.dirname(actuatorstr + ".png"), exist_ok=True)
+                plt.savefig(actuatorstr + ".svg", format='svg', dpi=900)
+                plt.close()
 
-            plt.plot(range(1, len(bits_control)+1), bits_control, '-o', markersize=2, linewidth=0.8)
-            plt.xlabel('Received control message')
-            plt.ylabel('# biterrors')
-            actuatorstr = os.path.join(savepath, spec_folder,
-                                       "Actuatorerror/Actuator_" + str(
-                                           i) + "/control_biterrors_" + savestring)
-            os.makedirs(os.path.dirname(actuatorstr + ".png"), exist_ok=True)
-            plt.savefig(actuatorstr + ".png", dpi=1200)
-            plt.savefig(actuatorstr + ".svg", format='svg', dpi=1200)
-            plt.close()
+                plt.plot(range(1, len(bits_control)+1), bits_control, '-o', markersize=2, linewidth=0.8)
+                plt.xlabel('Received control message')
+                plt.ylabel('# biterrors')
+                actuatorstr = os.path.join(savepath, spec_folder,
+                                           "Actuatorerror/Actuator_" + str(
+                                               i) + "/control_biterrors_" + savestring)
+                os.makedirs(os.path.dirname(actuatorstr + ".png"), exist_ok=True)
+                plt.savefig(actuatorstr + ".svg", format='svg', dpi=900)
+                plt.close()
+            print("error rates saved")
 
-    if config.show_assigned_p_values is True and config.protocol_type == ProtocolType.CSMA:
-        for i in range(len(sensors)):
-            sensor: SimpleSensor = sensors[i]
-            mac: SensorMac = sensor._mac
-            ps = mac.assigned_ps
-            plt.plot(range(1, len(ps)+1), ps)
+        if config.show_assigned_p_values is True and config.protocol_type == ProtocolType.CSMA and simulation_round == 1:
+            for i in range(len(sensors)):
+                sensor: SimpleSensor = sensors[i]
+                mac: SensorMac = sensor._mac
+                ps = mac.assigned_ps
+                plt.plot(range(1, len(ps)+1), ps)
+                plt.xlabel('Received schedule')
+                plt.ylabel('Assigned p')
+                sensorstr = os.path.join(savepath, spec_folder, "Sensor_p_values/Sensor_" + str(i) + "/p_values_" + savestring)
+                os.makedirs(os.path.dirname(sensorstr + ".png"), exist_ok=True)
+                plt.savefig(sensorstr + ".png", dpi=900)
+                plt.savefig(sensorstr + ".svg", format='svg', dpi=900)
+                plt.close()
+
+            gatewaymac: GatewayMac = gateway._mac
+            ps = gatewaymac.assigned_ps
+            plt.plot(range(0, len(ps)), ps)
             plt.xlabel('Received schedule')
             plt.ylabel('Assigned p')
-            sensorstr = os.path.join(savepath, spec_folder, "Sensor_p_values/Sensor_" + str(i) + "/p_values_" + savestring)
+            sensorstr = os.path.join(savepath, spec_folder, "Gateway_p_values/gateway_p_values_" + savestring)
             os.makedirs(os.path.dirname(sensorstr + ".png"), exist_ok=True)
-            plt.savefig(sensorstr + ".png", dpi=1200)
-            plt.savefig(sensorstr + ".svg", format='svg', dpi=1200)
+            plt.savefig(sensorstr + ".png", dpi=900)
+            plt.savefig(sensorstr + ".svg", format='svg', dpi=900)
             plt.close()
-
-        gatewaymac: GatewayMac = gateway._mac
-        ps = gatewaymac.assigned_ps
-        plt.plot(range(0, len(ps)), ps)
-        plt.xlabel('Received schedule')
-        plt.ylabel('Assigned p')
-        sensorstr = os.path.join(savepath, spec_folder, "Gateway_p_values/gateway_p_values_" + savestring)
-        os.makedirs(os.path.dirname(sensorstr + ".png"), exist_ok=True)
-        plt.savefig(sensorstr + ".png", dpi=1200)
-        plt.savefig(sensorstr + ".svg", format='svg', dpi=1200)
-        plt.close()
+            print("p values saved")
 
     if config.show_statistics is True and config.protocol_type == ProtocolType.TDMA:
         gateway_schedule_sequence = gateway.schedule_sequence
@@ -332,12 +365,19 @@ def simulation_done(msg):
                 wanted = chosen_count[sensor.mac]
                 mac: SensorMac = sensor._mac
                 send = mac.send_data_count
-                statistics_save.write("\tSensor {}:verlangt: {} erhalten: {} ({} % der verlangten, {} % der gesendeten)\n".format(
-                    gateway.macToDeviceIndexDict[sensor.mac],
-                    wanted,
-                    sensordata,
-                    round(sensordata/wanted*100, 2),
-                    round(sensordata/send*100, 2)))
+                if send == 0:
+                    statistics_save.write(
+                        "\tSensor {}:verlangt: {} erhalten: {} (0 % der verlangten)\n".format(
+                            gateway.macToDeviceIndexDict[sensor.mac],
+                            wanted,
+                            sensordata))
+                else:
+                    statistics_save.write("\tSensor {}:verlangt: {} erhalten: {} ({} % der verlangten, {} % der gesendeten)\n".format(
+                        gateway.macToDeviceIndexDict[sensor.mac],
+                        wanted,
+                        sensordata,
+                        round(sensordata/wanted*100, 2),
+                        round(sensordata/send*100, 2)))
 
         statistics_save.write("gesendete Controls und erhaltene Acknowledgements: \n")
         for i in range(len(actuators)):
@@ -351,11 +391,18 @@ def simulation_done(msg):
                 gatewaycontrols = gateway_send_controls[actuator.mac]
                 send_acks = actuatormaclayer.ack_send_count
                 if gatewaycontrols is not 0:
-                    statistics_save.write("\tActuator {}: gesendet: {} erhalten: {} ({}% der vom Actuator gesendeten ACKs)\n".format(
-                        gateway.macToDeviceIndexDict[actuator.mac],
-                        gatewaycontrols,
-                        actuatoracks,
-                        round(actuatoracks/send_acks*100, 2)))
+                    if send_acks is not 0:
+                        statistics_save.write("\tActuator {}: gesendet: {} erhalten: {} ({}% der vom Actuator gesendeten ACKs)\n".format(
+                            gateway.macToDeviceIndexDict[actuator.mac],
+                            gatewaycontrols,
+                            actuatoracks,
+                            round(actuatoracks/send_acks*100, 2)))
+                    else:
+                        statistics_save.write(
+                            "\tActuator {}: gesendet: {} erhalten: {}\n".format(
+                                gateway.macToDeviceIndexDict[actuator.mac],
+                                gatewaycontrols,
+                                actuatoracks))
                 else:
                     statistics_save.write("\tActuator {}: gesendet: {} erhalten: {}\n".format(
                         gateway.macToDeviceIndexDict[actuator.mac],
@@ -455,14 +502,15 @@ def simulation_done(msg):
         plt.xlabel('Device')
         plt.ylabel('Chosen in schedule [%]')
         plt.xticks(index, names, rotation='vertical')
-        plt.subplots_adjust(bottom=0.4)
+        plt.subplots_adjust(bottom=0.2)
         picstr = os.path.join(savepath, spec_folder,
-                                   "chosen_devices_" + savestring)
+                              "chosen_devices_" + savestring)
         os.makedirs(os.path.dirname(picstr + ".png"), exist_ok=True)
-        plt.savefig(picstr + ".png", dpi=1200)
-        plt.savefig(picstr + ".svg", format='svg', dpi=1200)
+        plt.savefig(picstr + ".png", dpi=900)
+        plt.savefig(picstr + ".svg", format='svg', dpi=900)
         plt.close()
         statistics_save.close()
+        print("statistics saved")
     # episode_results_save.close()
 
     if config.show_statistics is True and config.protocol_type == ProtocolType.CSMA:
@@ -571,9 +619,25 @@ def simulation_done(msg):
                     round(received_schedules / gateway_send_schedules * 100, 2)))
         statistics_save.write("\n\n")
 
-    global is_done
-    is_done = True
+        print("statistics saved")
+
+    if simulation_round == config.simulation_rounds:
+        simulation_average = sum(simulation_losses) / len(simulation_losses)
+        print("total short simulation average is {}".format(simulation_average))
+        plt.scatter(range(1, len(simulation_losses) + 1), simulation_losses)
+        plt.plot((1, len(simulation_losses)+1), (simulation_average, simulation_average), label=simulation_average)
+        plt.xlabel('Simulation')
+        plt.ylabel('Empiricial Average Cost')
+        plt.legend()
+        picstr = os.path.join(savepath, folder, "Simulation/total_simulation_loss_" + savestring + ".png")
+        svgpath = os.path.join(savepath, folder, "Simulation/total_simulation_loss_" + savestring + ".svg")
+        plt.savefig(picstr, dpi=900)
+        plt.savefig(svgpath, format='svg', dpi=900)
+        plt.close()
+        global is_done
+        is_done = True
     gc.collect()
+    save_done.succeed()
 
 
 def reset_env():
@@ -606,12 +670,12 @@ def episode_done(info):
         plant: StateSpacePlant = plants[i]
         plant.reset()
     gateway.simulatedSlot = 0
-    gateway.control.reset()
 
     for i in range(len(sensors)):
         sensor: SimpleSensor = sensors[i]
         sensor.reset()
 
+    gateway.control.reset()
     gateway.interpreter = MyInterpreter(config)
     gateway.interpreter.gateway = gateway
 
@@ -640,19 +704,19 @@ simulation_done_event = Notifier("simulation done")
 simulation_done_event.subscribeCallback(simulation_done)
 
 
-def generate_x_y(num_plants):
+def generate_x_y(num_plants, min_distance, max_range):
     def random_pos():
-        return round(np.random.uniform(0.0, 3.5), 2), round(np.random.uniform(0.0, 3.5), 2)
+        return round(np.random.uniform(0.0, max_range), 2), round(np.random.uniform(0.0, max_range), 2)
     gateway_pos = random_pos()
 
     def next_pos():
         distance = 0.0
         position = 0.0, 0.0
-        while distance < 1.5:
+        while distance < min_distance:
             position = random_pos()
             diff_x = abs(gateway_pos[0]-position[0])
             diff_y = abs(gateway_pos[1]-position[1])
-            distance = min(diff_x, diff_y)
+            distance = np.sqrt((diff_x**2 + diff_y**2))
         return position
 
     coords = []
@@ -671,12 +735,14 @@ def initialize(configuration: Configuration, current_config, total_configs):
     print("initializing new environment...")
     global timestamp
     timestamp = int(time.time())
+    global timestamp_config_type
+    timestamp_config_type = "{}({})".format(configuration.config_type.name, timestamp)
     global savestring
     global spec_folder
-    spec_folder = "{}/{}/{}/Training/".format(configuration.protocol_type.name, configuration.scheduler_type.name, timestamp)
+    spec_folder = "{}/{}/{}/Training/".format(configuration.protocol_type.name, configuration.scheduler_type.name, timestamp_config_type)
 
     global folder
-    folder = "{}/{}/{}/".format(configuration.protocol_type.name, configuration.scheduler_type.name, timestamp)
+    folder = "{}/{}/{}/".format(configuration.protocol_type.name, configuration.scheduler_type.name, timestamp_config_type)
     savestring = "training_{}_{}_plants_{}_instable_{}_length_{}_seed_{}_episodes_{}_horizon_{}_reward_{}_{}".format(
         configuration.scheduler_type.name,
         configuration.protocol_type.name,
@@ -721,7 +787,7 @@ def initialize(configuration: Configuration, current_config, total_configs):
     global config
     config = configuration
     configstr = "{}\n{}\ntimeslot length: {}\nepisodes: {}\nhorizon: {}\nplant sample time: {}\nsensor sample time: {}\nkalman reset: {}" \
-                "\nnum plants: {}\nnum instable plants: {}\nschedule length: {}\nreward: {}\nseed: {}".format(
+                "\nnum plants: {}\nnum instable plants: {}\nschedule length: {}\nreward: {}\nseed: {}\n\n".format(
         config.protocol_type.name,
         config.scheduler_type.name,
         config.timeslot_length,
@@ -737,11 +803,11 @@ def initialize(configuration: Configuration, current_config, total_configs):
         config.seed)
 
     config_save.write(configstr)
-    config_save.close()
+
     frequency_band = FrequencyBand([FsplAttenuation])
     np.random.seed(configuration.seed)
 
-    gatewaypos, coords = generate_x_y(config.num_plants)
+    gatewaypos, coords = generate_x_y(config.num_plants, config.min_distance, config.max_distance)
     for i in range(configuration.num_plants):
         sensor_pos, actuator_pos = coords[i]
         if i+1 > configuration.num_instable_plants:
@@ -780,7 +846,12 @@ def initialize(configuration: Configuration, current_config, total_configs):
                       episode_done_event, simulation_done_event, configuration)
     print("Running configuration {} out of {}".format(current_config, total_configs))
     plants_save.close()
+    if config.scheduler_type == SchedulerType.DQN or config.scheduler_type == SchedulerType.MYDQN or config.scheduler_type == SchedulerType.MYDQN:
+        scheduler = gateway.scheduler
+        action_size = scheduler.action_size
+        config_save.write("Action set size: {}".format(action_size))
 
+    config_save.close()
     plt.plot(gatewaypos[0], gatewaypos[1], 'o', color='b')
     for i in range(len(sensors)):
         sensor = sensors[i]
@@ -792,45 +863,343 @@ def initialize(configuration: Configuration, current_config, total_configs):
 
     sensorstr = os.path.join(savepath, folder, "devicepositions_" + unspec_savestring )
     os.makedirs(os.path.dirname(sensorstr + ".png"), exist_ok=True)
-    plt.savefig(sensorstr + ".png", dpi=1200)
-    plt.savefig(sensorstr + ".svg", format='svg', dpi=1200)
+    plt.savefig(sensorstr + ".png", dpi=900)
+    plt.savefig(sensorstr + ".svg", format='svg', dpi=900)
     plt.close()
     np.random.seed()
     gc.collect()
 
 
-def env_creation():
-    evaluation_configs = [Configuration(SchedulerType.RANDOM,
-                                        ProtocolType.CSMA,
-                                        schedule_length=2,
-                                        num_plants=2,
-                                        num_instable_plants=1,
-                                        show_error_rates=True,
-                                        train=False,
-                                        simulation_horizon=150,
-                                        reward=RewardType.GoalRealStateError),
-                          Configuration(SchedulerType.RANDOM,
-                                        ProtocolType.CSMA,
-                                        schedule_length=2,
-                                        num_plants=2,
-                                        num_instable_plants=1,
-                                        show_error_rates=True,
-                                        train=False,
-                                        simulation_horizon=150,
-                                        reward=RewardType.GoalRealStateError)
-                          ]
-    test = [Configuration(SchedulerType.RANDOM,
-                          ProtocolType.TDMA,
-                          schedule_length=2,
-                          num_plants=2,
-                          num_instable_plants=1,
-                          show_error_rates=True,
-                          simulation_horizon=150,
-                          train=False,
-                          reward=RewardType.GoalRealStateError)
-            ]
+def make_stable_configs(scheduler_type, protocol_type):
+    evaluation_configs = [Configuration(ConfigType.A,
+                                        scheduler_type,
+                                        protocol_type),
 
-    used_configs = test
+                          Configuration(ConfigType.D,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.F,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.H,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.J,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.M,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.O,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.Q,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.S,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.V,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.Y,
+                                        scheduler_type,
+                                        protocol_type)]
+    return evaluation_configs
+
+
+def make_evaluation_configs(scheduler_type, protocol_type):
+    evaluation_configs = [Configuration(ConfigType.A,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.B,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.C,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.D,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.E,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.F,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.G,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.H,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.I,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.J,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.K,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.L,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.M,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.N,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.O,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.P,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.Q,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.R,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.S,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.T,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.U,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.V,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.W,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.X,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.Y,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.Z,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.Z_,
+                                        scheduler_type,
+                                        protocol_type)
+                          ]
+    return evaluation_configs
+
+
+def make_dqn_configs():
+    evaluation_configs = [Configuration(ConfigType.C,
+                                        SchedulerType.DQN,
+                                        ProtocolType.TDMA),
+                          Configuration(ConfigType.C,
+                                        SchedulerType.MYDQN,
+                                        ProtocolType.TDMA),
+
+                          Configuration(ConfigType.A,
+                                        SchedulerType.DQN,
+                                        ProtocolType.TDMA),
+                          Configuration(ConfigType.A,
+                                        SchedulerType.MYDQN,
+                                        ProtocolType.TDMA),
+
+                          Configuration(ConfigType.F,
+                                        SchedulerType.DQN,
+                                        ProtocolType.TDMA),
+                          Configuration(ConfigType.F,
+                                        SchedulerType.MYDQN,
+                                        ProtocolType.TDMA),
+
+                          Configuration(ConfigType.H,
+                                        SchedulerType.DQN,
+                                        ProtocolType.TDMA),
+                          Configuration(ConfigType.H,
+                                        SchedulerType.MYDQN,
+                                        ProtocolType.TDMA),
+
+                          Configuration(ConfigType.C,
+                                        SchedulerType.FIXEDDQN,
+                                        ProtocolType.TDMA),
+                          Configuration(ConfigType.A,
+                                        SchedulerType.FIXEDDQN,
+                                        ProtocolType.TDMA),
+                          Configuration(ConfigType.F,
+                                        SchedulerType.FIXEDDQN,
+                                        ProtocolType.TDMA),
+                          Configuration(ConfigType.H,
+                                        SchedulerType.FIXEDDQN,
+                                        ProtocolType.TDMA)
+                          ]
+    return evaluation_configs
+
+
+def env_creation():
+    scheduler_type = SchedulerType.RANDOM
+    protocol_type = ProtocolType.TDMA
+
+    test = [Configuration(ConfigType.A,
+                          scheduler_type,
+                          protocol_type
+    )]
+
+    evaluation_configs = [Configuration(ConfigType.A,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.B,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.C,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.D,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.E,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.F,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.G,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.H,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.I,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.J,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.K,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.L,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.M,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.N,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.O,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.P,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.Q,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.R,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.S,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.T,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.U,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.V,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.W,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.X,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.Y,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.Z,
+                                        scheduler_type,
+                                        protocol_type),
+
+                          Configuration(ConfigType.Z_,
+                                        scheduler_type,
+                                        protocol_type)
+                          ]
+
+    used_configs = make_stable_configs(SchedulerType.RANDOM, ProtocolType.TDMA) + \
+                   make_stable_configs(SchedulerType.ROUNDROBIN, ProtocolType.TDMA) + \
+                   make_stable_configs(SchedulerType.GREEDYWAIT, ProtocolType.TDMA) + \
+                   make_stable_configs(SchedulerType.RANDOM, ProtocolType.CSMA) + \
+                   make_stable_configs(SchedulerType.DQN, ProtocolType.TDMA) + \
+                   make_stable_configs(SchedulerType.MYDQN, ProtocolType.TDMA) + \
+                   make_stable_configs(SchedulerType.FIXEDDQN, ProtocolType.TDMA)
+
     for i in range(len(used_configs)):
         configur = used_configs[i]
         initialize(configur, i+1, len(used_configs))
@@ -841,7 +1210,7 @@ def env_creation():
 
 def compare():
     dqn = ""
-    robin =""
+    robin = ""
     plt.plot(range(0, len(dqn)), dqn, label="DQN Scheduler")
     plt.plot(range(0, len(robin)), robin, label="Round Robin Scheduler")
     plt.xlabel('episode')
@@ -849,7 +1218,7 @@ def compare():
     plt.legend()
     sensorstr = os.path.join(savepath, "Vergleich1.png")
     os.makedirs(os.path.dirname(sensorstr), exist_ok=True)
-    plt.savefig(sensorstr, dpi=1200)
+    plt.savefig(sensorstr, dpi=900)
     plt.close()
 
 

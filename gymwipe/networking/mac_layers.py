@@ -4,6 +4,7 @@
 import logging
 import math
 import random
+import numpy as np
 from simpy.events import Event
 
 from gymwipe.control.scheduler import tdma_encode, CSMASchedule, CSMAControllerSchedule
@@ -15,7 +16,7 @@ from gymwipe.networking.messages import (Message, Packet, StackMessageTypes,
 from gymwipe.networking.physical import BpskMcs, FrequencyBandSpec
 from gymwipe.simtools import Notifier, SimMan, SimTimePrepender
 
-from gymwipe.baSimulation.constants import ProtocolType, Configuration
+from gymwipe.baSimulation.constants import ProtocolType, Configuration, current_episode
 
 logger = SimTimePrepender(logging.getLogger(__name__))
 
@@ -25,11 +26,16 @@ macCounter = 0 #global mac counter
 def newUniqueMacAddress() -> bytes:
         """
         A method for generating unique 6-byte-long MAC addresses (currently counting upwards starting at 1)
+        A maximum of 2^16-1 addresses can be generated
         """
         global macCounter
         macCounter += 1
         addr = bytearray(6)
-        addr[5] = macCounter
+
+        times = int(np.trunc(macCounter/255))
+        addr[5] = macCounter - times*255
+        addr[4] = times
+
         logger.debug("New mac requested")
         return bytes(addr)
 
@@ -159,23 +165,24 @@ class SensorMac(Module):
                 logger.debug("%s: next relevant timespan is [%d, %d]", self, relevant_span[0], relevant_span[1])
                 for i in range(relevant_span[0], relevant_span[1]):
                     yield SimMan.timeoutUntil(self._lastGatewayClock + i*self.configuration.timeslot_length)
-                    sensorsendingtype = bytearray(1)
-                    sensorsendingtype[0] = 1
-                    datapacket = Packet(
-                        NCSMacHeader(self.configuration.protocol_type, bytes(sensorsendingtype), self.addr),
-                        Transmittable([self._lastState, self._schedule_error], 6)
-                    )
-                    send_cmd = Message(
-                        StackMessageTypes.SEND, {
-                            "packet": datapacket,
-                            "power": self._transmissionPower,
-                            "mcs": self._mcs
-                        }
-                    )
-                    self.gates["phyOut"].send(send_cmd)
-                    logger.debug("Transmitting data. Schedule timestep %d", i, sender=self)
-                    yield send_cmd.eProcessed
-                    self.send_data_count += 1
+                    if self._lastState is not None: # can happen during episode reset
+                        sensorsendingtype = bytearray(1)
+                        sensorsendingtype[0] = 1
+                        datapacket = Packet(
+                            NCSMacHeader(self.configuration.protocol_type, bytes(sensorsendingtype), self.addr),
+                            Transmittable([self._lastState, self._schedule_error], 6), Transmittable(current_episode)
+                        )
+                        send_cmd = Message(
+                            StackMessageTypes.SEND, {
+                                "packet": datapacket,
+                                "power": self._transmissionPower,
+                                "mcs": self._mcs
+                            }
+                        )
+                        self.gates["phyOut"].send(send_cmd)
+                        logger.debug("Transmitting data. Schedule timestep %d", i, sender=self)
+                        yield send_cmd.eProcessed
+                        self.send_data_count += 1
                 relevant_span = self._schedule.get_next_relevant_timespan(self.addr, relevant_span[1])
             self._start_receiving()
         elif self.configuration.protocol_type == ProtocolType.CSMA:
@@ -200,7 +207,7 @@ class SensorMac(Module):
                             sensorsendingtype[0] = 1
                             datapacket = Packet(
                                 NCSMacHeader(self.configuration.protocol_type, bytes(sensorsendingtype), self.addr),
-                                Transmittable([self._lastState, self._schedule_error], 6)
+                                Transmittable([self._lastState, self._schedule_error], 6), Transmittable(current_episode)
                             )
                             send_cmd = Message(
                                 StackMessageTypes.SEND, {
@@ -310,7 +317,8 @@ class ActuatorMac(Module):
         self._stopReceiving()
         csisendingtype = bytearray(1)
         csisendingtype[0] = 3
-        sendPackage = Packet(NCSMacHeader(self.configuration.protocol_type, csisendingtype, self.addr), Transmittable(csi, 2))
+        sendPackage = Packet(NCSMacHeader(self.configuration.protocol_type, csisendingtype, self.addr),
+                             Transmittable(csi, 2), Transmittable(current_episode))
         send_cmd = Message(
             StackMessageTypes.SEND, {
                 "packet": sendPackage,
@@ -377,32 +385,32 @@ class GatewayMac(Module):
                 logger.debug("%s: received a packet", self)
                 packet = cmd.args["packet"]
                 header = packet.header
-                if not isinstance(header, NCSMacHeader):
-                    raise ValueError("Can only deal with header of type NCSMacHeader. Got %s.", type(header), sender=self)
-                message_type = header.type[0]
-                if message_type == 1: #received sensordata
-                    logger.debug("received sensordata from %s. data is %s", header.sourceMAC, packet.payload.value, sender=self)
-                    receive_message = Message(
-                        StackMessageTypes.RECEIVED, {
-                            "sender": header.sourceMAC,
-                            "state": packet.payload.value[0],
-                            "csisender": packet.payload.value[1],
-                            "csigateway": cmd.args["error_rate"]
-                        }
-                    )
-                    self.gates["networkOut"].send(receive_message)
-                    # TODO: csi integration
-                if message_type == 3: #received Actuator ACK
-                    logger.debug("received actuator csi from %s. csi is %s", header.sourceMAC, packet.payload.value, sender=self)
-                    receive_message = Message(
-                        StackMessageTypes.RECEIVED, {
-                            "sender": header.sourceMAC,
-                            "csisender": packet.payload.value,
-                            "csigateway": cmd.args["error_rate"]
-                        }
-                    )
-                    # TODO: add gateway csi
-                    self.gates["networkOut"].send(receive_message)
+                episode = packet.trailer.value
+                if episode == current_episode:
+                    if not isinstance(header, NCSMacHeader):
+                        raise ValueError("Can only deal with header of type NCSMacHeader. Got %s.", type(header), sender=self)
+                    message_type = header.type[0]
+                    if message_type == 1: #received sensordata
+                        logger.debug("received sensordata from %s. data is %s", header.sourceMAC, packet.payload.value, sender=self)
+                        receive_message = Message(
+                            StackMessageTypes.RECEIVED, {
+                                "sender": header.sourceMAC,
+                                "state": packet.payload.value[0],
+                                "csisender": packet.payload.value[1],
+                                "csigateway": cmd.args["error_rate"]
+                            }
+                        )
+                        self.gates["networkOut"].send(receive_message)
+                    if message_type == 3: #received Actuator ACK
+                        logger.debug("received actuator csi from %s. csi is %s", header.sourceMAC, packet.payload.value, sender=self)
+                        receive_message = Message(
+                            StackMessageTypes.RECEIVED, {
+                                "sender": header.sourceMAC,
+                                "csisender": packet.payload.value,
+                                "csigateway": cmd.args["error_rate"]
+                            }
+                        )
+                        self.gates["networkOut"].send(receive_message)
 
     @GateListener("networkIn", Message)
     def networkInGateListener(self, message: Message):
