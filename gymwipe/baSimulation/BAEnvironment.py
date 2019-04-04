@@ -873,118 +873,174 @@ def initialize(configuration: Configuration, current_config, total_configs):
 def make_stable_configs(scheduler_type, protocol_type):
     evaluation_configs = [Configuration(ConfigType.A,
                                         scheduler_type,
-                                        protocol_type),
+                                        protocol_type,
+                                        max_distance=3.5,
+                                        min_distance=2),
 
                           Configuration(ConfigType.D,
                                         scheduler_type,
-                                        protocol_type),
+                                        protocol_type,
+                                        max_distance=3.5,
+                                        min_distance=2),
 
                           Configuration(ConfigType.F,
                                         scheduler_type,
-                                        protocol_type),
+                                        protocol_type,
+                                        max_distance=3.5,
+                                        min_distance=2),
 
                           Configuration(ConfigType.H,
                                         scheduler_type,
-                                        protocol_type),
+                                        protocol_type,
+                                        max_distance=3.5,
+                                        min_distance=2),
 
                           Configuration(ConfigType.J,
                                         scheduler_type,
-                                        protocol_type),
+                                        protocol_type,
+                                        max_distance=3.5,
+                                        min_distance=2),
 
                           Configuration(ConfigType.M,
                                         scheduler_type,
-                                        protocol_type),
+                                        protocol_type,
+                                        max_distance=3.5,
+                                        min_distance=2),
 
                           Configuration(ConfigType.O,
                                         scheduler_type,
-                                        protocol_type),
+                                        protocol_type,
+                                        max_distance=3.5,
+                                        min_distance=2),
 
                           Configuration(ConfigType.Q,
                                         scheduler_type,
-                                        protocol_type),
+                                        protocol_type,
+                                        max_distance=3.5,
+                                        min_distance=2),
 
                           Configuration(ConfigType.S,
                                         scheduler_type,
-                                        protocol_type),
+                                        protocol_type,
+                                        max_distance=3.5,
+                                        min_distance=2),
 
                           Configuration(ConfigType.V,
                                         scheduler_type,
-                                        protocol_type),
+                                        protocol_type,
+                                        max_distance=3.5,
+                                        min_distance=2),
 
                           Configuration(ConfigType.Y,
                                         scheduler_type,
-                                        protocol_type)]
+                                        protocol_type,
+                                        max_distance=3.5,
+                                        min_distance=2)]
     return evaluation_configs
 
 
 def make_evaluation_configs(scheduler_type, protocol_type):
     evaluation_configs = [Configuration(ConfigType.A,
                                         scheduler_type,
-                                        protocol_type),
+                                        protocol_type,
+                                        max_distance=3.5,
+                                        min_distance=2),
 
                           Configuration(ConfigType.B,
                                         scheduler_type,
-                                        protocol_type),
+                                        protocol_type,
+                                        max_distance=3.5,
+                                        min_distance=2),
 
                           Configuration(ConfigType.C,
                                         scheduler_type,
-                                        protocol_type),
+                                        protocol_type,
+                                        max_distance=3.5,
+                                        min_distance=2),
 
                           Configuration(ConfigType.D,
                                         scheduler_type,
-                                        protocol_type),
+                                        protocol_type,
+                                        max_distance=3.5,
+                                        min_distance=2),
 
                           Configuration(ConfigType.E,
                                         scheduler_type,
-                                        protocol_type),
+                                        protocol_type,
+                                        max_distance=3.5,
+                                        min_distance=2),
 
                           Configuration(ConfigType.F,
                                         scheduler_type,
-                                        protocol_type),
+                                        protocol_type,
+                                        max_distance=3.5,
+                                        min_distance=2),
 
                           Configuration(ConfigType.G,
                                         scheduler_type,
-                                        protocol_type),
+                                        protocol_type,
+                                        max_distance=3.5,
+                                        min_distance=2),
 
                           Configuration(ConfigType.H,
                                         scheduler_type,
-                                        protocol_type),
+                                        protocol_type,
+                                        max_distance=3.5,
+                                        min_distance=2),
 
                           Configuration(ConfigType.I,
                                         scheduler_type,
-                                        protocol_type),
+                                        protocol_type,
+                                        max_distance=3.5,
+                                        min_distance=2),
 
                           Configuration(ConfigType.J,
                                         scheduler_type,
-                                        protocol_type),
+                                        protocol_type,
+                                        max_distance=3.5,
+                                        min_distance=2),
 
                           Configuration(ConfigType.K,
                                         scheduler_type,
-                                        protocol_type),
+                                        protocol_type,
+                                        max_distance=3.5,
+                                        min_distance=2),
 
                           Configuration(ConfigType.L,
                                         scheduler_type,
-                                        protocol_type),
+                                        protocol_type,
+                                        max_distance=3.5,
+                                        min_distance=2),
 
                           Configuration(ConfigType.M,
                                         scheduler_type,
-                                        protocol_type),
+                                        protocol_type,
+                                        max_distance=3.5,
+                                        min_distance=2),
 
                           Configuration(ConfigType.N,
                                         scheduler_type,
-                                        protocol_type),
+                                        protocol_type,
+                                        max_distance=3.5,
+                                        min_distance=2),
 
                           Configuration(ConfigType.O,
                                         scheduler_type,
-                                        protocol_type),
+                                        protocol_type,
+                                        max_distance=3.5,
+                                        min_distance=2),
 
                           Configuration(ConfigType.P,
                                         scheduler_type,
-                                        protocol_type),
+                                        protocol_type,
+                                        max_distance=3.5,
+                                        min_distance=2),
 
                           Configuration(ConfigType.Q,
                                         scheduler_type,
-                                        protocol_type),
+                                        protocol_type,
+                                        max_distance=3.5,
+                                        min_distance=2),
 
                           Configuration(ConfigType.R,
                                         scheduler_type,
@@ -1080,7 +1136,11 @@ def env_creation():
 
     test = [Configuration(ConfigType.A,
                           scheduler_type,
-                          protocol_type
+                          protocol_type,
+                          max_distance=3.5,
+                          min_distance=2,
+                          show_inputs_and_outputs=False,
+                          show_error_rates=False
     )]
 
     evaluation_configs = [Configuration(ConfigType.A,
@@ -1192,13 +1252,13 @@ def env_creation():
                                         protocol_type)
                           ]
 
-    used_configs = make_stable_configs(SchedulerType.RANDOM, ProtocolType.TDMA) + \
-                   make_stable_configs(SchedulerType.ROUNDROBIN, ProtocolType.TDMA) + \
-                   make_stable_configs(SchedulerType.GREEDYWAIT, ProtocolType.TDMA) + \
-                   make_stable_configs(SchedulerType.RANDOM, ProtocolType.CSMA) + \
-                   make_stable_configs(SchedulerType.DQN, ProtocolType.TDMA) + \
-                   make_stable_configs(SchedulerType.MYDQN, ProtocolType.TDMA) + \
-                   make_stable_configs(SchedulerType.FIXEDDQN, ProtocolType.TDMA)
+    used_configs = make_evaluation_configs(SchedulerType.RANDOM, ProtocolType.TDMA) +\
+                   make_evaluation_configs(SchedulerType.ROUNDROBIN, ProtocolType.TDMA) + \
+                   make_evaluation_configs(SchedulerType.GREEDYWAIT, ProtocolType.TDMA) + \
+                   make_evaluation_configs(SchedulerType.RANDOM, ProtocolType.CSMA) + \
+                   make_evaluation_configs(SchedulerType.DQN, ProtocolType.TDMA) + \
+                   make_evaluation_configs(SchedulerType.MYDQN, ProtocolType.TDMA) + \
+                   make_evaluation_configs(SchedulerType.FIXEDDQN, ProtocolType.TDMA)
 
     for i in range(len(used_configs)):
         configur = used_configs[i]
