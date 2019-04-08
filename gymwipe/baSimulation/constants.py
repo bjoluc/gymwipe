@@ -3,7 +3,7 @@ from enum import Enum
 
 class ConfigType(Enum):
     """
-    An enumeration of scheduler types to be used for the environment's configuration
+    An enumeration of configuration types to be used for simulation
     """
     unspecified = 0
     A = 1
@@ -47,7 +47,6 @@ class SchedulerType(Enum):
     MYDQN = 2
     DQN = 3
     GREEDYWAIT = 4
-    GREEDYERROR = 5
     FIXEDDQN = 6
 
 
@@ -61,7 +60,7 @@ class ProtocolType(Enum):
 
 class RewardType(Enum):
     """
-    An enumeration of protocol types to be used for the environment's configuration
+    An enumeration of reward types to be used for the environment's configuration
     """
     GoalEstimatedStateError = 0
     EstimationError = 1
@@ -69,12 +68,18 @@ class RewardType(Enum):
 
 
 class Configuration:
+    """
+    A configuration is required to quickly and easily provide a simulation with all required parameters.
+    This also enables the start of simulation batches in which several configurations are automatically simulated one
+    after the other.
+
+    """
     def __init__(self,
                  config_type: ConfigType,
                  scheduler_type: SchedulerType,
                  protocol_type: ProtocolType,
-                 max_distance: float = 3,
-                 min_distance: float = 0.7,
+                 max_distance: float = 3.5,
+                 min_distance: float = 2.5,
                  timeslot_length: float = 0.01,
                  episodes: int = 200,
                  horizon: int = 500,
@@ -92,6 +97,34 @@ class Configuration:
                  seed: int = 42,
                  reward=RewardType.GoalRealStateError,
                  simulation_rounds: int = 16):
+        """
+        Creates a Configuration. If the config type is not unspecified, some Parameters will be ignored and the
+        corresponding configuration will be created
+        :param config_type: The :class:`~gymwipe.baSimulation.constants.ConfigType` that will be used for simulation
+        :param scheduler_type: The :class:`~gymwipe.baSimulation.constants.SchedulerType` that will be used for
+        simulation
+        :param protocol_type: The :class:`~gymwipe.baSimulation.constants.ProtocolType` that will be used for
+        simulation
+        :param max_distance: The maximum distance between the gateway and another device
+        :param min_distance: The minimum distance between the gateway and another device
+        :param timeslot_length: The length of one timeslot
+        :param episodes: The amount of episodes which will be trained
+        :param horizon: The amount of schedules that will be generated in one episode
+        :param num_plants: The amount of palnts within the NCS
+        :param num_instable_plants: The amount of instable palnts within the NCS
+        :param schedule_length: The amount of timeslots covered by a single schedule
+        :param show_inputs_and_outputs: Enables or disables the generation of input and output diagrams
+        :param show_error_rates: Enables or disables the generation of error rate diagrams
+        :param kalman_reset: Enables or disables the kalman filter reset between episodes
+        :param show_statistics: Enables or disables the generation of statistics
+        :param show_assigned_p_values: Enables or disables the generation of p-value diagrams
+        :param simulate: Enables or disables the simulation
+        :param simulation_horizon: Amount of schedules generated in one simulation
+        :param long_simulation_horizon: Amount of schedules generated in the long simulation
+        :param seed: The seed used for plant and location genration
+        :param reward: The :class:`~gymwipe.baSimulation.constants.RewardType`, that will be used
+        :param simulation_rounds: The amount of simulation rounds that will be executed
+        """
         self.max_distance = max_distance
         self.min_distance = min_distance
         self.scheduler_type = scheduler_type

@@ -11,6 +11,7 @@ scipy = "*"
 pytest = "*"
 pytest-benchmark = "*"
 numpy = "*"
+filterpy = "*"
 
 [dev-packages]
 gymwipe = {editable = true,path = "."}

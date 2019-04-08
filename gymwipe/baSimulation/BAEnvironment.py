@@ -51,6 +51,10 @@ save_done: Event = None
 
 
 def training_done(msg):
+    """
+    Is executed when a DQN scheduler finished training. Saves the average episode loss during training.
+    :param msg: list of average episode losses
+    """
     if config.train:
         print("training done...")
         avgloss = msg
@@ -81,6 +85,10 @@ def training_done(msg):
 
 
 def run_simulations():
+    """
+    loop for running simulations. Is executed if :attr:simulate in
+    :class:`~gymwipe.baSimulation.constants.Configuration`: is True
+    """
     global simulation_losses
     simulation_losses = []
     for j in range(config.simulation_rounds):
@@ -134,6 +142,11 @@ def run_simulations():
 
 
 def simulation_done(msg):
+    """
+    Saves the evaluations for a simulation run. Is executed after the simulation Process within the gateway finishes.
+    :param msg: the calculated schedule losses
+    """
+    # change save location to current simulation round folder
     global savestring
     global spec_folder
     spec_folder = "{}/{}/{}/Simulation/Round_{}/".format(config.protocol_type.name, config.scheduler_type.name, timestamp_config_type, simulation_round)
@@ -150,7 +163,7 @@ def simulation_done(msg):
         timestamp)
 
     global loss_save
-
+    # save losses
     complete_name = os.path.join(savepath, spec_folder, "schedule_loss_" + savestring + ".txt")
     os.makedirs(os.path.dirname(complete_name), exist_ok=True)
     loss_save = open(complete_name, "w")
@@ -162,6 +175,8 @@ def simulation_done(msg):
         simulation_losses.append(total_average)
     print("total average loss is {}".format(total_average))
     loss_save.write("{}".format(avgloss))
+
+    # plot computed schedule losses
     if simulation_round == config.simulation_rounds:
         plt.plot(range(1, config.long_simulation_horizon + 1), avgloss)
     else:
@@ -177,9 +192,10 @@ def simulation_done(msg):
     logger.debug("Simulation is done, loss array is %s", avgloss.__str__(), sender="environment")
 
     loss_save.close()
-    gc.collect()
+    gc.collect()  # usually not needed, but seems to work better
     if simulation_round < config.simulation_rounds:
         if config.show_inputs_and_outputs is True and simulation_round == 1:
+            # Save plant outputs, estimated outputs and estimation error
             complete_name = os.path.join(savepath, spec_folder, "input_output" + savestring + ".txt")
             os.makedirs(os.path.dirname(complete_name), exist_ok=True)
             in_out_save = open(complete_name, "w")
@@ -237,6 +253,7 @@ def simulation_done(msg):
 
         if config.show_error_rates is True and simulation_round == 1:
             for i in range(len(sensors)):
+                # errorrate sensor
                 sensor: SimpleSensor = sensors[i]
                 mac: SensorMac = sensor._mac
                 error = mac.error_rates
@@ -307,6 +324,7 @@ def simulation_done(msg):
             print("error rates saved")
 
         if config.show_assigned_p_values is True and config.protocol_type == ProtocolType.CSMA and simulation_round == 1:
+            # save assigned p values
             for i in range(len(sensors)):
                 sensor: SimpleSensor = sensors[i]
                 mac: SensorMac = sensor._mac
@@ -502,7 +520,7 @@ def simulation_done(msg):
         plt.xlabel('Device')
         plt.ylabel('Chosen in schedule [%]')
         plt.xticks(index, names, rotation='vertical')
-        plt.subplots_adjust(bottom=0.2)
+        plt.subplots_adjust(bottom=0.3)
         picstr = os.path.join(savepath, spec_folder,
                               "chosen_devices_" + savestring)
         os.makedirs(os.path.dirname(picstr + ".png"), exist_ok=True)
@@ -641,6 +659,9 @@ def simulation_done(msg):
 
 
 def reset_env():
+    """
+    resets the environment. Is used before starting a new configuration
+    """
     print("Environment resetted")
     global plants
     plants = []
@@ -664,6 +685,10 @@ def reset_env():
 
 
 def episode_done(info):
+    """
+    Is executed after one training episode is done. Saves the episode results like duration, average loss...
+    :param info: Information about the episode given by the gateway. Contains duration, current episode and average loss
+    """
     global gateway
 
     for i in range(len(plants)):
@@ -697,19 +722,40 @@ def episode_done(info):
 
 
 episode_done_event = Notifier("episode done")
+"""
+Notifier used to trigger episode_done(info). Is used by the gateway
+"""
 episode_done_event.subscribeCallback(episode_done)
-done_event = Notifier("simulation done")
+done_event = Notifier("training done")
+"""
+Notifier to trigger traning_done(). Is used by the gateway
+"""
 done_event.subscribeCallback(training_done)
 simulation_done_event = Notifier("simulation done")
+done_event = Notifier("training done")
+"""
+Notifier to trigger simulation_done(). Is used by the gateway
+"""
 simulation_done_event.subscribeCallback(simulation_done)
 
 
 def generate_x_y(num_plants, min_distance, max_range):
+    """
+    Generates a list of device positions, used during initialization of a evaluation
+    :param num_plants: Amount of plants within the NCS
+    :param min_distance: Minimum distance between the gateway and other devices
+    :param max_range: Maximum range for axes
+    :return position of the gateway and a list[((float,float),(float, float))] of device positions
+    """
     def random_pos():
         return round(np.random.uniform(0.0, max_range), 2), round(np.random.uniform(0.0, max_range), 2)
     gateway_pos = random_pos()
 
     def next_pos():
+        """
+        Generates the next position for a device within the NCS, which is at least min_distance away from the gateway
+        :return: the generated position
+        """
         distance = 0.0
         position = 0.0, 0.0
         while distance < min_distance:
@@ -871,176 +917,132 @@ def initialize(configuration: Configuration, current_config, total_configs):
 
 
 def make_stable_configs(scheduler_type, protocol_type):
+    """
+    Generates a list of every stable predefined configuration
+    :param scheduler_type: The scheduler type that is used
+    :param protocol_type: The protocol type that is used
+    :return: The generated configurations
+    """
     evaluation_configs = [Configuration(ConfigType.A,
                                         scheduler_type,
-                                        protocol_type,
-                                        max_distance=3.5,
-                                        min_distance=2),
+                                        protocol_type),
 
                           Configuration(ConfigType.D,
                                         scheduler_type,
-                                        protocol_type,
-                                        max_distance=3.5,
-                                        min_distance=2),
+                                        protocol_type),
 
                           Configuration(ConfigType.F,
                                         scheduler_type,
-                                        protocol_type,
-                                        max_distance=3.5,
-                                        min_distance=2),
+                                        protocol_type),
 
                           Configuration(ConfigType.H,
                                         scheduler_type,
-                                        protocol_type,
-                                        max_distance=3.5,
-                                        min_distance=2),
+                                        protocol_type),
 
                           Configuration(ConfigType.J,
                                         scheduler_type,
-                                        protocol_type,
-                                        max_distance=3.5,
-                                        min_distance=2),
+                                        protocol_type),
 
                           Configuration(ConfigType.M,
                                         scheduler_type,
-                                        protocol_type,
-                                        max_distance=3.5,
-                                        min_distance=2),
+                                        protocol_type),
 
                           Configuration(ConfigType.O,
                                         scheduler_type,
-                                        protocol_type,
-                                        max_distance=3.5,
-                                        min_distance=2),
+                                        protocol_type),
 
                           Configuration(ConfigType.Q,
                                         scheduler_type,
-                                        protocol_type,
-                                        max_distance=3.5,
-                                        min_distance=2),
+                                        protocol_type),
 
                           Configuration(ConfigType.S,
                                         scheduler_type,
-                                        protocol_type,
-                                        max_distance=3.5,
-                                        min_distance=2),
+                                        protocol_type),
 
                           Configuration(ConfigType.V,
                                         scheduler_type,
-                                        protocol_type,
-                                        max_distance=3.5,
-                                        min_distance=2),
+                                        protocol_type),
 
                           Configuration(ConfigType.Y,
                                         scheduler_type,
-                                        protocol_type,
-                                        max_distance=3.5,
-                                        min_distance=2)]
+                                        protocol_type)]
     return evaluation_configs
 
 
 def make_evaluation_configs(scheduler_type, protocol_type):
+    """
+        Generates a list of every predefined configuration
+        :param scheduler_type: The scheduler type that is used
+        :param protocol_type: The protocol type that is used
+        :return: The generated configurations
+        """
     evaluation_configs = [Configuration(ConfigType.A,
                                         scheduler_type,
-                                        protocol_type,
-                                        max_distance=3.5,
-                                        min_distance=2),
+                                        protocol_type),
 
                           Configuration(ConfigType.B,
                                         scheduler_type,
-                                        protocol_type,
-                                        max_distance=3.5,
-                                        min_distance=2),
+                                        protocol_type),
 
                           Configuration(ConfigType.C,
                                         scheduler_type,
-                                        protocol_type,
-                                        max_distance=3.5,
-                                        min_distance=2),
+                                        protocol_type),
 
                           Configuration(ConfigType.D,
                                         scheduler_type,
-                                        protocol_type,
-                                        max_distance=3.5,
-                                        min_distance=2),
+                                        protocol_type),
 
                           Configuration(ConfigType.E,
                                         scheduler_type,
-                                        protocol_type,
-                                        max_distance=3.5,
-                                        min_distance=2),
+                                        protocol_type),
 
                           Configuration(ConfigType.F,
                                         scheduler_type,
-                                        protocol_type,
-                                        max_distance=3.5,
-                                        min_distance=2),
+                                        protocol_type),
 
                           Configuration(ConfigType.G,
                                         scheduler_type,
-                                        protocol_type,
-                                        max_distance=3.5,
-                                        min_distance=2),
+                                        protocol_type),
 
                           Configuration(ConfigType.H,
                                         scheduler_type,
-                                        protocol_type,
-                                        max_distance=3.5,
-                                        min_distance=2),
+                                        protocol_type),
 
                           Configuration(ConfigType.I,
                                         scheduler_type,
-                                        protocol_type,
-                                        max_distance=3.5,
-                                        min_distance=2),
+                                        protocol_type),
 
                           Configuration(ConfigType.J,
                                         scheduler_type,
-                                        protocol_type,
-                                        max_distance=3.5,
-                                        min_distance=2),
+                                        protocol_type),
 
                           Configuration(ConfigType.K,
                                         scheduler_type,
-                                        protocol_type,
-                                        max_distance=3.5,
-                                        min_distance=2),
+                                        protocol_type),
 
                           Configuration(ConfigType.L,
                                         scheduler_type,
-                                        protocol_type,
-                                        max_distance=3.5,
-                                        min_distance=2),
+                                        protocol_type),
 
                           Configuration(ConfigType.M,
                                         scheduler_type,
-                                        protocol_type,
-                                        max_distance=3.5,
-                                        min_distance=2),
+                                        protocol_type),
 
                           Configuration(ConfigType.N,
                                         scheduler_type,
-                                        protocol_type,
-                                        max_distance=3.5,
-                                        min_distance=2),
+                                        protocol_type),
 
                           Configuration(ConfigType.O,
                                         scheduler_type,
-                                        protocol_type,
-                                        max_distance=3.5,
-                                        min_distance=2),
+                                        protocol_type),
 
                           Configuration(ConfigType.P,
                                         scheduler_type,
-                                        protocol_type,
-                                        max_distance=3.5,
-                                        min_distance=2),
+                                        protocol_type),
 
                           Configuration(ConfigType.Q,
                                         scheduler_type,
-                                        protocol_type,
-                                        max_distance=3.5,
-                                        min_distance=2),
+                                        protocol_type),
 
                           Configuration(ConfigType.R,
                                         scheduler_type,
@@ -1081,184 +1083,28 @@ def make_evaluation_configs(scheduler_type, protocol_type):
                           Configuration(ConfigType.Z_,
                                         scheduler_type,
                                         protocol_type)
-                          ]
-    return evaluation_configs
-
-
-def make_dqn_configs():
-    evaluation_configs = [Configuration(ConfigType.C,
-                                        SchedulerType.DQN,
-                                        ProtocolType.TDMA),
-                          Configuration(ConfigType.C,
-                                        SchedulerType.MYDQN,
-                                        ProtocolType.TDMA),
-
-                          Configuration(ConfigType.A,
-                                        SchedulerType.DQN,
-                                        ProtocolType.TDMA),
-                          Configuration(ConfigType.A,
-                                        SchedulerType.MYDQN,
-                                        ProtocolType.TDMA),
-
-                          Configuration(ConfigType.F,
-                                        SchedulerType.DQN,
-                                        ProtocolType.TDMA),
-                          Configuration(ConfigType.F,
-                                        SchedulerType.MYDQN,
-                                        ProtocolType.TDMA),
-
-                          Configuration(ConfigType.H,
-                                        SchedulerType.DQN,
-                                        ProtocolType.TDMA),
-                          Configuration(ConfigType.H,
-                                        SchedulerType.MYDQN,
-                                        ProtocolType.TDMA),
-
-                          Configuration(ConfigType.C,
-                                        SchedulerType.FIXEDDQN,
-                                        ProtocolType.TDMA),
-                          Configuration(ConfigType.A,
-                                        SchedulerType.FIXEDDQN,
-                                        ProtocolType.TDMA),
-                          Configuration(ConfigType.F,
-                                        SchedulerType.FIXEDDQN,
-                                        ProtocolType.TDMA),
-                          Configuration(ConfigType.H,
-                                        SchedulerType.FIXEDDQN,
-                                        ProtocolType.TDMA)
                           ]
     return evaluation_configs
 
 
 def env_creation():
+    """
+    Runs every defined configuration
+    """
     scheduler_type = SchedulerType.RANDOM
     protocol_type = ProtocolType.TDMA
 
-    test = [Configuration(ConfigType.A,
+    test = [Configuration(ConfigType.H,
                           scheduler_type,
                           protocol_type,
                           max_distance=3.5,
-                          min_distance=2,
-                          show_inputs_and_outputs=False,
+                          min_distance=2.5,
+                          reward=RewardType.GoalRealStateError,
+                          show_inputs_and_outputs=True,
                           show_error_rates=False
     )]
 
-    evaluation_configs = [Configuration(ConfigType.A,
-                                        scheduler_type,
-                                        protocol_type),
-
-                          Configuration(ConfigType.B,
-                                        scheduler_type,
-                                        protocol_type),
-
-                          Configuration(ConfigType.C,
-                                        scheduler_type,
-                                        protocol_type),
-
-                          Configuration(ConfigType.D,
-                                        scheduler_type,
-                                        protocol_type),
-
-                          Configuration(ConfigType.E,
-                                        scheduler_type,
-                                        protocol_type),
-
-                          Configuration(ConfigType.F,
-                                        scheduler_type,
-                                        protocol_type),
-
-                          Configuration(ConfigType.G,
-                                        scheduler_type,
-                                        protocol_type),
-
-                          Configuration(ConfigType.H,
-                                        scheduler_type,
-                                        protocol_type),
-
-                          Configuration(ConfigType.I,
-                                        scheduler_type,
-                                        protocol_type),
-
-                          Configuration(ConfigType.J,
-                                        scheduler_type,
-                                        protocol_type),
-
-                          Configuration(ConfigType.K,
-                                        scheduler_type,
-                                        protocol_type),
-
-                          Configuration(ConfigType.L,
-                                        scheduler_type,
-                                        protocol_type),
-
-                          Configuration(ConfigType.M,
-                                        scheduler_type,
-                                        protocol_type),
-
-                          Configuration(ConfigType.N,
-                                        scheduler_type,
-                                        protocol_type),
-
-                          Configuration(ConfigType.O,
-                                        scheduler_type,
-                                        protocol_type),
-
-                          Configuration(ConfigType.P,
-                                        scheduler_type,
-                                        protocol_type),
-
-                          Configuration(ConfigType.Q,
-                                        scheduler_type,
-                                        protocol_type),
-
-                          Configuration(ConfigType.R,
-                                        scheduler_type,
-                                        protocol_type),
-
-                          Configuration(ConfigType.S,
-                                        scheduler_type,
-                                        protocol_type),
-
-                          Configuration(ConfigType.T,
-                                        scheduler_type,
-                                        protocol_type),
-
-                          Configuration(ConfigType.U,
-                                        scheduler_type,
-                                        protocol_type),
-
-                          Configuration(ConfigType.V,
-                                        scheduler_type,
-                                        protocol_type),
-
-                          Configuration(ConfigType.W,
-                                        scheduler_type,
-                                        protocol_type),
-
-                          Configuration(ConfigType.X,
-                                        scheduler_type,
-                                        protocol_type),
-
-                          Configuration(ConfigType.Y,
-                                        scheduler_type,
-                                        protocol_type),
-
-                          Configuration(ConfigType.Z,
-                                        scheduler_type,
-                                        protocol_type),
-
-                          Configuration(ConfigType.Z_,
-                                        scheduler_type,
-                                        protocol_type)
-                          ]
-
-    used_configs = make_evaluation_configs(SchedulerType.RANDOM, ProtocolType.TDMA) +\
-                   make_evaluation_configs(SchedulerType.ROUNDROBIN, ProtocolType.TDMA) + \
-                   make_evaluation_configs(SchedulerType.GREEDYWAIT, ProtocolType.TDMA) + \
-                   make_evaluation_configs(SchedulerType.RANDOM, ProtocolType.CSMA) + \
-                   make_evaluation_configs(SchedulerType.DQN, ProtocolType.TDMA) + \
-                   make_evaluation_configs(SchedulerType.MYDQN, ProtocolType.TDMA) + \
-                   make_evaluation_configs(SchedulerType.FIXEDDQN, ProtocolType.TDMA)
+    used_configs = make_stable_configs(SchedulerType.FIXEDDQN, ProtocolType.TDMA)
 
     for i in range(len(used_configs)):
         configur = used_configs[i]
@@ -1268,23 +1114,9 @@ def env_creation():
         reset_env()
 
 
-def compare():
-    dqn = ""
-    robin = ""
-    plt.plot(range(0, len(dqn)), dqn, label="DQN Scheduler")
-    plt.plot(range(0, len(robin)), robin, label="Round Robin Scheduler")
-    plt.xlabel('episode')
-    plt.ylabel(' average episode loss')
-    plt.legend()
-    sensorstr = os.path.join(savepath, "Vergleich1.png")
-    os.makedirs(os.path.dirname(sensorstr), exist_ok=True)
-    plt.savefig(sensorstr, dpi=900)
-    plt.close()
-
-
 if __name__ == "__main__":
     env_creation()
-    # compare()
+    # ompare()
 
 
 

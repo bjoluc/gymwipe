@@ -10,7 +10,9 @@
 # `Pipfile.lock` and then regenerate `requirements*.txt`.
 ################################################################################
 
+filterpy
 gym
+numpy
 pytest
 pytest-benchmark
 pytest-mock

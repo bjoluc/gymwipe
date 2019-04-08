@@ -18,6 +18,9 @@ class SendOrReceive(Enum):
 
 
 class MCS(Enum):
+    """
+    An enumeration of usable mcs. Currently, only BPSK is implemented
+    """
     BPSK = 1
 
 
@@ -35,6 +38,10 @@ class Schedule:
         raise NotImplementedError
 
     def get_end_time(self):
+        """
+
+        :return:
+        """
         raise NotImplementedError
 
 
@@ -91,7 +98,7 @@ class CSMAControllerSchedule(Schedule):
 
         if round(sum, 1) <= 1:
             for i in range(len(self.action)):
-                self.schedule.append([self.action[i][0], self.action[i][1]])
+                self.schedule.append([self.action[i][0], self.action[i][1], MCS.BPSK])
 
             self.string = self.schedule.__str__()
             logger.debug("CSMA Controller Schedule created. Content: " + self.string, sender="CSMA Schedule")
@@ -129,7 +136,7 @@ class CSMASchedule(Schedule):
         """
         super(CSMASchedule, self).__init__(action)
         for i in range(len(self.action)):
-            self.schedule.append([self.action[i][0], self.action[i][1]])
+            self.schedule.append([self.action[i][0], self.action[i][1], MCS.BPSK])
         self.schedule.append([length + 1])
 
         self.string = self.schedule.__str__()
@@ -175,7 +182,7 @@ class TDMAScheduler:
         """
         raise NotImplementedError
 
-    def get_next_control_slot(self, last_control_slot) -> [int, str]:
+    def get_next_control_slot(self, last_control_slot):
         for i in range(len(self.schedule.schedule)-1):
             line = self.schedule.schedule[i]
             logger.debug("found line %s", line.__str__(), sender="Scheduler")
@@ -254,7 +261,6 @@ class RoundRobinTDMAScheduler(TDMAScheduler):
     def __init__(self, devices: [], sensors: [], actuators: [], timeslots: int):
         super(RoundRobinTDMAScheduler, self).__init__(devices, sensors, actuators, timeslots)
         self.nextDevice = 0 # position in device list of the first device in the next schedule
-        self.wasActuator = False
 
     def next_schedule(self, observation=None) -> TDMASchedule:
         """
@@ -313,32 +319,6 @@ class GreedyWaitingTimeTDMAScheduler(TDMAScheduler):
         return self.schedule
 
 
-class GreedyErrorTDMAScheduler(TDMAScheduler):
-    def __init__(self, devices: [], sensors: [], actuators: [], timeslots: int):
-        super(GreedyErrorTDMAScheduler, self).__init__(devices, sensors, actuators, timeslots)
-
-    def next_schedule(self, observation: list) -> TDMASchedule:
-        """
-        Returns the next TDMA Schedule, based on the given observation. The observation contains for every device
-        the computed error.
-        :param observation: The given observation. Needs to be an array filled with the error of every device,
-        where the index represents the device's id
-        :return The generated TDMA schedule
-        """
-        pass
-
-
-class GreedyWaitingTimeCSMAScheduler(CSMAScheduler):
-    def __init__(self, sensors: [], timeslots: int):
-        super(GreedyWaitingTimeCSMAScheduler, self).__init__(sensors, timeslots)
-
-    def next_schedule(self, observation) -> [CSMASchedule, CSMAControllerSchedule]:
-        action_sensors = []
-        action_controllers = []
-        for i in range(len(self.sensors)):
-            pass
-
-
 class RandomCSMAScheduler(CSMAScheduler):
     def __init__(self, sensors: [], gatewaymac, timeslots: int):
         super(RandomCSMAScheduler, self).__init__(sensors, gatewaymac, timeslots)
@@ -386,5 +366,4 @@ def tdma_encode(schedule: TDMASchedule) -> int:
     bytesize = 1  # time byte at the end of the schedule
     for i in range((len(schedule.schedule)-1)):
         bytesize += 9
-        # TODO: Change when schedule format is fixed
     return bytesize

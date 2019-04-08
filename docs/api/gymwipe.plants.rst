@@ -7,7 +7,6 @@ Submodules
 .. toctree::
 
    gymwipe.plants.core
-   gymwipe.plants.random_plants
    gymwipe.plants.sliding_pendulum
    gymwipe.plants.state_space_plants
 

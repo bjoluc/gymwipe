@@ -14,7 +14,7 @@ logger = SimTimePrepender(logging.getLogger(__name__))
 class StateSpacePlant:
     def __init__(self, n, m, dt, marginally_stable=True, name: str = "State Space Plant"):
         """
-        Generate a random discrete time system.
+        Generates a random discrete time system. Thanks to https://github.com/aredder/plant_models
 
         Parameters
         ----------

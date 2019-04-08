@@ -8,7 +8,19 @@ logger = SimTimePrepender(logging.getLogger(__name__))
 
 
 class NCSMacHeader(Transmittable):
+    """
+    A MAC header for packets within an NCS
+    """
     def __init__(self, protocol: ProtocolType, type: bytes, sourceMAC: bytes, destMAC: bytes = None, more: bytes = None):
+        """
+        The bytesize of the header is computed according to the specified Protocoll, since sourceMACs are used within
+        TDMA MAC layers, even though they are not needed.
+        :param protocol: The MAC Protocol for which this header is generated
+        :param type: the message type. could be sensordata, a schedule, a control message or an acknowledgement
+        :param sourceMAC: The sending device's MAC address
+        :param destMAC: The receiving device's MAC address
+        :param more: Are more packages following?
+        """
         if len(sourceMAC) != 6:
             raise ValueError("sourceMAC: Expected 6 bytes, got {:d}.".format(len(sourceMAC)))
         if destMAC != None:

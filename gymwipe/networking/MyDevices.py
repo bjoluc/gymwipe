@@ -3,9 +3,9 @@ import time
 from typing import Dict
 import numpy as np
 import math
-from gymwipe.baSimulation.constants import ProtocolType, SchedulerType, Configuration, RewardType, current_episode
+from gymwipe.baSimulation.constants import ProtocolType, SchedulerType, Configuration, RewardType
 from gymwipe.control.scheduler import RoundRobinTDMAScheduler, RandomTDMAScheduler, GreedyWaitingTimeTDMAScheduler, \
-    RandomCSMAScheduler, CSMASchedule, CSMAControllerSchedule
+    RandomCSMAScheduler
 from gymwipe.control.paper_scheduler import DQNTDMAScheduler, FixedDQNTDMAScheduler, DQNCSMAScheduler, \
     MyDQNTDMAScheduler
 from gymwipe.envs.core import Interpreter
@@ -75,8 +75,9 @@ class Control:
     def onPacketReceived(self, senderIndex, state):
         """
         Is executed whenever the gateway receives a packet that contains sensor data
-        :param senderIndex: The sender id of that packet
-        :param state: The estimated state that has been sent
+        Args:
+            senderIndex: The sender id of that packet
+            state: The estimated state that has been sent
         """
         self.sensor_id_to_current_state[senderIndex] = state
         logger.debug("received a packet with estimated state", sender="Control")
@@ -141,19 +142,16 @@ class Control:
 
 class ComplexNetworkDevice(NetworkDevice):
     """
-    A :class:`NetworkDevice` implementation running a network stack that
+    A :class:`~gymwipe.networking.devices.NetworkDevice` implementation running a network stack that
     consists of a SimplePHY and a SimpleMAC, SensorMAC or ControllerMAC. It offers a method for sending a
     packet using the MAC layer, as well as a callback method that will be
-    invoked when a packet is received. Also, receiving can be turned on or of by
-    setting :attr:`receiving` either to ``True`` or to ``False``.
+    invoked when a packet is received.
     """
 
-    def __init__(self, name: str, xPos: float, yPos: float, frequencyBand: FrequencyBand, plant, type: "",
-                 configuration: Configuration):
+    def __init__(self, name: str, xPos: float, yPos: float, frequencyBand, plant, type: "",
+                 configuration):
         super(ComplexNetworkDevice, self).__init__(name, xPos, yPos, frequencyBand)
         self.configuration = configuration
-        self._receiving = False
-        self._receiverProcess = None # a SimPy receiver process
 
         self.plant = plant
 
@@ -179,13 +177,9 @@ class ComplexNetworkDevice(NetworkDevice):
         def onPacketReceived(payload):
             if type is "Actuator":
                 logger.debug("received new control command, command is %f", payload.value, sender=self)
-                # TODO: plant variable for both
                 self.plant.set_control(payload.value)
 
         self._mac.gates["networkOut"].nReceives.subscribeCallback(onPacketReceived)
-    
-    # inherit __init__ docstring
-    __init__.__doc__ = NetworkDevice.__init__.__doc__
 
     def mac_address(self):
         return self._mac.addr
@@ -196,18 +190,19 @@ class ComplexNetworkDevice(NetworkDevice):
 
 class GatewayDevice(NetworkDevice):
     """
-    A Radio Resource Management :class:`NetworkDevice` implementation. It runs a
-    network stack consisting of a SimplePHY and a GatewayMAC. It offers a
-    method for frequency band assignment and operates an
-    :class:`~gymwipe.envs.core.Interpreter` instance that provides observations
-    and rewards for a learning agent.
-    """
+        A Radio Resource Management :class:`~gymwipe.networking.devices.NetworkDevice` implementation. It runs a
+        network stack consisting of a SimplePHY and a GatewayMAC. It offers a
+        method for frequency band assignment and operates an
+        :class:`~gymwipe.envs.core.Interpreter` instance that provides observations
+        and rewards for a learning agent.
+        """
 
     def __init__(self, name: str, xPos: float, yPos: float, frequencyBand: FrequencyBand,
                     deviceIndexToMacDict: Dict[int, bytes], sensors, actuators, interpreter, control,
                  done_event, episode_done_event, simulation_done_event, configuration: Configuration):
         # No type definition for 'interpreter' to avoid circular dependencies
         """
+        Args:
             deviceIndexToMacDict: A dictionary mapping integer indexes to device
                 MAC addresses. This allows to pass the device index used by a
                 learning agent instead of a MAC address to
@@ -227,9 +222,6 @@ class GatewayDevice(NetworkDevice):
         self.received_data_amount = {}
         self._nSendControl = Notifier("control should be send")
         self._nSendControl.subscribeProcess(self.send_control)
-        """
-        The mac address
-        """
         super(GatewayDevice, self).__init__(name, xPos, yPos, frequencyBand)
 
         self.sensor_macs = sensors
@@ -241,8 +233,8 @@ class GatewayDevice(NetworkDevice):
             self.received_ack_amount[self.actuator_macs[i]] = 0
         self.control = control
         """
-        :class:'~gymwipe.networking.MyDevices': The
-        :class:'~gymwipe.networking.MyDevices' instance that manages every controller in the system
+        :class:'~gymwipe.networking.MyDevices.Control': The
+        :class:'~gymwipe.networking.MyDevices.Control' instance that manages every controller in the system
         """
 
         self.interpreter = interpreter
@@ -252,6 +244,7 @@ class GatewayDevice(NetworkDevice):
         domain-specific feedback on the consequences of :meth:`assignFrequencyBand`
         calls
         """
+
         self.interpreter.gateway = self
 
         self.deviceIndexToMacDict = deviceIndexToMacDict
@@ -852,6 +845,9 @@ class MyInterpreter(Interpreter):
         self.device_amount = self.device_amount
 
     def reset(self):
+        """
+        Resets the interpreter. Usually used after finishing a training episode
+        """
         self.timestep_success = np.zeros(self.schedule_length, dtype=int)
         self.timestep_errorrate_sender = np.ones(self.schedule_length, dtype=int)
         self.timestep_errorrate_gateway = np.ones(self.schedule_length, dtype=int)
@@ -859,7 +855,6 @@ class MyInterpreter(Interpreter):
 
     def onPacketReceived(self, message, senderIndex: int, receiverIndex= None, payload=None):
         logger.debug("received arrived packet information", sender="Interpreter")
-        # TODO: action for different schedulers same?
 
         time_since_schedule = SimMan.now - self.gateway.last_schedule_creation
         schedule_timeslot = math.trunc(time_since_schedule/self.configuration.timeslot_length) - 1
@@ -871,7 +866,6 @@ class MyInterpreter(Interpreter):
         self.last_update[senderIndex] = self.gateway.simulatedSlot
         logger.debug("got received packet information. Sender %d sent %s", senderIndex, message.__repr__(),
                      sender=self)
-        # nothing to do for round robin scheduler
 
     def onScheduleCreated(self, schedule):
         """
@@ -955,11 +949,6 @@ class MyInterpreter(Interpreter):
             for i in range(len(self.last_update)):
                 tau[i] = current_slot-self.last_update[i]
             observation = np.hstack((tau, self.timestep_success))
-
-        elif self.configuration.scheduler_type == SchedulerType.GREEDYERROR:
-            observation = []
-            for i in range(len(self.gateway.deviceIndexToMacDict)):
-                pass
 
         elif self.configuration.scheduler_type == SchedulerType.GREEDYWAIT:
             current_slot = self.gateway.simulatedSlot

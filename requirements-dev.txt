@@ -15,10 +15,9 @@ doc8
 keras-rl
 objgraph
 pipenv-to-requirements
-py3ode
-pygame
 pylint
 pympler
+pytest
 rope
 sphinx
 sphinx-autobuild
@@ -28,7 +27,9 @@ sphinxcontrib-bibtex
 sphinxcontrib-tikz
 tensorflow
 
+filterpy
 gym
+numpy
 pytest
 pytest-benchmark
 pytest-mock
