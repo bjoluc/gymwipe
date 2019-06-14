@@ -217,6 +217,7 @@ class SimplePhy(Module):
             logger.info("Sensed a transmission.", sender=self)
             self._receiving = True
             self._currentReceiverMcs = t.mcsHeader
+            self._resetBitErrorCounter()
 
             # Callback for reacting to changes of the received power
             def onReceivedPowerChange(delta: float):
@@ -244,6 +245,7 @@ class SimplePhy(Module):
                 # Possibly switch MCS
                 self._currentReceiverMcs = t.mcsPayload
                 self._resetBitErrorCounter()
+                self._updateBitErrorRate(t)
 
                 # Wait for the payload to be transmitted
                 yield t.eCompletes
